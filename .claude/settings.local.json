@@ -45,7 +45,9 @@
       "Bash(cmd //c \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build.bat\")",
       "Bash(cmd //c \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build_audit.bat\")",
       "Bash(del \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build_audit.bat\")",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(cmd //c \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build_verify.bat\")",
+      "Bash(git reset:*)"
     ]
   }
 }
