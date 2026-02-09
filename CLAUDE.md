@@ -193,8 +193,12 @@ External dependencies in `Tools/`:
 
 **Utilities:**
 - `ShaderGlass/Util/d3dHelpers.h` - DirectX helper functions
+- `ShaderGlass/Util/ErrorHandling.h` - HRESULT error handling (`THROW_IF_FAILED`, `LOG_IF_FAILED`)
+- `ShaderGlass/Util/ThreadHandle.h` - RAII wrapper for Windows threads
 - `ShaderGlass/Util/capture.desktop.interop.h` - Windows Capture API interop
 - `ShaderGlass/WIC/` - Texture loading and screenshot utilities
+- `ShaderGC/SafeParsing.h` - Bounds-checked parsing for shader config values
+- `ShaderGC/SecurityLimits.h` - Compile-time constants for max passes, textures, parameters
 
 ## Development Notes
 
@@ -228,10 +232,11 @@ Shader parameters are defined in `ShaderDef::ParamDef`:
 
 ### External Dependencies
 
-Located in `External/` and `lib/`:
-- glslang - GLSL/Slang compiler
-- SPIRV-Cross - SPIR-V to HLSL converter
-- Pre-built libraries for shader compilation
+Located in `External/`:
+- glslang - GLSL/Slang compiler (headers only; binaries must be installed separately)
+- SPIRV-Cross - SPIR-V to HLSL converter (headers only; binaries must be installed separately)
+
+Note: Pre-built binaries (`Tools/`, `lib/`) were removed from version control. Build tools (`glslangValidator.exe`, `spirv-cross.exe`) must be available on PATH or in `Tools/` for shader compilation.
 
 ## Requirements
 
