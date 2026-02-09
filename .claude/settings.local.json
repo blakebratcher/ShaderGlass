@@ -44,7 +44,8 @@
       "Bash(grep:*)",
       "Bash(cmd //c \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build.bat\")",
       "Bash(cmd //c \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build_audit.bat\")",
-      "Bash(del \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build_audit.bat\")"
+      "Bash(del \"C:\\\\Users\\\\Blake\\\\Documents\\\\GitHub\\\\ShaderGlass\\\\build_audit.bat\")",
+      "Bash(git merge:*)"
     ]
   }
 }
