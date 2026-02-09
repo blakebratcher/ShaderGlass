@@ -269,7 +269,7 @@ void DeviceCapture::Start(winrt::com_ptr<ID3D11Device> d3dDevice, LPWSTR symlink
     {
         m_thread = ThreadHandle::Create(DeviceCaptureThreadFuncProxy, this);
     }
-    catch(const std::exception& e)
+    catch(const std::exception&)
     {
         m_active = false;
         throw;

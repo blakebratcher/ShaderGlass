@@ -223,7 +223,7 @@ bool CaptureManager::StartSession()
     {
         m_renderThread = ThreadHandle::Create(ThreadFuncProxy, this);
     }
-    catch(const std::exception& e)
+    catch(const std::exception&)
     {
         m_active = false;
         throw;
