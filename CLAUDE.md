@@ -167,7 +167,7 @@ External dependencies in `Tools/`:
 4. `CaptureManager::ThreadFunc()` - Main render loop
 
 **Shader System:**
-1. `ShaderGlass/Shaders/ShaderList.h` - Generated list of all presets
+1. `ShaderGlass/ShaderList.h` - Generated list of all presets
 2. `ShaderGlass::SetShaderPreset()` - Switches active shader
 3. `ShaderGlass::Process()` - Renders frame through pipeline
 
@@ -189,7 +189,7 @@ External dependencies in `Tools/`:
 **Generated Shaders:**
 - `ShaderGlass/Shaders/RetroArch/` - 1200+ generated shader .h files
 - `ShaderGlass/Shaders/RetroArch.h` - Master include file
-- `ShaderGlass/Shaders/ShaderList.h` - Preset list for UI
+- `ShaderGlass/ShaderList.h` - Preset list for UI
 
 **Utilities:**
 - `ShaderGlass/Util/d3dHelpers.h` - DirectX helper functions
@@ -233,10 +233,13 @@ Shader parameters are defined in `ShaderDef::ParamDef`:
 ### External Dependencies
 
 Located in `External/`:
-- glslang - GLSL/Slang compiler (headers only; binaries must be installed separately)
-- SPIRV-Cross - SPIR-V to HLSL converter (headers only; binaries must be installed separately)
+- glslang - GLSL/Slang compiler (headers)
+- SPIRV-Cross - SPIR-V to HLSL converter (headers)
 
-Note: Pre-built binaries (`Tools/`, `lib/`) were removed from version control. Build tools (`glslangValidator.exe`, `spirv-cross.exe`) must be available on PATH or in `Tools/` for shader compilation.
+Pre-built binaries in `lib/` and `Tools/` are gitignored. To build:
+- Place glslang and spirv-cross static libraries in `lib/`
+- Place `glslangValidator.exe` and `spirv-cross.exe` in `Tools/`
+- These can be built from sources in `External/` or obtained from upstream releases
 
 ## Requirements
 
