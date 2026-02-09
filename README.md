@@ -1,64 +1,113 @@
-## ShaderGlass (Fork)
+<div align="center">
 
-This is a personal fork of [mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass) with performance optimizations, bug fixes, and a Visual Studio 2026 upgrade.
+<img src="images/shaderglass.png" alt="ShaderGlass" width="128"/>
 
-For the original project, documentation, screenshots, and downloads, see the [upstream repository](https://github.com/mausimus/ShaderGlass).
+# ShaderGlass
 
-<br/>
+### *Optimized Fork*
 
-### Changes from Upstream
+**GPU shader overlay for Windows desktop** | 1200+ RetroArch shaders | DirectX 11
 
-#### Performance Optimizations
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
+[![DirectX 11](https://img.shields.io/badge/DirectX-11-green.svg)](https://learn.microsoft.com/en-us/windows/win32/direct3d11/atoc-dx-graphics-direct3d-11)
+[![VS 2026](https://img.shields.io/badge/Visual%20Studio-2026-5C2D91?logo=visualstudio)](https://visualstudio.microsoft.com/)
+[![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](https://www.microsoft.com/windows)
 
-* **Ping-pong feedback buffers** -- Intermediate shader passes no longer copy textures between render targets; instead textures alternate read/write roles, eliminating `CopyResource` calls per frame
-* **Batched GPU bindings** -- Sampler states and shader resource views are bound in single API calls using stack arrays instead of per-texture calls
-* **Direct texture pointers** -- Raw `ID3D11Texture2D*` pointers cached alongside owning `com_ptr`s to avoid repeated `get()` calls in the render loop
-* **Optimized parameter lookup** -- `SetParam` uses `unordered_map` instead of linear search
-* **Unconditional constant buffer uploads** -- Removed ineffective dirty tracking (params like FrameCount change every frame anyway)
+Forked from [mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass) with performance optimizations, critical bug fixes, and modernized build tooling.
 
-#### Bug Fixes
+---
 
-* **CopyAttribute stale-HRESULT** -- `DeviceCapture::CopyAttribute()` was checking a global static `hr` from a previous unrelated call instead of the actual return value. Success/failure logic was completely broken.
-* **Shader::Compile Release crash** -- `assert(false)` on compilation failure was compiled out in Release, causing a null pointer dereference. Replaced with proper error throwing.
-* **GrabOutput crash** -- Missing null check before accessing a captured frame
-* **Resource leaks** -- `com_ptr` fields weren't nulled in cleanup methods, keeping DirectX resources alive longer than necessary
-* **Dead catch block** -- `CreateMediaSource` had a catch block that would dereference a NULL pointer array
-* **SaveProfile dialog flag** -- Was using `OFN_FILEMUSTEXIST` (open-dialog flag) instead of `OFN_OVERWRITEPROMPT` for the save dialog
-* **Uninitialized members** -- `m_toggledPresetNo`, `m_lastPosition` could contain garbage values on first use
-
-#### Code Quality
-
-* **HRESULT checking** -- Added `THROW_IF_FAILED(hr)` macro with file/line/expression info; added checks throughout the codebase where return values were previously ignored
-* **RAII thread management** -- `ThreadHandle` wrapper replaces raw `CreateThread`/`CloseHandle` patterns
-* **Safe parsing** -- Bounds-checked parsing for shader config values with overflow protection
-* **Build warning cleanup** -- Fixed wchar_t narrowing conversion warning that appeared 5x per build; reduced total warnings from 7 to 2
-
-#### Build System
-
-* Upgraded to Visual Studio 2026 (Platform Toolset v145)
-* Removed ~186 MB of pre-built binaries (`Tools/`, `lib/`) from version control
+</div>
 
 <br/>
 
-### Building
-
-Requires:
-* **Visual Studio 2026** with C++20 support (Platform Toolset v145)
-* **Windows SDK 10.0.26100**
-* **Windows 10 2004** (build 19041) or **Windows 11**
-* DirectX 11-capable GPU
-
-Open `ShaderGlass.sln` and build `Release|x64`.
-
-See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
+<img src="images/screen7.png" alt="ShaderGlass running on Windows 11 desktop" width="100%"/>
 
 <br/>
 
-### Original Project
+## What's Changed
 
-ShaderGlass is a Windows desktop overlay application that applies GPU shader effects on top of the desktop. It includes 1200+ precompiled RetroArch shaders for CRT simulation, upscaling, and visual effects.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-* Original author: [mausimus](https://github.com/mausimus)
-* Upstream repo: [mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass)
-* License: [GNU General Public License v3.0](LICENSE)
-* Includes precompiled shaders from [libretro/slang-shaders](https://github.com/libretro/slang-shaders)
+### Performance
+
+- **Ping-pong feedback buffers** -- Eliminates `CopyResource` per frame by alternating texture read/write roles between passes
+- **Batched GPU bindings** -- Single `PSSetSamplers` / `PSSetShaderResources` call per pass instead of per-texture
+- **Direct texture pointers** -- Cached raw `ID3D11Texture2D*` alongside owning `com_ptr`s for zero-overhead access in the render loop
+- **O(1) parameter lookup** -- `unordered_map` replaces linear search in `SetParam`
+- **Unconditional CB uploads** -- Removed broken dirty tracking that never saved work
+
+</td>
+<td width="50%" valign="top">
+
+### Bug Fixes
+
+- **CopyAttribute stale-HRESULT** -- Was checking a global static from a previous call instead of the actual return value
+- **Release build crash** -- `assert(false)` compiled out, causing null deref on shader compile failure
+- **GrabOutput crash** -- Missing null check on captured frame
+- **Resource leaks** -- COM pointers not released in cleanup paths
+- **NULL deref in catch** -- Dead catch block iterated a NULL array
+- **Save dialog** -- Wrong flag (`OFN_FILEMUSTEXIST` on a save dialog)
+- **Uninitialized members** -- Garbage preset index on first hotkey use
+
+</td>
+</tr>
+</table>
+
+### Code Quality
+
+| Area | Improvement |
+|------|-------------|
+| **Error handling** | `THROW_IF_FAILED(hr)` macro with file, line, and expression context -- added across the entire codebase |
+| **Thread safety** | RAII `ThreadHandle` wrapper replaces raw `CreateThread` / `CloseHandle` |
+| **Input validation** | Bounds-checked parsing for all shader config values with overflow protection |
+| **Build warnings** | Fixed wchar_t narrowing conversion (5x per build); total warnings reduced from 7 to 2 |
+| **Repo size** | Removed ~186 MB of pre-built binaries from version control |
+
+---
+
+## Building
+
+```
+Visual Studio 2026  |  C++20  |  Windows SDK 10.0.26100  |  Release | x64
+```
+
+```bash
+# Open and build
+ShaderGlass.sln  -->  Release | x64
+```
+
+> See [CLAUDE.md](CLAUDE.md) for full architecture docs, threading model, shader pipeline details, and development notes.
+
+---
+
+## Screenshots
+
+<details>
+<summary><b>Desktop Glass Mode</b> -- transparent overlay applies shaders to anything behind it</summary>
+<br/>
+<img src="images/screen1.png" alt="Desktop Glass mode - CRT shader on Chrome" width="100%"/>
+</details>
+
+<details>
+<summary><b>Window Clone Mode</b> -- capture a specific window with pixel-perfect scaling</summary>
+<br/>
+<img src="images/screen4.png" alt="FS-UAE with CRT shader" width="100%"/>
+<br/><br/>
+<img src="images/screen5.png" alt="Altirra with TV-OUT shader" width="100%"/>
+<br/><br/>
+<img src="images/screen3.png" alt="Adventure Game Studio with MegaBezel shader" width="100%"/>
+<br/><br/>
+<img src="images/screen2.png" alt="DOSBox with newpixie-crt shader" width="100%"/>
+</details>
+
+---
+
+<div align="center">
+
+**Original project by [mausimus](https://github.com/mausimus)** | [Upstream Repo](https://github.com/mausimus/ShaderGlass) | [GPLv3](LICENSE) | Shaders from [libretro/slang-shaders](https://github.com/libretro/slang-shaders)
+
+</div>
