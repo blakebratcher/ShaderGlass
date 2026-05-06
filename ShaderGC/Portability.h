@@ -7,6 +7,7 @@
 #    define __declspec(x) __SHADERGC_DECLSPEC_##x
 #  endif
 #  define __SHADERGC_DECLSPEC_noinline __attribute__((noinline))
+#  define __SHADERGC_DECLSPEC_noreturn [[noreturn]]
 
 // MSVC-only "secure" CRT functions used by ShaderGC. Provide POSIX-equivalent
 // shims so the code compiles unmodified on Linux. These are inline so each

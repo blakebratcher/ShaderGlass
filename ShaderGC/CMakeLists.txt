@@ -20,8 +20,9 @@ target_include_directories(shadergc PUBLIC
 
 target_compile_features(shadergc PUBLIC cxx_std_20)
 
-# glslang/SPIRV-Cross headers are vendored under External/.
-target_include_directories(shadergc PUBLIC
+# glslang/SPIRV-Cross headers are vendored under External/. These are
+# implementation-only — no public ShaderGC header includes them — so PRIVATE.
+target_include_directories(shadergc PRIVATE
     ${CMAKE_SOURCE_DIR}/External/glslang
     ${CMAKE_SOURCE_DIR}/External/SPIRV-Cross
 )
@@ -41,7 +42,7 @@ endif()
 find_library(GLSLANG_LIB NAMES glslang REQUIRED)
 find_library(GLSLANG_RES_LIB NAMES glslang-default-resource-limits REQUIRED)
 
-target_link_libraries(shadergc PUBLIC
+target_link_libraries(shadergc PRIVATE
     ${GLSLANG_LIB}
     ${GLSLANG_RES_LIB}
 )

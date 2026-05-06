@@ -13,7 +13,7 @@ if(BUILD_LINUX_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(ShaderGlassLinux)
 endif()
 
-if(SHADERGLASS_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(SHADERGLASS_TESTS AND BUILD_LINUX_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     enable_testing()
     add_subdirectory(ShaderGlassLinux/tests)
 endif()
