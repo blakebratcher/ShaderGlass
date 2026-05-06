@@ -51,6 +51,7 @@ add_library(shaderglass_core STATIC
     src/render/HeadlessOutput.cpp
     src/capture/StaticImageCapture.cpp
     src/capture/FakeWaylandCaptureSession.cpp
+    src/capture/WaylandCapture.cpp
     ${BUILTIN_HEADER}
 )
 target_include_directories(shaderglass_core

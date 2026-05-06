@@ -48,3 +48,10 @@ target_compile_definitions(e2e_shadergc_render_tests PRIVATE
     SHADERGLASS_BIN="$<TARGET_FILE:shaderglass>")
 add_dependencies(e2e_shadergc_render_tests shaderglass)
 gtest_discover_tests(e2e_shadergc_render_tests)
+
+add_executable(wayland_capture_fake_tests test_wayland_capture_with_fake_session.cpp)
+target_link_libraries(wayland_capture_fake_tests PRIVATE shaderglass_core gtest_main)
+target_compile_definitions(wayland_capture_fake_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+target_include_directories(wayland_capture_fake_tests PRIVATE ${stb_SOURCE_DIR})
+gtest_discover_tests(wayland_capture_fake_tests)
