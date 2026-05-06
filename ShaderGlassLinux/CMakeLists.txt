@@ -10,7 +10,9 @@ add_library(shaderglass_core STATIC
     src/render/RenderEngine.cpp
     src/capture/StaticImageCapture.cpp
 )
-target_include_directories(shaderglass_core PUBLIC src ${stb_SOURCE_DIR})
+target_include_directories(shaderglass_core
+    PUBLIC  src
+    PRIVATE ${stb_SOURCE_DIR})
 target_link_libraries(shaderglass_core PUBLIC
     SDL3::SDL3
     Vulkan::Vulkan

@@ -2,6 +2,14 @@
 #include <cstdint>
 #include <cstddef>
 
+// Lifetime contract:
+//   - The frame returned by CaptureBackend::acquireFrame() points into memory
+//     owned by the backend. Callers must NOT outlive the backend.
+//   - For DMA-BUF frames the buffer must be returned to the source via
+//     CaptureBackend::release(frame) before the next acquireFrame() call —
+//     PipeWire/X11 backends rely on this. (StaticImageCapture's release()
+//     is a no-op, but other backends are not.)
+//   - The CapturedFrame struct itself is a small POD and is safe to copy.
 struct CapturedFrame {
     enum class Kind { CpuBuffer, DmaBuf };
 
