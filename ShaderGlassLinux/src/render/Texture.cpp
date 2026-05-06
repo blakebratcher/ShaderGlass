@@ -4,6 +4,18 @@
 #include <cstring>
 #include <stdexcept>
 
+namespace {
+struct StagingResources {
+    VkDevice       dev = VK_NULL_HANDLE;
+    VkBuffer       buf = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    ~StagingResources() {
+        if (buf) vkDestroyBuffer(dev, buf, nullptr);
+        if (mem) vkFreeMemory   (dev, mem, nullptr);
+    }
+};
+} // namespace
+
 Texture::Texture(VulkanContext& ctx, uint32_t w, uint32_t h, VkFormat fmt)
     : m_ctx(ctx), m_width(w), m_height(h), m_format(fmt) {
 
@@ -103,32 +115,31 @@ static void barrier(VkCommandBuffer cb, VkImage img,
 }
 
 void Texture::uploadFromCpu(const void* src, size_t size, size_t srcStride) {
-    VkBuffer       buf = VK_NULL_HANDLE;
-    VkDeviceMemory mem = VK_NULL_HANDLE;
+    StagingResources staging{m_ctx.device()};
 
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bi.size = size; bi.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK(vkCreateBuffer(m_ctx.device(), &bi, nullptr, &buf));
+    VK_CHECK(vkCreateBuffer(m_ctx.device(), &bi, nullptr, &staging.buf));
 
     VkMemoryRequirements req{};
-    vkGetBufferMemoryRequirements(m_ctx.device(), buf, &req);
+    vkGetBufferMemoryRequirements(m_ctx.device(), staging.buf, &req);
     VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
     ai.allocationSize  = req.size;
     ai.memoryTypeIndex = findMemoryType(req.memoryTypeBits,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    VK_CHECK(vkAllocateMemory(m_ctx.device(), &ai, nullptr, &mem));
-    VK_CHECK(vkBindBufferMemory(m_ctx.device(), buf, mem, 0));
+    VK_CHECK(vkAllocateMemory(m_ctx.device(), &ai, nullptr, &staging.mem));
+    VK_CHECK(vkBindBufferMemory(m_ctx.device(), staging.buf, staging.mem, 0));
 
     void* mapped = nullptr;
-    VK_CHECK(vkMapMemory(m_ctx.device(), mem, 0, size, 0, &mapped));
+    VK_CHECK(vkMapMemory(m_ctx.device(), staging.mem, 0, size, 0, &mapped));
     auto* dst = static_cast<uint8_t*>(mapped);
     auto* s   = static_cast<const uint8_t*>(src);
     size_t rowBytes = (size_t)m_width * 4;
     for (uint32_t y = 0; y < m_height; ++y) {
         std::memcpy(dst + y * rowBytes, s + y * srcStride, rowBytes);
     }
-    vkUnmapMemory(m_ctx.device(), mem);
+    vkUnmapMemory(m_ctx.device(), staging.mem);
 
     VkCommandBuffer cb = beginOneShot();
     barrier(cb, m_image, VK_IMAGE_LAYOUT_UNDEFINED,
@@ -137,35 +148,31 @@ void Texture::uploadFromCpu(const void* src, size_t size, size_t srcStride) {
     VkBufferImageCopy region{};
     region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
     region.imageExtent      = { m_width, m_height, 1 };
-    vkCmdCopyBufferToImage(cb, buf, m_image,
+    vkCmdCopyBufferToImage(cb, staging.buf, m_image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
     barrier(cb, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    m_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     submitOneShot(cb);
-
-    vkDestroyBuffer(m_ctx.device(), buf, nullptr);
-    vkFreeMemory   (m_ctx.device(), mem, nullptr);
+    m_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
 void Texture::downloadToCpu(void* dst, size_t size, size_t dstStride) {
-    VkBuffer       buf = VK_NULL_HANDLE;
-    VkDeviceMemory mem = VK_NULL_HANDLE;
+    StagingResources staging{m_ctx.device()};
 
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bi.size = size; bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK(vkCreateBuffer(m_ctx.device(), &bi, nullptr, &buf));
+    VK_CHECK(vkCreateBuffer(m_ctx.device(), &bi, nullptr, &staging.buf));
 
     VkMemoryRequirements req{};
-    vkGetBufferMemoryRequirements(m_ctx.device(), buf, &req);
+    vkGetBufferMemoryRequirements(m_ctx.device(), staging.buf, &req);
     VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
     ai.allocationSize  = req.size;
     ai.memoryTypeIndex = findMemoryType(req.memoryTypeBits,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    VK_CHECK(vkAllocateMemory(m_ctx.device(), &ai, nullptr, &mem));
-    VK_CHECK(vkBindBufferMemory(m_ctx.device(), buf, mem, 0));
+    VK_CHECK(vkAllocateMemory(m_ctx.device(), &ai, nullptr, &staging.mem));
+    VK_CHECK(vkBindBufferMemory(m_ctx.device(), staging.buf, staging.mem, 0));
 
     VkCommandBuffer cb = beginOneShot();
     barrier(cb, m_image, m_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -174,23 +181,20 @@ void Texture::downloadToCpu(void* dst, size_t size, size_t dstStride) {
     region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
     region.imageExtent      = { m_width, m_height, 1 };
     vkCmdCopyImageToBuffer(cb, m_image,
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buf, 1, &region);
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, staging.buf, 1, &region);
 
     barrier(cb, m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    m_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     submitOneShot(cb);
+    m_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     void* mapped = nullptr;
-    VK_CHECK(vkMapMemory(m_ctx.device(), mem, 0, size, 0, &mapped));
+    VK_CHECK(vkMapMemory(m_ctx.device(), staging.mem, 0, size, 0, &mapped));
     auto* s = static_cast<const uint8_t*>(mapped);
     auto* d = static_cast<uint8_t*>(dst);
     size_t rowBytes = (size_t)m_width * 4;
     for (uint32_t y = 0; y < m_height; ++y) {
         std::memcpy(d + y * dstStride, s + y * rowBytes, rowBytes);
     }
-    vkUnmapMemory(m_ctx.device(), mem);
-
-    vkDestroyBuffer(m_ctx.device(), buf, nullptr);
-    vkFreeMemory   (m_ctx.device(), mem, nullptr);
+    vkUnmapMemory(m_ctx.device(), staging.mem);
 }
