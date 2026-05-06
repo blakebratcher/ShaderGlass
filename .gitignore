@@ -370,3 +370,6 @@ Tools/*.exe
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
+
+# Linux CMake build directory
+/build/
