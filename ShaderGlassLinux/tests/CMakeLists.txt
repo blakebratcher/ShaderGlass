@@ -7,6 +7,9 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GBM gbm)
+
 add_executable(shadergc_portability_tests test_shadergc_portability.cpp)
 target_link_libraries(shadergc_portability_tests PRIVATE shadergc gtest_main)
 
@@ -59,3 +62,11 @@ gtest_discover_tests(wayland_capture_fake_tests)
 add_executable(xdg_config_tests test_xdg_config.cpp)
 target_link_libraries(xdg_config_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(xdg_config_tests)
+
+add_executable(dmabuf_import_tests test_dmabuf_import.cpp)
+target_link_libraries(dmabuf_import_tests PRIVATE shaderglass_core gtest_main)
+if(GBM_FOUND)
+    target_include_directories(dmabuf_import_tests PRIVATE ${GBM_INCLUDE_DIRS})
+    target_link_libraries(dmabuf_import_tests PRIVATE ${GBM_LIBRARIES})
+endif()
+gtest_discover_tests(dmabuf_import_tests)
