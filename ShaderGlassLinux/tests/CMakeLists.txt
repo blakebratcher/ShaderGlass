@@ -32,3 +32,11 @@ gtest_discover_tests(static_image_capture_tests)
 add_executable(texture_upload_tests test_texture_upload.cpp)
 target_link_libraries(texture_upload_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(texture_upload_tests)
+
+add_executable(headless_render_tests test_headless_render.cpp)
+target_link_libraries(headless_render_tests PRIVATE gtest_main)
+target_compile_definitions(headless_render_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    SHADERGLASS_BIN="$<TARGET_FILE:shaderglass>")
+add_dependencies(headless_render_tests shaderglass)
+gtest_discover_tests(headless_render_tests)

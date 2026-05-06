@@ -48,6 +48,7 @@ add_library(shaderglass_core STATIC
     src/render/RenderEngine.cpp
     src/render/Texture.cpp
     src/render/ShaderPipeline.cpp
+    src/render/HeadlessOutput.cpp
     src/capture/StaticImageCapture.cpp
     ${BUILTIN_HEADER}
 )
@@ -62,4 +63,5 @@ target_link_libraries(shaderglass_core PUBLIC
 add_dependencies(shaderglass_core builtin_shaders_gen)
 
 add_executable(shaderglass src/main.cpp)
+target_include_directories(shaderglass PRIVATE ${stb_SOURCE_DIR})
 target_link_libraries(shaderglass PRIVATE shaderglass_core)
