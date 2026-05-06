@@ -18,3 +18,7 @@ target_link_libraries(shadergc_spirv_tests PRIVATE shadergc gtest_main)
 target_compile_definitions(shadergc_spirv_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 gtest_discover_tests(shadergc_spirv_tests)
+
+add_executable(vulkan_context_tests test_vulkan_context.cpp)
+target_link_libraries(vulkan_context_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(vulkan_context_tests)
