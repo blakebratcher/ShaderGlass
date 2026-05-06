@@ -55,3 +55,7 @@ target_compile_definitions(wayland_capture_fake_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_include_directories(wayland_capture_fake_tests PRIVATE ${stb_SOURCE_DIR})
 gtest_discover_tests(wayland_capture_fake_tests)
+
+add_executable(xdg_config_tests test_xdg_config.cpp)
+target_link_libraries(xdg_config_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(xdg_config_tests)

@@ -1,5 +1,6 @@
 #include "PortalCaptureSession.h"
 #include "../util/Logging.h"
+#include "../util/XdgConfig.h"
 
 #include <dbus/dbus.h>
 #include <pipewire/pipewire.h>
@@ -115,6 +116,11 @@ PortalCaptureSession::PortalCaptureSession() {
         throw std::runtime_error(msg);
     }
     dbus_connection_flush(m_bus);
+
+    if (auto t = XdgConfig::readToken("portal-token")) {
+        m_restoreToken = *t;
+        LOG_INFO("portal: loaded restore token from disk");
+    }
 }
 
 PortalCaptureSession::~PortalCaptureSession() {
@@ -294,6 +300,12 @@ void PortalCaptureSession::doPortalHandshake() {
                        dbus_message_iter_get_arg_type(&var) == DBUS_TYPE_STRING) {
                 const char* v = nullptr; dbus_message_iter_get_basic(&var, &v);
                 if (v) m_restoreToken = v;
+                try {
+                    XdgConfig::writeToken("portal-token", m_restoreToken);
+                    LOG_INFO("portal: persisted restore token");
+                } catch (const std::exception& e) {
+                    LOG_WARN("portal: failed to persist restore token: %s", e.what());
+                }
             }
             dbus_message_iter_next(&rd);
         }
