@@ -19,6 +19,7 @@ public:
     ShaderPipeline& operator=(ShaderPipeline&&)      = delete;
 
     void bindAndDraw(VkCommandBuffer cb, const Texture& source, VkExtent2D viewport);
+    void bindAndDrawWithImageView(VkCommandBuffer cb, VkImageView view, VkExtent2D viewport);
 
 private:
     VulkanContext& m_ctx;

@@ -1,5 +1,6 @@
 #pragma once
 #include "WaylandCaptureSession.h"
+#include "../render/DmaBufImport.h"
 #include <string>
 #include <thread>
 #include <atomic>
@@ -15,9 +16,16 @@ struct pw_stream;
 struct pw_context;
 struct pw_core;
 
+class VulkanContext;
+
 class PortalCaptureSession : public WaylandCaptureSession {
 public:
-    PortalCaptureSession();
+    struct PerBufferDmaBuf {
+        ImportedDmaBuf imported;
+        bool           valid = false;
+    };
+
+    explicit PortalCaptureSession(VulkanContext* vulkanCtxForDmaBuf = nullptr);
     ~PortalCaptureSession() override;
 
     PortalCaptureSession(const PortalCaptureSession&)            = delete;
@@ -55,6 +63,11 @@ private:
     std::mutex                                       m_bufferMapMutex;
     std::unordered_map<uint64_t, struct pw_buffer*>  m_bufferMap;
     uint64_t                                         m_nextHandleId = 1;
+
+    VulkanContext* m_vkCtx = nullptr;
+    bool           m_useDmaBuf = false;
+    std::unordered_map<struct pw_buffer*, PerBufferDmaBuf> m_dmaCache;
+    std::mutex                                              m_dmaCacheMutex;
 
     // Implemented in Task 6.
     void  doPortalHandshake();

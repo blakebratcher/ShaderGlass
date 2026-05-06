@@ -148,3 +148,11 @@ void RenderEngine::renderTexture(const Texture& src, ShaderPipeline& pipeline) {
         pipeline.bindAndDraw(cb, src, ext);
     });
 }
+
+void RenderEngine::renderImageView(VkImageView view, ShaderPipeline& pipeline) {
+    VkClearValue cv{};
+    cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
+        pipeline.bindAndDrawWithImageView(cb, view, ext);
+    });
+}

@@ -21,6 +21,7 @@ public:
 
     void renderClear(float r, float g, float b, float a);
     void renderTexture(const Texture& src, ShaderPipeline& pipeline);
+    void renderImageView(VkImageView view, ShaderPipeline& pipeline);
 
 private:
     void renderFrame(VkClearValue clearColor,

@@ -112,10 +112,10 @@ ShaderPipeline::~ShaderPipeline() {
     if (m_sampler)         vkDestroySampler            (m_ctx.device(), m_sampler,        nullptr);
 }
 
-void ShaderPipeline::bindAndDraw(VkCommandBuffer cb, const Texture& src, VkExtent2D viewport) {
+void ShaderPipeline::bindAndDrawWithImageView(VkCommandBuffer cb, VkImageView view, VkExtent2D viewport) {
     VkDescriptorImageInfo ii{};
     ii.sampler     = m_sampler;
-    ii.imageView   = src.view();
+    ii.imageView   = view;
     ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
     w.dstSet = m_ds; w.dstBinding = 0;
@@ -132,4 +132,8 @@ void ShaderPipeline::bindAndDraw(VkCommandBuffer cb, const Texture& src, VkExten
     vkCmdSetViewport(cb, 0, 1, &vp);
     vkCmdSetScissor (cb, 0, 1, &sc);
     vkCmdDraw(cb, 3, 1, 0, 0);
+}
+
+void ShaderPipeline::bindAndDraw(VkCommandBuffer cb, const Texture& src, VkExtent2D viewport) {
+    bindAndDrawWithImageView(cb, src.view(), viewport);
 }

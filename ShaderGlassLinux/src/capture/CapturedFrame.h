@@ -30,4 +30,8 @@ struct CapturedFrame {
     // Opaque handle the producing CaptureBackend uses to identify the underlying
     // buffer when release(frame) is called. Treat as opaque on the consumer side.
     void* sessionHandle = nullptr;
+
+    // For Kind::DmaBuf: opaque pointer to an ImportedDmaBuf the producer owns.
+    // Consumers that recognize Kind::DmaBuf cast to ImportedDmaBuf*.
+    void* importedDmaBuf = nullptr;
 };

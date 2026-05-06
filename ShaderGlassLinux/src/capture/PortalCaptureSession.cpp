@@ -1,4 +1,5 @@
 #include "PortalCaptureSession.h"
+#include "../render/VulkanContext.h"
 #include "../util/Logging.h"
 #include "../util/XdgConfig.h"
 
@@ -16,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <random>
 #include <stdexcept>
@@ -108,7 +110,9 @@ bool                     g_haveFormat = false;
 
 } // namespace
 
-PortalCaptureSession::PortalCaptureSession() {
+PortalCaptureSession::PortalCaptureSession(VulkanContext* vulkanCtxForDmaBuf) {
+    m_vkCtx = vulkanCtxForDmaBuf;
+
     DBusError err; dbus_error_init(&err);
     m_bus = dbus_bus_get(DBUS_BUS_SESSION, &err);
     if (dbus_error_is_set(&err)) {
@@ -429,7 +433,11 @@ void PortalCaptureSession::initPipeWire() {
     // Build SPA params: prefer BGRA, then RGBA. CPU buffers only for now.
     uint8_t buf[1024];
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
-    const struct spa_pod* params[2];
+    const struct spa_pod* params[3];
+
+    m_useDmaBuf = (m_vkCtx && DmaBufImport::isSupported(*m_vkCtx)
+                   && std::getenv("SHADERGLASS_DISABLE_DMABUF") == nullptr);
+    LOG_INFO("portal: DMA-BUF import %s", m_useDmaBuf ? "enabled" : "disabled");
 
     auto buildFormatPod = [&](spa_video_format fmt) -> const spa_pod* {
         spa_rectangle minR = SPA_RECTANGLE(1, 1);
@@ -451,12 +459,21 @@ void PortalCaptureSession::initPipeWire() {
 
     params[0] = buildFormatPod(SPA_VIDEO_FORMAT_BGRA);
     params[1] = buildFormatPod(SPA_VIDEO_FORMAT_RGBA);
+    int paramCount = 2;
+    if (m_useDmaBuf) {
+        params[paramCount++] = (const spa_pod*)spa_pod_builder_add_object(&b,
+            SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+            SPA_PARAM_BUFFERS_dataType,
+                SPA_POD_CHOICE_FLAGS_Int((1 << SPA_DATA_DmaBuf) |
+                                         (1 << SPA_DATA_MemFd) |
+                                         (1 << SPA_DATA_MemPtr)));
+    }
 
     int rc = pw_stream_connect(m_pwStream,
         PW_DIRECTION_INPUT, m_pipewireNodeId,
         (pw_stream_flags)(PW_STREAM_FLAG_AUTOCONNECT |
                           PW_STREAM_FLAG_MAP_BUFFERS),
-        params, 2);
+        params, paramCount);
     pw_thread_loop_unlock(m_pwLoop);
 
     if (rc < 0) throw std::runtime_error(std::string("portal: pw_stream_connect failed: ")
@@ -471,6 +488,15 @@ void PortalCaptureSession::initPipeWire() {
 void PortalCaptureSession::teardownPipeWire() {
     if (m_pwLoop) {
         pw_thread_loop_stop(m_pwLoop);
+    }
+    {
+        std::lock_guard<std::mutex> g(m_dmaCacheMutex);
+        if (m_vkCtx) {
+            for (auto& [_, perBuf] : m_dmaCache) {
+                if (perBuf.valid) DmaBufImport::destroy(*m_vkCtx, perBuf.imported);
+            }
+        }
+        m_dmaCache.clear();
     }
     if (m_pwStream) { pw_stream_destroy(m_pwStream); m_pwStream = nullptr; }
     if (m_pwCore)   { pw_core_disconnect(m_pwCore);  m_pwCore   = nullptr; }
@@ -524,8 +550,57 @@ void PortalCaptureSession::onProcess() {
         return;
     }
     spa_data& d0 = sb->datas[0];
+    if (d0.type == SPA_DATA_DmaBuf) {
+        if (!m_useDmaBuf || !m_vkCtx) {
+            pw_stream_queue_buffer(m_pwStream, pb);
+            return;
+        }
+        PerBufferDmaBuf* perBuf = nullptr;
+        {
+            std::lock_guard<std::mutex> g(m_dmaCacheMutex);
+            auto& slot = m_dmaCache[pb];
+            if (!slot.valid) {
+                try {
+                    uint64_t modifier = g_negotiatedFormat.modifier;
+                    slot.imported = DmaBufImport::importFd(*m_vkCtx,
+                        static_cast<int>(d0.fd),
+                        g_negotiatedFormat.size.width,
+                        g_negotiatedFormat.size.height,
+                        (g_negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
+                            ? 0x34325241 : 0x34324241,
+                        modifier,
+                        d0.mapoffset,
+                        d0.chunk ? d0.chunk->stride : g_negotiatedFormat.size.width * 4);
+                    slot.valid = true;
+                } catch (const std::exception& e) {
+                    LOG_WARN("portal: DMA-BUF import failed (%s); disabling for session", e.what());
+                    m_useDmaBuf = false;
+                    pw_stream_queue_buffer(m_pwStream, pb);
+                    return;
+                }
+            }
+            perBuf = &slot;
+        }
+        uint64_t handle;
+        {
+            std::lock_guard<std::mutex> g(m_bufferMapMutex);
+            handle = m_nextHandleId++;
+            m_bufferMap[handle] = pb;
+        }
+        CapturedFrame frame;
+        frame.kind            = CapturedFrame::Kind::DmaBuf;
+        frame.width           = g_negotiatedFormat.size.width;
+        frame.height          = g_negotiatedFormat.size.height;
+        frame.fourcc          = (g_negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
+                                ? 0x34325241 : 0x34324241;
+        frame.fd              = static_cast<int>(d0.fd);
+        frame.offset          = d0.mapoffset;
+        frame.sessionHandle   = reinterpret_cast<void*>(uintptr_t(handle));
+        frame.importedDmaBuf  = &perBuf->imported;
+        if (m_onFrame) m_onFrame(frame);
+        return;
+    }
     if (d0.type != SPA_DATA_MemPtr && d0.type != SPA_DATA_MemFd) {
-        // DMA-BUF arrives in Task 11. Until then, drop.
         pw_stream_queue_buffer(m_pwStream, pb);
         return;
     }

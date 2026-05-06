@@ -5,6 +5,7 @@
 #include "render/Texture.h"
 #include "render/ShaderPipeline.h"
 #include "render/HeadlessOutput.h"
+#include "render/DmaBufImport.h"
 #include "capture/CaptureBackend.h"
 #include "capture/StaticImageCapture.h"
 #include "capture/WaylandCapture.h"
@@ -147,7 +148,7 @@ static int runWindowed(const Args& a) {
 
     std::unique_ptr<CaptureBackend> cap;
     if (a.captureKind == "wayland-screen") {
-        cap = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>());
+        cap = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>(&ctx));
     } else {
         cap = std::make_unique<StaticImageCapture>(a.input);
     }
@@ -181,8 +182,15 @@ static int runWindowed(const Args& a) {
         while (window.pollEvents()) {
             auto f = cap->acquireFrame();
             if (f) {
-                sourceTex.uploadFromCpu(f->data, f->stride * f->height, f->stride);
-                cap->release(*f);
+                if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
+                    auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
+                    engine.renderImageView(imp->view, pipeline);
+                    cap->release(*f);
+                    continue;
+                } else {
+                    sourceTex.uploadFromCpu(f->data, f->stride * f->height, f->stride);
+                    cap->release(*f);
+                }
             }
             engine.renderTexture(sourceTex, pipeline);
         }
