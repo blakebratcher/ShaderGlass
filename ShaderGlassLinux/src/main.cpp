@@ -8,13 +8,18 @@
 #include "capture/StaticImageCapture.h"
 #include "util/Logging.h"
 #include "builtin_shaders.h"
+#include "ShaderGC.h"
+#include "ShaderCache.h"
+#include "PresetDef.h"
 #include <stb_image_write.h>
+#include <sstream>
 #include <string>
 
 struct Args {
     bool headless = false;
     bool passthrough = false;
     std::string input, output;
+    std::string compilePreset;
     uint32_t width = 1280, height = 720;
 };
 
@@ -28,6 +33,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--output" && i+1 < argc) a.output = argv[++i];
         else if (s == "--width"  && i+1 < argc) a.width  = (uint32_t)std::stoul(argv[++i]);
         else if (s == "--height" && i+1 < argc) a.height = (uint32_t)std::stoul(argv[++i]);
+        else if (s == "--compile-preset" && i+1 < argc) a.compilePreset = argv[++i];
         else if (a.input.empty())               a.input  = s;  // bare positional input
     }
     return a;
@@ -104,9 +110,30 @@ static int runWindowed(const Args& a) {
     return 0;
 }
 
+static int runCompilePreset(const Args& a) {
+    std::ostringstream log;
+    bool warn = false;
+    ShaderCache cache;
+    PresetDef* p = ShaderGC::CompilePreset(a.compilePreset, log, warn, cache);
+    if (!p) {
+        LOG_ERROR("compile failed:\n%s", log.str().c_str());
+        return 5;
+    }
+    LOG_INFO("compiled preset, %zu shader(s)", p->ShaderDefs.size());
+    for (auto& s : p->ShaderDefs) {
+        LOG_INFO("  shader '%s': vert %zu B, frag %zu B",
+                 s.Name.c_str(), s.VertexLength, s.FragmentLength);
+    }
+    if (warn) LOG_WARN("compile produced warnings:\n%s", log.str().c_str());
+    p->MakeDynamic();
+    delete p;
+    return 0;
+}
+
 int main(int argc, char** argv) {
     Args a = parseArgs(argc, argv);
     try {
+        if (!a.compilePreset.empty()) return runCompilePreset(a);
         return a.headless ? runHeadless(a) : runWindowed(a);
     } catch (const std::exception& e) {
         LOG_ERROR("fatal: %s", e.what());
