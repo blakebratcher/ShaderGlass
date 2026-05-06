@@ -17,7 +17,6 @@
 
 struct Args {
     bool headless = false;
-    bool passthrough = false;
     std::string input, output;
     std::string compilePreset;
     std::string preset;
@@ -29,7 +28,7 @@ static Args parseArgs(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string s = argv[i];
         if      (s == "--headless")    a.headless = true;
-        else if (s == "--passthrough") a.passthrough = true;
+        else if (s == "--passthrough") { /* deprecated no-op flag, kept to not break callers */ }
         else if (s == "--input"  && i+1 < argc) a.input  = argv[++i];
         else if (s == "--output" && i+1 < argc) a.output = argv[++i];
         else if (s == "--width"  && i+1 < argc) a.width  = (uint32_t)std::stoul(argv[++i]);

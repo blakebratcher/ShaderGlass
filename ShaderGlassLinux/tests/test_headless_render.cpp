@@ -21,7 +21,7 @@ TEST(HeadlessRender, PassthroughOnKnown4x4ProducesReferenceOutput) {
 
     fs::remove(out);
 
-    std::string cmd = bin.string() + " --headless --passthrough"
+    std::string cmd = bin.string() + " --headless"
                     + " --input "  + in.string()
                     + " --output " + out.string()
                     + " --width 4 --height 4";
