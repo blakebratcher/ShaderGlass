@@ -1,5 +1,9 @@
 find_package(SDL3 CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(DBUS     REQUIRED IMPORTED_TARGET dbus-1)
+pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
+pkg_check_modules(LIBDRM   REQUIRED libdrm)
 find_program(GLSLC NAMES glslc REQUIRED
     DOC "glslang/glslc compiler")
 
@@ -56,11 +60,13 @@ add_library(shaderglass_core STATIC
 )
 target_include_directories(shaderglass_core
     PUBLIC  src ${SHADER_OUT_DIR}
-    PRIVATE ${stb_SOURCE_DIR})
+    PRIVATE ${stb_SOURCE_DIR} ${LIBDRM_INCLUDE_DIRS})
 target_link_libraries(shaderglass_core PUBLIC
     SDL3::SDL3
     Vulkan::Vulkan
     shadergc
+    PkgConfig::DBUS
+    PkgConfig::PIPEWIRE
 )
 add_dependencies(shaderglass_core builtin_shaders_gen)
 
