@@ -40,3 +40,11 @@ target_compile_definitions(headless_render_tests PRIVATE
     SHADERGLASS_BIN="$<TARGET_FILE:shaderglass>")
 add_dependencies(headless_render_tests shaderglass)
 gtest_discover_tests(headless_render_tests)
+
+add_executable(e2e_shadergc_render_tests test_e2e_shadergc_render.cpp)
+target_link_libraries(e2e_shadergc_render_tests PRIVATE gtest_main)
+target_compile_definitions(e2e_shadergc_render_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    SHADERGLASS_BIN="$<TARGET_FILE:shaderglass>")
+add_dependencies(e2e_shadergc_render_tests shaderglass)
+gtest_discover_tests(e2e_shadergc_render_tests)

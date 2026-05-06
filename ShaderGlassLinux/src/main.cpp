@@ -20,6 +20,7 @@ struct Args {
     bool passthrough = false;
     std::string input, output;
     std::string compilePreset;
+    std::string preset;
     uint32_t width = 1280, height = 720;
 };
 
@@ -34,9 +35,53 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--width"  && i+1 < argc) a.width  = (uint32_t)std::stoul(argv[++i]);
         else if (s == "--height" && i+1 < argc) a.height = (uint32_t)std::stoul(argv[++i]);
         else if (s == "--compile-preset" && i+1 < argc) a.compilePreset = argv[++i];
+        else if (s == "--preset" && i+1 < argc) a.preset = argv[++i];
         else if (a.input.empty())               a.input  = s;  // bare positional input
     }
     return a;
+}
+
+struct PipelineSource {
+    const void* vert = nullptr;
+    size_t      vertSize = 0;
+    const void* frag = nullptr;
+    size_t      fragSize = 0;
+    PresetDef*  ownedPreset = nullptr;  // non-null when from --preset; caller must MakeDynamic + delete
+};
+
+static PipelineSource buildPipelineSource(const Args& a) {
+    PipelineSource ps{};
+    if (!a.preset.empty()) {
+        std::ostringstream log;
+        bool warn = false;
+        ShaderCache cache;
+        PresetDef* p = ShaderGC::CompilePreset(a.preset, log, warn, cache);
+        if (!p) throw std::runtime_error("preset compile failed:\n" + log.str());
+        if (p->ShaderDefs.empty()) {
+            delete p;
+            throw std::runtime_error("preset has 0 shaders");
+        }
+        auto& s = p->ShaderDefs[0];
+        ps.vert        = s.VertexByteCode;
+        ps.vertSize    = s.VertexLength;
+        ps.frag        = s.FragmentByteCode;
+        ps.fragSize    = s.FragmentLength;
+        ps.ownedPreset = p;
+    } else {
+        ps.vert     = g_passthrough_vert_spv;
+        ps.vertSize = g_passthrough_vert_spv_len;
+        ps.frag     = g_passthrough_frag_spv;
+        ps.fragSize = g_passthrough_frag_spv_len;
+    }
+    return ps;
+}
+
+static void releasePipelineSource(PipelineSource& ps) {
+    if (ps.ownedPreset) {
+        ps.ownedPreset->MakeDynamic();
+        delete ps.ownedPreset;
+        ps.ownedPreset = nullptr;
+    }
 }
 
 static int runHeadless(const Args& a) {
@@ -54,19 +99,22 @@ static int runHeadless(const Args& a) {
     Texture src(ctx, frame->width, frame->height, VK_FORMAT_R8G8B8A8_UNORM);
     src.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
 
-    ShaderPipeline pipeline(ctx,
-        g_passthrough_vert_spv, g_passthrough_vert_spv_len,
-        g_passthrough_frag_spv, g_passthrough_frag_spv_len,
-        VK_FORMAT_R8G8B8A8_UNORM);
+    PipelineSource ps = buildPipelineSource(a);
+    {
+        ShaderPipeline pipeline(ctx, ps.vert, ps.vertSize, ps.frag, ps.fragSize,
+                                VK_FORMAT_R8G8B8A8_UNORM);
 
-    HeadlessOutput out(ctx, a.width, a.height, VK_FORMAT_R8G8B8A8_UNORM);
-    auto bytes = out.renderToBytes(src, pipeline);
+        HeadlessOutput out(ctx, a.width, a.height, VK_FORMAT_R8G8B8A8_UNORM);
+        auto bytes = out.renderToBytes(src, pipeline);
 
-    if (!stbi_write_png(a.output.c_str(), (int)a.width, (int)a.height, 4,
-                        bytes.data(), (int)(a.width * 4))) {
-        LOG_ERROR("stbi_write_png failed for %s", a.output.c_str());
-        return 4;
+        if (!stbi_write_png(a.output.c_str(), (int)a.width, (int)a.height, 4,
+                            bytes.data(), (int)(a.width * 4))) {
+            releasePipelineSource(ps);
+            LOG_ERROR("stbi_write_png failed for %s", a.output.c_str());
+            return 4;
+        }
     }
+    releasePipelineSource(ps);
     LOG_INFO("Headless render complete: %s (%ux%u)", a.output.c_str(), a.width, a.height);
     return 0;
 }
@@ -96,17 +144,19 @@ static int runWindowed(const Args& a) {
     Texture sourceTex(ctx, frame->width, frame->height, VK_FORMAT_R8G8B8A8_UNORM);
     sourceTex.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
 
-    ShaderPipeline pipeline(ctx,
-        g_passthrough_vert_spv, g_passthrough_vert_spv_len,
-        g_passthrough_frag_spv, g_passthrough_frag_spv_len,
-        swapchain.format());
+    PipelineSource ps = buildPipelineSource(a);
+    {
+        ShaderPipeline pipeline(ctx, ps.vert, ps.vertSize, ps.frag, ps.fragSize,
+                                swapchain.format());
 
-    RenderEngine engine(ctx, swapchain);
-    LOG_INFO("Rendering %s (%ux%u). Close window or Esc to exit.",
-             a.input.c_str(), frame->width, frame->height);
-    while (window.pollEvents()) {
-        engine.renderTexture(sourceTex, pipeline);
+        RenderEngine engine(ctx, swapchain);
+        LOG_INFO("Rendering %s (%ux%u). Close window or Esc to exit.",
+                 a.input.c_str(), frame->width, frame->height);
+        while (window.pollEvents()) {
+            engine.renderTexture(sourceTex, pipeline);
+        }
     }
+    releasePipelineSource(ps);
     return 0;
 }
 
