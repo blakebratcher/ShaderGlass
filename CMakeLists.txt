@@ -8,6 +8,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_LINUX_APP   "Build the Linux ShaderGlass app"  ON)
 option(SHADERGLASS_TESTS "Build unit + integration tests"   ON)
 
+include(FetchContent)
+FetchContent_Declare(stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(stb)
+
 if(BUILD_LINUX_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(ShaderGC)
     add_subdirectory(ShaderGlassLinux)

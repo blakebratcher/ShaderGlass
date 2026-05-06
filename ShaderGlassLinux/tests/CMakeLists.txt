@@ -22,3 +22,9 @@ gtest_discover_tests(shadergc_spirv_tests)
 add_executable(vulkan_context_tests test_vulkan_context.cpp)
 target_link_libraries(vulkan_context_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(vulkan_context_tests)
+
+add_executable(static_image_capture_tests test_static_image_capture.cpp)
+target_link_libraries(static_image_capture_tests PRIVATE shaderglass_core gtest_main)
+target_compile_definitions(static_image_capture_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+gtest_discover_tests(static_image_capture_tests)
