@@ -28,3 +28,7 @@ target_link_libraries(static_image_capture_tests PRIVATE shaderglass_core gtest_
 target_compile_definitions(static_image_capture_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 gtest_discover_tests(static_image_capture_tests)
+
+add_executable(texture_upload_tests test_texture_upload.cpp)
+target_link_libraries(texture_upload_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(texture_upload_tests)

@@ -8,6 +8,7 @@ add_library(shaderglass_core STATIC
     src/render/VulkanContext.cpp
     src/render/Swapchain.cpp
     src/render/RenderEngine.cpp
+    src/render/Texture.cpp
     src/capture/StaticImageCapture.cpp
 )
 target_include_directories(shaderglass_core
