@@ -6,6 +6,7 @@
 #include "render/ShaderPipeline.h"
 #include "render/HeadlessOutput.h"
 #include "capture/StaticImageCapture.h"
+#include "capture/PortalCaptureSession.h"
 #include "util/Logging.h"
 #include "builtin_shaders.h"
 #include "ShaderGC.h"
@@ -21,6 +22,7 @@ struct Args {
     std::string compilePreset;
     std::string preset;
     uint32_t width = 1280, height = 720;
+    bool debugPortal = false;
 };
 
 static Args parseArgs(int argc, char** argv) {
@@ -35,6 +37,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--height" && i+1 < argc) a.height = (uint32_t)std::stoul(argv[++i]);
         else if (s == "--compile-preset" && i+1 < argc) a.compilePreset = argv[++i];
         else if (s == "--preset" && i+1 < argc) a.preset = argv[++i];
+        else if (s == "--debug-portal") a.debugPortal = true;
         else if (a.input.empty())               a.input  = s;  // bare positional input
     }
     return a;
@@ -179,9 +182,21 @@ static int runCompilePreset(const Args& a) {
     return 0;
 }
 
+static int runDebugPortal(const Args&) {
+    PortalCaptureSession session;
+    auto sources = session.selectSource();
+    LOG_INFO("portal session: %zu source(s) reported", sources.size());
+    for (auto& s : sources) {
+        LOG_INFO("  source id=%s name=%s", s.id.c_str(), s.displayName.c_str());
+    }
+    LOG_INFO("pipewire fd=%d node=%u", session.pipewireFd(), session.pipewireNodeId());
+    return 0;
+}
+
 int main(int argc, char** argv) {
     Args a = parseArgs(argc, argv);
     try {
+        if (a.debugPortal) return runDebugPortal(a);
         if (!a.compilePreset.empty()) return runCompilePreset(a);
         return a.headless ? runHeadless(a) : runWindowed(a);
     } catch (const std::exception& e) {
