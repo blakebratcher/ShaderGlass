@@ -1,8 +1,10 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 class SdlWindow {
 public:
@@ -20,6 +22,9 @@ public:
     bool pollEvents();
 
     void getDrawableSize(uint32_t& w, uint32_t& h) const;
+
+    std::vector<const char*> requiredVulkanInstanceExtensions() const;
+    VkSurfaceKHR createVulkanSurface(VkInstance inst) const;
 
 private:
     SDL_Window* m_window = nullptr;

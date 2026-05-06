@@ -36,3 +36,22 @@ void SdlWindow::getDrawableSize(uint32_t& w, uint32_t& h) const {
     w = static_cast<uint32_t>(iw);
     h = static_cast<uint32_t>(ih);
 }
+
+std::vector<const char*> SdlWindow::requiredVulkanInstanceExtensions() const {
+    Uint32 count = 0;
+    const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
+    if (!names) {
+        throw std::runtime_error(std::string("SDL_Vulkan_GetInstanceExtensions failed: ")
+                                 + SDL_GetError());
+    }
+    return { names, names + count };
+}
+
+VkSurfaceKHR SdlWindow::createVulkanSurface(VkInstance inst) const {
+    VkSurfaceKHR surf = VK_NULL_HANDLE;
+    if (!SDL_Vulkan_CreateSurface(m_window, inst, nullptr, &surf)) {
+        throw std::runtime_error(std::string("SDL_Vulkan_CreateSurface failed: ")
+                                 + SDL_GetError());
+    }
+    return surf;
+}

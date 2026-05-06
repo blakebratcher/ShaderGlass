@@ -5,6 +5,8 @@ add_library(shaderglass_core STATIC
     src/output/SdlWindow.cpp
     src/util/Logging.cpp
     src/render/VulkanContext.cpp
+    src/render/Swapchain.cpp
+    src/render/RenderEngine.cpp
 )
 target_include_directories(shaderglass_core PUBLIC src)
 target_link_libraries(shaderglass_core PUBLIC
