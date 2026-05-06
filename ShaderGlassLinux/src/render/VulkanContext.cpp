@@ -10,11 +10,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageTypeFlagsEXT,
     const VkDebugUtilsMessengerCallbackDataEXT* data,
     void*) {
-    if (sev >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        LOG_WARN("[vk] %s", data->pMessage);
-    } else {
-        LOG_INFO("[vk] %s", data->pMessage);
-    }
+    // Severity filter on the messenger only allows WARNING and ERROR through, so
+    // every callback invocation here is at least WARNING.
+    LOG_WARN("[vk] %s", data->pMessage);
+    (void)sev;
     return VK_FALSE;
 }
 
@@ -95,7 +94,12 @@ void VulkanContext::createInstance(bool enableValidation, bool headless,
                 VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                 VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
             dci.pfnUserCallback = debugCallback;
-            fn(m_instance, &dci, nullptr, &m_debug);
+            VkResult dr = fn(m_instance, &dci, nullptr, &m_debug);
+            if (dr != VK_SUCCESS) {
+                LOG_WARN("vkCreateDebugUtilsMessengerEXT failed: %s — continuing without "
+                         "validation messages.", vkResultStr(dr));
+                m_debug = VK_NULL_HANDLE;
+            }
         }
     }
 }
