@@ -2,9 +2,12 @@
 #include <vulkan/vulkan.h>
 #include <array>
 #include <cstdint>
+#include <functional>
 
 class VulkanContext;
 class Swapchain;
+class Texture;
+class ShaderPipeline;
 
 class RenderEngine {
 public:
@@ -17,8 +20,12 @@ public:
     RenderEngine& operator=(RenderEngine&&)      = delete;
 
     void renderClear(float r, float g, float b, float a);
+    void renderTexture(const Texture& src, ShaderPipeline& pipeline);
 
 private:
+    void renderFrame(VkClearValue clearColor,
+                     const std::function<void(VkCommandBuffer, VkExtent2D)>& body);
+
     static constexpr uint32_t kFramesInFlight = 2;
 
     VulkanContext& m_ctx;

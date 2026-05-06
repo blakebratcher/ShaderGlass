@@ -1,6 +1,8 @@
 #include "RenderEngine.h"
 #include "VulkanContext.h"
 #include "Swapchain.h"
+#include "Texture.h"
+#include "ShaderPipeline.h"
 #include "../util/VkCheck.h"
 
 RenderEngine::RenderEngine(VulkanContext& ctx, Swapchain& sc) : m_ctx(ctx), m_sc(sc) {
@@ -54,7 +56,8 @@ static void transitionImage(VkCommandBuffer cb, VkImage img,
     vkCmdPipelineBarrier2(cb, &dep);
 }
 
-void RenderEngine::renderClear(float r, float g, float b, float a) {
+void RenderEngine::renderFrame(VkClearValue clearColor,
+                               const std::function<void(VkCommandBuffer, VkExtent2D)>& body) {
     VkFence fence = m_inFlight[m_frame];
     vkWaitForFences(m_ctx.device(), 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences  (m_ctx.device(), 1, &fence);
@@ -64,10 +67,8 @@ void RenderEngine::renderClear(float r, float g, float b, float a) {
         m_ctx.device(), m_sc.handle(), UINT64_MAX,
         m_imgAvail[m_frame], VK_NULL_HANDLE, &idx);
     if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
-        VK_CHECK(acquireResult);  // throws on real errors (e.g., OUT_OF_DATE)
+        VK_CHECK(acquireResult);
     }
-    // VK_SUBOPTIMAL_KHR: image was acquired; render this frame anyway. M1 doesn't
-    // recreate the swapchain — that arrives in a later milestone.
 
     VkCommandBuffer cb = m_cmd[m_frame];
     vkResetCommandBuffer(cb, 0);
@@ -86,7 +87,7 @@ void RenderEngine::renderClear(float r, float g, float b, float a) {
     color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = {{ r, g, b, a }};
+    color.clearValue  = clearColor;
 
     VkRenderingInfo rinfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
     rinfo.renderArea           = { {0,0}, m_sc.extent() };
@@ -95,6 +96,7 @@ void RenderEngine::renderClear(float r, float g, float b, float a) {
     rinfo.pColorAttachments    = &color;
 
     vkCmdBeginRendering(cb, &rinfo);
+    body(cb, m_sc.extent());
     vkCmdEndRendering(cb);
 
     transitionImage(cb, m_sc.image(idx),
@@ -131,4 +133,18 @@ void RenderEngine::renderClear(float r, float g, float b, float a) {
     vkQueuePresentKHR(m_ctx.graphicsQueue(), &pi);
 
     m_frame = (m_frame + 1) % kFramesInFlight;
+}
+
+void RenderEngine::renderClear(float r, float g, float b, float a) {
+    VkClearValue cv{};
+    cv.color = {{ r, g, b, a }};
+    renderFrame(cv, [](VkCommandBuffer, VkExtent2D) {});
+}
+
+void RenderEngine::renderTexture(const Texture& src, ShaderPipeline& pipeline) {
+    VkClearValue cv{};
+    cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
+        pipeline.bindAndDraw(cb, src, ext);
+    });
 }
