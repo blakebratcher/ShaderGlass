@@ -11,6 +11,7 @@ SdlWindow::SdlWindow(const std::string& title, uint32_t width, uint32_t height) 
         static_cast<int>(width), static_cast<int>(height),
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!m_window) {
+        SDL_Quit();
         throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
     }
 }

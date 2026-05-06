@@ -11,6 +11,8 @@ public:
 
     SdlWindow(const SdlWindow&)            = delete;
     SdlWindow& operator=(const SdlWindow&) = delete;
+    SdlWindow(SdlWindow&&)                 = delete;
+    SdlWindow& operator=(SdlWindow&&)      = delete;
 
     SDL_Window* handle() const { return m_window; }
 
