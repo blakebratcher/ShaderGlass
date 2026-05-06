@@ -38,5 +38,6 @@ TEST(ShaderGCSpirv, CompilePresetEmitsValidSpirvOnLinux) {
     EXPECT_EQ(vertexMagic,   SPIRV_MAGIC) << "vertex stage did not emit SPIR-V";
     EXPECT_EQ(fragmentMagic, SPIRV_MAGIC) << "fragment stage did not emit SPIR-V";
 
+    preset->MakeDynamic();   // flips Dynamic=true so the destructor frees the malloc'd SPIR-V buffers
     delete preset;
 }
