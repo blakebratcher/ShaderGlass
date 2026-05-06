@@ -26,4 +26,8 @@ struct CapturedFrame {
     // DmaBuf:
     int            fd     = -1;
     size_t         offset = 0;
+
+    // Opaque handle the producing CaptureBackend uses to identify the underlying
+    // buffer when release(frame) is called. Treat as opaque on the consumer side.
+    void* sessionHandle = nullptr;
 };
