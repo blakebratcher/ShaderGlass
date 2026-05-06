@@ -4,6 +4,14 @@
 
 #include <dbus/dbus.h>
 #include <pipewire/pipewire.h>
+#include <spa/param/video/format-utils.h>
+#include <spa/param/video/raw.h>
+#include <spa/utils/result.h>
+#include <spa/buffer/buffer.h>
+#include <spa/buffer/meta.h>
+#include <pipewire/properties.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 #include <atomic>
 #include <chrono>
@@ -95,6 +103,9 @@ PortalResponse waitForResponse(DBusConnection* bus, const std::string& requestPa
     throw std::runtime_error("portal: Response signal timed out");
 }
 
+struct spa_video_info_raw g_negotiatedFormat{};
+bool                     g_haveFormat = false;
+
 } // namespace
 
 PortalCaptureSession::PortalCaptureSession() {
@@ -143,8 +154,20 @@ void PortalCaptureSession::start(std::function<void(const CapturedFrame&)> onFra
     m_running.store(true);
 }
 
-void PortalCaptureSession::releaseBuffer(void* /*sessionHandle*/) {
-    // Task 8.
+void PortalCaptureSession::releaseBuffer(void* sessionHandle) {
+    if (!sessionHandle || !m_pwStream) return;
+    uint64_t handle = uintptr_t(sessionHandle);
+    pw_buffer* pb = nullptr;
+    {
+        std::lock_guard<std::mutex> g(m_bufferMapMutex);
+        auto it = m_bufferMap.find(handle);
+        if (it == m_bufferMap.end()) return;
+        pb = it->second;
+        m_bufferMap.erase(it);
+    }
+    pw_thread_loop_lock(m_pwLoop);
+    pw_stream_queue_buffer(m_pwStream, pb);
+    pw_thread_loop_unlock(m_pwLoop);
 }
 
 void PortalCaptureSession::stop() {
@@ -353,14 +376,181 @@ void PortalCaptureSession::doPortalHandshake() {
 }
 
 void PortalCaptureSession::initPipeWire() {
-    throw std::runtime_error("PortalCaptureSession::initPipeWire — not yet implemented (Task 8)");
+    pw_init(nullptr, nullptr);
+
+    m_pwLoop = pw_thread_loop_new("shaderglass-pw", nullptr);
+    if (!m_pwLoop) throw std::runtime_error("portal: pw_thread_loop_new failed");
+
+    pw_thread_loop_lock(m_pwLoop);
+    m_pwContext = pw_context_new(pw_thread_loop_get_loop(m_pwLoop), nullptr, 0);
+    if (!m_pwContext) {
+        pw_thread_loop_unlock(m_pwLoop);
+        throw std::runtime_error("portal: pw_context_new failed");
+    }
+
+    // Connect via the fd OpenPipeWireRemote handed us. fcntl-dup so PipeWire
+    // gets its own descriptor and we keep a reference to close on teardown.
+    m_pwCore = pw_context_connect_fd(m_pwContext,
+                                     fcntl(m_pipewireFd, F_DUPFD_CLOEXEC, 5),
+                                     nullptr, 0);
+    if (!m_pwCore) {
+        pw_thread_loop_unlock(m_pwLoop);
+        throw std::runtime_error("portal: pw_context_connect_fd failed");
+    }
+
+    auto* props = pw_properties_new(
+        PW_KEY_MEDIA_TYPE,     "Video",
+        PW_KEY_MEDIA_CATEGORY, "Capture",
+        PW_KEY_MEDIA_ROLE,     "Screen",
+        nullptr);
+    m_pwStream = pw_stream_new(m_pwCore, "shaderglass-capture", props);
+    if (!m_pwStream) {
+        pw_thread_loop_unlock(m_pwLoop);
+        throw std::runtime_error("portal: pw_stream_new failed");
+    }
+
+    static const struct pw_stream_events kStreamEvents = {
+        .version = PW_VERSION_STREAM_EVENTS,
+        .destroy        = nullptr,
+        .state_changed  = nullptr,
+        .control_info   = nullptr,
+        .io_changed     = nullptr,
+        .param_changed  = &PortalCaptureSession::onParamChangedThunk,
+        .add_buffer     = nullptr,
+        .remove_buffer  = nullptr,
+        .process        = &PortalCaptureSession::onProcessThunk,
+        .drained        = nullptr,
+        .command        = nullptr,
+        .trigger_done   = nullptr,
+    };
+    static struct spa_hook listener_hook;  // local-static; one stream per session
+    pw_stream_add_listener(m_pwStream, &listener_hook, &kStreamEvents, this);
+
+    // Build SPA params: prefer BGRA, then RGBA. CPU buffers only for now.
+    uint8_t buf[1024];
+    struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+    const struct spa_pod* params[2];
+
+    auto buildFormatPod = [&](spa_video_format fmt) -> const spa_pod* {
+        spa_rectangle minR = SPA_RECTANGLE(1, 1);
+        spa_rectangle maxR = SPA_RECTANGLE(8192, 8192);
+        spa_rectangle defR = SPA_RECTANGLE(1920, 1080);
+        spa_fraction  minF = SPA_FRACTION(0, 1);
+        spa_fraction  maxF = SPA_FRACTION(240, 1);
+        spa_fraction  defF = SPA_FRACTION(60, 1);
+        return (const spa_pod*)spa_pod_builder_add_object(&b,
+            SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
+            SPA_FORMAT_mediaType,    SPA_POD_Id(SPA_MEDIA_TYPE_video),
+            SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+            SPA_FORMAT_VIDEO_format, SPA_POD_Id(fmt),
+            SPA_FORMAT_VIDEO_size,
+                SPA_POD_CHOICE_RANGE_Rectangle(&defR, &minR, &maxR),
+            SPA_FORMAT_VIDEO_framerate,
+                SPA_POD_CHOICE_RANGE_Fraction(&defF, &minF, &maxF));
+    };
+
+    params[0] = buildFormatPod(SPA_VIDEO_FORMAT_BGRA);
+    params[1] = buildFormatPod(SPA_VIDEO_FORMAT_RGBA);
+
+    int rc = pw_stream_connect(m_pwStream,
+        PW_DIRECTION_INPUT, m_pipewireNodeId,
+        (pw_stream_flags)(PW_STREAM_FLAG_AUTOCONNECT |
+                          PW_STREAM_FLAG_MAP_BUFFERS),
+        params, 2);
+    pw_thread_loop_unlock(m_pwLoop);
+
+    if (rc < 0) throw std::runtime_error(std::string("portal: pw_stream_connect failed: ")
+                                         + spa_strerror(rc));
+
+    if (pw_thread_loop_start(m_pwLoop) < 0)
+        throw std::runtime_error("portal: pw_thread_loop_start failed");
+
+    LOG_INFO("portal: pipewire stream connected (node=%u)", m_pipewireNodeId);
 }
 
 void PortalCaptureSession::teardownPipeWire() {
-    // Stub for Task 8.
+    if (m_pwLoop) {
+        pw_thread_loop_stop(m_pwLoop);
+    }
+    if (m_pwStream) { pw_stream_destroy(m_pwStream); m_pwStream = nullptr; }
+    if (m_pwCore)   { pw_core_disconnect(m_pwCore);  m_pwCore   = nullptr; }
+    if (m_pwContext){ pw_context_destroy(m_pwContext); m_pwContext = nullptr; }
+    if (m_pwLoop)   { pw_thread_loop_destroy(m_pwLoop); m_pwLoop  = nullptr; }
+    pw_deinit();
 }
 
-void PortalCaptureSession::onProcessThunk(void* /*userdata*/) {}
-void PortalCaptureSession::onParamChangedThunk(void* /*userdata*/, uint32_t /*id*/, const struct spa_pod* /*param*/) {}
-void PortalCaptureSession::onProcess() {}
-void PortalCaptureSession::onParamChanged(uint32_t /*id*/, const struct spa_pod* /*param*/) {}
+void PortalCaptureSession::onParamChangedThunk(void* userdata, uint32_t id, const struct spa_pod* param) {
+    static_cast<PortalCaptureSession*>(userdata)->onParamChanged(id, param);
+}
+void PortalCaptureSession::onProcessThunk(void* userdata) {
+    static_cast<PortalCaptureSession*>(userdata)->onProcess();
+}
+
+void PortalCaptureSession::onParamChanged(uint32_t id, const struct spa_pod* param) {
+    if (!param || id != SPA_PARAM_Format) return;
+
+    uint32_t mediaType = 0, mediaSubtype = 0;
+    if (spa_format_parse(param, &mediaType, &mediaSubtype) < 0) return;
+    if (mediaType != SPA_MEDIA_TYPE_video || mediaSubtype != SPA_MEDIA_SUBTYPE_raw) return;
+
+    if (spa_format_video_raw_parse(param, &g_negotiatedFormat) < 0) {
+        LOG_WARN("portal: failed to parse negotiated video format");
+        return;
+    }
+    g_haveFormat = true;
+    LOG_INFO("portal: negotiated format=%d size=%dx%d framerate=%d/%d",
+             g_negotiatedFormat.format,
+             g_negotiatedFormat.size.width, g_negotiatedFormat.size.height,
+             g_negotiatedFormat.framerate.num, g_negotiatedFormat.framerate.denom);
+
+    if (g_negotiatedFormat.format != SPA_VIDEO_FORMAT_BGRA &&
+        g_negotiatedFormat.format != SPA_VIDEO_FORMAT_RGBA) {
+        LOG_ERROR("portal: unsupported negotiated format %d (want BGRA/RGBA)",
+                  g_negotiatedFormat.format);
+        // Cannot throw from callback context. The next on_process will be
+        // a no-op and acquireFrame() will keep returning nullopt.
+    }
+}
+
+void PortalCaptureSession::onProcess() {
+    if (!g_haveFormat) return;
+
+    pw_buffer* pb = pw_stream_dequeue_buffer(m_pwStream);
+    if (!pb) return;
+
+    spa_buffer* sb = pb->buffer;
+    if (sb->n_datas == 0) {
+        pw_stream_queue_buffer(m_pwStream, pb);
+        return;
+    }
+    spa_data& d0 = sb->datas[0];
+    if (d0.type != SPA_DATA_MemPtr && d0.type != SPA_DATA_MemFd) {
+        // DMA-BUF arrives in Task 11. Until then, drop.
+        pw_stream_queue_buffer(m_pwStream, pb);
+        return;
+    }
+    if (!d0.data) {
+        pw_stream_queue_buffer(m_pwStream, pb);
+        return;
+    }
+
+    uint64_t handle;
+    {
+        std::lock_guard<std::mutex> g(m_bufferMapMutex);
+        handle = m_nextHandleId++;
+        m_bufferMap[handle] = pb;
+    }
+
+    CapturedFrame frame;
+    frame.kind   = CapturedFrame::Kind::CpuBuffer;
+    frame.width  = g_negotiatedFormat.size.width;
+    frame.height = g_negotiatedFormat.size.height;
+    frame.fourcc = (g_negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
+                   ? 0x34325241 /* AR24 = ARGB8888 little-endian */
+                   : 0x34324241 /* AB24 = ABGR8888 (RGBA in mem) */;
+    frame.stride = d0.chunk ? d0.chunk->stride : (frame.width * 4);
+    frame.data   = static_cast<const uint8_t*>(d0.data);
+    frame.sessionHandle = reinterpret_cast<void*>(uintptr_t(handle));
+
+    if (m_onFrame) m_onFrame(frame);
+}

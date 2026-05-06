@@ -5,7 +5,9 @@
 #include "render/Texture.h"
 #include "render/ShaderPipeline.h"
 #include "render/HeadlessOutput.h"
+#include "capture/CaptureBackend.h"
 #include "capture/StaticImageCapture.h"
+#include "capture/WaylandCapture.h"
 #include "capture/PortalCaptureSession.h"
 #include "util/Logging.h"
 #include "builtin_shaders.h"
@@ -13,8 +15,11 @@
 #include "ShaderCache.h"
 #include "PresetDef.h"
 #include <stb_image_write.h>
+#include <chrono>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 
 struct Args {
     bool headless = false;
@@ -23,6 +28,7 @@ struct Args {
     std::string preset;
     uint32_t width = 1280, height = 720;
     bool debugPortal = false;
+    std::string captureKind;
 };
 
 static Args parseArgs(int argc, char** argv) {
@@ -38,6 +44,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--compile-preset" && i+1 < argc) a.compilePreset = argv[++i];
         else if (s == "--preset" && i+1 < argc) a.preset = argv[++i];
         else if (s == "--debug-portal") a.debugPortal = true;
+        else if (s == "--capture" && i+1 < argc) a.captureKind = argv[++i];
         else if (a.input.empty())               a.input  = s;  // bare positional input
     }
     return a;
@@ -122,8 +129,8 @@ static int runHeadless(const Args& a) {
 }
 
 static int runWindowed(const Args& a) {
-    if (a.input.empty()) {
-        LOG_ERROR("usage: shaderglass <input.png>  OR  shaderglass --headless --input X --output Y --width N --height M");
+    if (a.input.empty() && a.captureKind.empty()) {
+        LOG_ERROR("usage: shaderglass <input.png>  OR  shaderglass --capture wayland-screen  OR  shaderglass --headless --input X --output Y --width N --height M");
         return 2;
     }
     SdlWindow window("ShaderGlass (Linux M1)", 1280, 720);
@@ -138,14 +145,27 @@ static int runWindowed(const Args& a) {
     window.getDrawableSize(w, h);
     Swapchain swapchain(ctx, surface, w, h);
 
-    StaticImageCapture cap(a.input);
-    cap.selectSource(cap.enumerateSources()[0]);
-    auto frame = cap.acquireFrame();
-    if (!frame) { LOG_ERROR("could not load %s", a.input.c_str()); return 3; }
+    std::unique_ptr<CaptureBackend> cap;
+    if (a.captureKind == "wayland-screen") {
+        cap = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>());
+    } else {
+        cap = std::make_unique<StaticImageCapture>(a.input);
+    }
+    cap->selectSource(cap->enumerateSources()[0]);
+
+    std::optional<CapturedFrame> frame;
+    {
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline) {
+            frame = cap->acquireFrame();
+            if (frame) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        }
+    }
+    if (!frame) { LOG_ERROR("no frame within 5s"); return 3; }
 
     Texture sourceTex(ctx, frame->width, frame->height, VK_FORMAT_R8G8B8A8_UNORM);
     sourceTex.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
-
     PipelineSource ps = buildPipelineSource(a);
     {
         ShaderPipeline pipeline(ctx, ps.vert, ps.vertSize, ps.frag, ps.fragSize,
@@ -153,8 +173,17 @@ static int runWindowed(const Args& a) {
 
         RenderEngine engine(ctx, swapchain);
         LOG_INFO("Rendering %s (%ux%u). Close window or Esc to exit.",
-                 a.input.c_str(), frame->width, frame->height);
+                 a.captureKind.empty() ? a.input.c_str() : a.captureKind.c_str(),
+                 frame->width, frame->height);
+
+        cap->release(*frame);  // first frame already uploaded
+
         while (window.pollEvents()) {
+            auto f = cap->acquireFrame();
+            if (f) {
+                sourceTex.uploadFromCpu(f->data, f->stride * f->height, f->stride);
+                cap->release(*f);
+            }
             engine.renderTexture(sourceTex, pipeline);
         }
     }
