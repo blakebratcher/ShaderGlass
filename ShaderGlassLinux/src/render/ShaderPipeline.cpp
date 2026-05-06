@@ -2,7 +2,6 @@
 #include "VulkanContext.h"
 #include "Texture.h"
 #include "../util/VkCheck.h"
-#include <stdexcept>
 
 static VkShaderModule makeModule(VkDevice dev, const void* code, size_t size) {
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -97,10 +96,11 @@ ShaderPipeline::ShaderPipeline(VulkanContext& ctx,
     gpi.pColorBlendState    = &cb;
     gpi.pDynamicState       = &ds;
     gpi.layout              = m_pipelineLayout;
-    VK_CHECK(vkCreateGraphicsPipelines(ctx.device(), VK_NULL_HANDLE, 1, &gpi, nullptr, &m_pipeline));
-
+    VkResult pipelineResult =
+        vkCreateGraphicsPipelines(ctx.device(), VK_NULL_HANDLE, 1, &gpi, nullptr, &m_pipeline);
     vkDestroyShaderModule(ctx.device(), vmod, nullptr);
     vkDestroyShaderModule(ctx.device(), fmod, nullptr);
+    VK_CHECK(pipelineResult);
 }
 
 ShaderPipeline::~ShaderPipeline() {
