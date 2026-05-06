@@ -12,3 +12,9 @@ target_link_libraries(shadergc_portability_tests PRIVATE shadergc gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(shadergc_portability_tests)
+
+add_executable(shadergc_spirv_tests test_shadergc_spirv.cpp)
+target_link_libraries(shadergc_spirv_tests PRIVATE shadergc gtest_main)
+target_compile_definitions(shadergc_spirv_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+gtest_discover_tests(shadergc_spirv_tests)

@@ -17,6 +17,9 @@ GNU General Public License v3.0
 
 #include "json.hpp"
 
+#include <cstdlib>
+#include <cstring>
+
 using namespace std;
 using namespace nlohmann;
 
@@ -39,6 +42,9 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
     // convert GLSL to SPIRV
     auto vertexSPIRV   = GLSL::GenerateSPIRV(def.vertexSource.c_str(), false, log, warn);
     auto fragmentSPIRV = GLSL::GenerateSPIRV(def.fragmentSource.c_str(), true, log, warn);
+
+#ifdef _MSC_VER
+    // Windows: SPIRV → HLSL → DXBC (DirectX 11 consumes DXBC).
 
     // convert SPIRV to HLSL and reflect
     auto vertexHLSL   = SPIRV::GenerateHLSL(vertexSPIRV, false, log, warn);
@@ -79,7 +85,7 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
                        " bytes, max " + std::to_string(SecurityLimits::MAX_SHADER_BYTECODE_SIZE) + ")");
     }
 
-    // map declared to reflected parameters
+    // map declared to reflected parameters (HLSL reflection metadata)
     std::vector<SourceShaderSampler> textures;
     def.params = LookupParams(def.params, textures, fragmentHLSL.second);
 
@@ -104,6 +110,62 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
     sd.FragmentByteCode = CopyVector(fragmentDXBC);
     sd.FragmentLength   = fragmentDXBC.size();
     sd.Name             = def.input.filename().string();
+#else
+    // Linux/Vulkan: SPIR-V is what the runtime consumes — store directly,
+    // bypassing the SPIRV→HLSL→DXBC tail entirely. Reflection that the
+    // Windows path derives from spirv-cross JSON metadata is not yet wired
+    // up here; the runtime will reflect from SPIR-V directly in M4.
+    // ShaderDef destructor calls free() when Dynamic == true, so allocate
+    // with malloc().
+    const size_t vSize = vertexSPIRV.size()   * sizeof(uint32_t);
+    const size_t fSize = fragmentSPIRV.size() * sizeof(uint32_t);
+
+    if(vSize > SecurityLimits::MAX_SHADER_BYTECODE_SIZE)
+    {
+        throw file_error("Security: Vertex shader SPIR-V too large (" + std::to_string(vSize) +
+                       " bytes, max " + std::to_string(SecurityLimits::MAX_SHADER_BYTECODE_SIZE) + ")");
+    }
+    if(fSize > SecurityLimits::MAX_SHADER_BYTECODE_SIZE)
+    {
+        throw file_error("Security: Fragment shader SPIR-V too large (" + std::to_string(fSize) +
+                       " bytes, max " + std::to_string(SecurityLimits::MAX_SHADER_BYTECODE_SIZE) + ")");
+    }
+
+    if(def.params.size() > SecurityLimits::MAX_PARAMETERS)
+    {
+        throw file_error("Security: Too many shader parameters (" + std::to_string(def.params.size()) +
+                       ", max " + std::to_string(SecurityLimits::MAX_PARAMETERS) + ")");
+    }
+
+    // Allocate with malloc so ShaderDef::~ShaderDef (which calls free()) can
+    // release these buffers when Dynamic is set later by PresetDef::MakeDynamic.
+    // We leave Dynamic = false here so return-by-value copies of this ShaderDef
+    // into the PresetDef vector don't double-free; this mirrors the Windows
+    // path's ownership shape, where MakeDynamic is the single point that opts
+    // a preset into freeing-on-destruct.
+    auto* vb = static_cast<uint8_t*>(std::malloc(vSize));
+    auto* fb = static_cast<uint8_t*>(std::malloc(fSize));
+    if(!vb || !fb)
+    {
+        std::free(vb);
+        std::free(fb);
+        throw std::runtime_error("Out of memory allocating SPIR-V bytecode buffers");
+    }
+    if(vSize) std::memcpy(vb, vertexSPIRV.data(),   vSize);
+    if(fSize) std::memcpy(fb, fragmentSPIRV.data(), fSize);
+
+    std::vector<SourceShaderSampler> textures; // populated by reflection in M4
+
+    ShaderDef sd;
+    sd.Format           = CopyString(def.format);
+    sd.VertexSource     = nullptr;
+    sd.VertexByteCode   = vb;
+    sd.VertexLength     = vSize;
+    sd.FragmentSource   = nullptr;
+    sd.FragmentByteCode = fb;
+    sd.FragmentLength   = fSize;
+    sd.Name             = def.input.filename().string();
+#endif
 
     for(const auto& p : def.params)
     {
