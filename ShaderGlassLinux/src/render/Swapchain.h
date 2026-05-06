@@ -9,6 +9,9 @@ class Swapchain {
 public:
     Swapchain(VulkanContext& ctx, VkSurfaceKHR surface,
               uint32_t width, uint32_t height);
+    // Precondition: caller must ensure the device is idle (e.g. via vkDeviceWaitIdle)
+    // before destroying this object. RenderEngine's destructor calls vkDeviceWaitIdle,
+    // so as long as RenderEngine is destroyed before Swapchain, this holds.
     ~Swapchain();
 
     Swapchain(const Swapchain&)            = delete;

@@ -12,9 +12,13 @@ Swapchain::Swapchain(VulkanContext& ctx, VkSurfaceKHR surface,
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx.physicalDevice(), surface, &caps);
 
     uint32_t fc = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice(), surface, &fc, nullptr);
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice(), surface, &fc, nullptr));
     std::vector<VkSurfaceFormatKHR> fmts(fc);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice(), surface, &fc, fmts.data());
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice(), surface, &fc, fmts.data()));
+
+    if (fmts.empty()) {
+        throw std::runtime_error("No surface formats available for the device/surface combo");
+    }
 
     VkSurfaceFormatKHR pick = fmts[0];
     for (auto& f : fmts) {
@@ -50,9 +54,9 @@ Swapchain::Swapchain(VulkanContext& ctx, VkSurfaceKHR surface,
     VK_CHECK(vkCreateSwapchainKHR(ctx.device(), &ci, nullptr, &m_swapchain));
 
     uint32_t ic = 0;
-    vkGetSwapchainImagesKHR(ctx.device(), m_swapchain, &ic, nullptr);
+    VK_CHECK(vkGetSwapchainImagesKHR(ctx.device(), m_swapchain, &ic, nullptr));
     m_images.resize(ic);
-    vkGetSwapchainImagesKHR(ctx.device(), m_swapchain, &ic, m_images.data());
+    VK_CHECK(vkGetSwapchainImagesKHR(ctx.device(), m_swapchain, &ic, m_images.data()));
 
     m_views.resize(ic);
     for (uint32_t i = 0; i < ic; ++i) {

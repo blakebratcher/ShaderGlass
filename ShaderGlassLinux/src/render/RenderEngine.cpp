@@ -60,8 +60,14 @@ void RenderEngine::renderClear(float r, float g, float b, float a) {
     vkResetFences  (m_ctx.device(), 1, &fence);
 
     uint32_t idx = 0;
-    VK_CHECK(vkAcquireNextImageKHR(m_ctx.device(), m_sc.handle(), UINT64_MAX,
-                                   m_imgAvail[m_frame], VK_NULL_HANDLE, &idx));
+    VkResult acquireResult = vkAcquireNextImageKHR(
+        m_ctx.device(), m_sc.handle(), UINT64_MAX,
+        m_imgAvail[m_frame], VK_NULL_HANDLE, &idx);
+    if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
+        VK_CHECK(acquireResult);  // throws on real errors (e.g., OUT_OF_DATE)
+    }
+    // VK_SUBOPTIMAL_KHR: image was acquired; render this frame anyway. M1 doesn't
+    // recreate the swapchain — that arrives in a later milestone.
 
     VkCommandBuffer cb = m_cmd[m_frame];
     vkResetCommandBuffer(cb, 0);
