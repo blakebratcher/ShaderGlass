@@ -35,10 +35,15 @@ void WaylandCapture::release(CapturedFrame& f) {
 }
 
 void WaylandCapture::onFrame(const CapturedFrame& f) {
-    std::lock_guard<std::mutex> g(m_slotMutex);
-    if (m_latest && m_latest->sessionHandle) {
-        // Drop the stale frame back to the producer.
-        m_session->releaseBuffer(m_latest->sessionHandle);
+    void* stale = nullptr;
+    {
+        std::lock_guard<std::mutex> g(m_slotMutex);
+        if (m_latest && m_latest->sessionHandle) {
+            stale = m_latest->sessionHandle;
+        }
+        m_latest = f;
     }
-    m_latest = f;
+    // Release the stale frame outside the slot mutex so a future blocking
+    // releaseBuffer (or one that re-enters onFrame) doesn't deadlock.
+    if (stale) m_session->releaseBuffer(stale);
 }

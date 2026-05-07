@@ -166,7 +166,11 @@ static int runWindowed(const Args& a) {
     if (!frame) { LOG_ERROR("no frame within 5s"); return 3; }
 
     Texture sourceTex(ctx, frame->width, frame->height, VK_FORMAT_R8G8B8A8_UNORM);
-    sourceTex.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
+    if (frame->kind == CapturedFrame::Kind::CpuBuffer) {
+        sourceTex.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
+    }
+    // For DMA-BUF first frames, sourceTex stays uninitialized for one iteration;
+    // the inner loop branches on f->kind so this is fine.
     PipelineSource ps = buildPipelineSource(a);
     {
         ShaderPipeline pipeline(ctx, ps.vert, ps.vertSize, ps.frag, ps.fragSize,

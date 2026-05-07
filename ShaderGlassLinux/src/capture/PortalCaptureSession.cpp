@@ -105,13 +105,18 @@ PortalResponse waitForResponse(DBusConnection* bus, const std::string& requestPa
     throw std::runtime_error("portal: Response signal timed out");
 }
 
-struct spa_video_info_raw g_negotiatedFormat{};
-bool                     g_haveFormat = false;
-
 } // namespace
+
+// Per-instance PipeWire state — kept here because it pulls in SPA headers.
+struct PortalCaptureSession::PipeWireState {
+    struct spa_video_info_raw negotiatedFormat{};
+    bool                      haveFormat = false;
+    struct spa_hook           listenerHook{};
+};
 
 PortalCaptureSession::PortalCaptureSession(VulkanContext* vulkanCtxForDmaBuf) {
     m_vkCtx = vulkanCtxForDmaBuf;
+    m_pw = std::make_unique<PipeWireState>();
 
     DBusError err; dbus_error_init(&err);
     m_bus = dbus_bus_get(DBUS_BUS_SESSION, &err);
@@ -169,9 +174,16 @@ void PortalCaptureSession::releaseBuffer(void* sessionHandle) {
         pb = it->second;
         m_bufferMap.erase(it);
     }
-    pw_thread_loop_lock(m_pwLoop);
-    pw_stream_queue_buffer(m_pwStream, pb);
-    pw_thread_loop_unlock(m_pwLoop);
+    // pw_thread_loop_lock deadlocks if called from inside the loop thread.
+    // Skip the lock when we're already on the loop thread (i.e., when called
+    // synchronously from WaylandCapture::onFrame on a stale-frame drop).
+    if (m_pwLoop && pw_thread_loop_in_thread(m_pwLoop)) {
+        pw_stream_queue_buffer(m_pwStream, pb);
+    } else if (m_pwLoop) {
+        pw_thread_loop_lock(m_pwLoop);
+        pw_stream_queue_buffer(m_pwStream, pb);
+        pw_thread_loop_unlock(m_pwLoop);
+    }
 }
 
 void PortalCaptureSession::stop() {
@@ -327,11 +339,13 @@ void PortalCaptureSession::doPortalHandshake() {
                        dbus_message_iter_get_arg_type(&var) == DBUS_TYPE_STRING) {
                 const char* v = nullptr; dbus_message_iter_get_basic(&var, &v);
                 if (v) m_restoreToken = v;
-                try {
-                    XdgConfig::writeToken("portal-token", m_restoreToken);
-                    LOG_INFO("portal: persisted restore token");
-                } catch (const std::exception& e) {
-                    LOG_WARN("portal: failed to persist restore token: %s", e.what());
+                if (!m_restoreToken.empty()) {
+                    try {
+                        XdgConfig::writeToken("portal-token", m_restoreToken);
+                        LOG_INFO("portal: persisted restore token");
+                    } catch (const std::exception& e) {
+                        LOG_WARN("portal: failed to persist restore token: %s", e.what());
+                    }
                 }
             }
             dbus_message_iter_next(&rd);
@@ -421,14 +435,13 @@ void PortalCaptureSession::initPipeWire() {
         .io_changed     = nullptr,
         .param_changed  = &PortalCaptureSession::onParamChangedThunk,
         .add_buffer     = nullptr,
-        .remove_buffer  = nullptr,
+        .remove_buffer  = &PortalCaptureSession::onRemoveBufferThunk,
         .process        = &PortalCaptureSession::onProcessThunk,
         .drained        = nullptr,
         .command        = nullptr,
         .trigger_done   = nullptr,
     };
-    static struct spa_hook listener_hook;  // local-static; one stream per session
-    pw_stream_add_listener(m_pwStream, &listener_hook, &kStreamEvents, this);
+    pw_stream_add_listener(m_pwStream, &m_pw->listenerHook, &kStreamEvents, this);
 
     // Build SPA params: prefer BGRA, then RGBA. CPU buffers only for now.
     uint8_t buf[1024];
@@ -489,14 +502,19 @@ void PortalCaptureSession::teardownPipeWire() {
     if (m_pwLoop) {
         pw_thread_loop_stop(m_pwLoop);
     }
+    if (m_pw) m_pw->haveFormat = false;
     {
         std::lock_guard<std::mutex> g(m_dmaCacheMutex);
         if (m_vkCtx) {
             for (auto& [_, perBuf] : m_dmaCache) {
                 if (perBuf.valid) DmaBufImport::destroy(*m_vkCtx, perBuf.imported);
             }
+            for (auto& imp : m_dmaGraveyard) {
+                DmaBufImport::destroy(*m_vkCtx, imp);
+            }
         }
         m_dmaCache.clear();
+        m_dmaGraveyard.clear();
     }
     if (m_pwStream) { pw_stream_destroy(m_pwStream); m_pwStream = nullptr; }
     if (m_pwCore)   { pw_core_disconnect(m_pwCore);  m_pwCore   = nullptr; }
@@ -511,6 +529,9 @@ void PortalCaptureSession::onParamChangedThunk(void* userdata, uint32_t id, cons
 void PortalCaptureSession::onProcessThunk(void* userdata) {
     static_cast<PortalCaptureSession*>(userdata)->onProcess();
 }
+void PortalCaptureSession::onRemoveBufferThunk(void* userdata, struct pw_buffer* buf) {
+    static_cast<PortalCaptureSession*>(userdata)->onRemoveBuffer(buf);
+}
 
 void PortalCaptureSession::onParamChanged(uint32_t id, const struct spa_pod* param) {
     if (!param || id != SPA_PARAM_Format) return;
@@ -519,27 +540,27 @@ void PortalCaptureSession::onParamChanged(uint32_t id, const struct spa_pod* par
     if (spa_format_parse(param, &mediaType, &mediaSubtype) < 0) return;
     if (mediaType != SPA_MEDIA_TYPE_video || mediaSubtype != SPA_MEDIA_SUBTYPE_raw) return;
 
-    if (spa_format_video_raw_parse(param, &g_negotiatedFormat) < 0) {
+    if (spa_format_video_raw_parse(param, &m_pw->negotiatedFormat) < 0) {
         LOG_WARN("portal: failed to parse negotiated video format");
         return;
     }
-    g_haveFormat = true;
+    m_pw->haveFormat = true;
     LOG_INFO("portal: negotiated format=%d size=%dx%d framerate=%d/%d",
-             g_negotiatedFormat.format,
-             g_negotiatedFormat.size.width, g_negotiatedFormat.size.height,
-             g_negotiatedFormat.framerate.num, g_negotiatedFormat.framerate.denom);
+             m_pw->negotiatedFormat.format,
+             m_pw->negotiatedFormat.size.width, m_pw->negotiatedFormat.size.height,
+             m_pw->negotiatedFormat.framerate.num, m_pw->negotiatedFormat.framerate.denom);
 
-    if (g_negotiatedFormat.format != SPA_VIDEO_FORMAT_BGRA &&
-        g_negotiatedFormat.format != SPA_VIDEO_FORMAT_RGBA) {
+    if (m_pw->negotiatedFormat.format != SPA_VIDEO_FORMAT_BGRA &&
+        m_pw->negotiatedFormat.format != SPA_VIDEO_FORMAT_RGBA) {
         LOG_ERROR("portal: unsupported negotiated format %d (want BGRA/RGBA)",
-                  g_negotiatedFormat.format);
+                  m_pw->negotiatedFormat.format);
         // Cannot throw from callback context. The next on_process will be
         // a no-op and acquireFrame() will keep returning nullopt.
     }
 }
 
 void PortalCaptureSession::onProcess() {
-    if (!g_haveFormat) return;
+    if (!m_pw->haveFormat) return;
 
     pw_buffer* pb = pw_stream_dequeue_buffer(m_pwStream);
     if (!pb) return;
@@ -561,16 +582,16 @@ void PortalCaptureSession::onProcess() {
             auto& slot = m_dmaCache[pb];
             if (!slot.valid) {
                 try {
-                    uint64_t modifier = g_negotiatedFormat.modifier;
+                    uint64_t modifier = m_pw->negotiatedFormat.modifier;
                     slot.imported = DmaBufImport::importFd(*m_vkCtx,
                         static_cast<int>(d0.fd),
-                        g_negotiatedFormat.size.width,
-                        g_negotiatedFormat.size.height,
-                        (g_negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
+                        m_pw->negotiatedFormat.size.width,
+                        m_pw->negotiatedFormat.size.height,
+                        (m_pw->negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
                             ? 0x34325241 : 0x34324241,
                         modifier,
                         d0.mapoffset,
-                        d0.chunk ? d0.chunk->stride : g_negotiatedFormat.size.width * 4);
+                        d0.chunk ? d0.chunk->stride : m_pw->negotiatedFormat.size.width * 4);
                     slot.valid = true;
                 } catch (const std::exception& e) {
                     LOG_WARN("portal: DMA-BUF import failed (%s); disabling for session", e.what());
@@ -589,9 +610,9 @@ void PortalCaptureSession::onProcess() {
         }
         CapturedFrame frame;
         frame.kind            = CapturedFrame::Kind::DmaBuf;
-        frame.width           = g_negotiatedFormat.size.width;
-        frame.height          = g_negotiatedFormat.size.height;
-        frame.fourcc          = (g_negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
+        frame.width           = m_pw->negotiatedFormat.size.width;
+        frame.height          = m_pw->negotiatedFormat.size.height;
+        frame.fourcc          = (m_pw->negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
                                 ? 0x34325241 : 0x34324241;
         frame.fd              = static_cast<int>(d0.fd);
         frame.offset          = d0.mapoffset;
@@ -618,9 +639,9 @@ void PortalCaptureSession::onProcess() {
 
     CapturedFrame frame;
     frame.kind   = CapturedFrame::Kind::CpuBuffer;
-    frame.width  = g_negotiatedFormat.size.width;
-    frame.height = g_negotiatedFormat.size.height;
-    frame.fourcc = (g_negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
+    frame.width  = m_pw->negotiatedFormat.size.width;
+    frame.height = m_pw->negotiatedFormat.size.height;
+    frame.fourcc = (m_pw->negotiatedFormat.format == SPA_VIDEO_FORMAT_BGRA)
                    ? 0x34325241 /* AR24 = ARGB8888 little-endian */
                    : 0x34324241 /* AB24 = ABGR8888 (RGBA in mem) */;
     frame.stride = d0.chunk ? d0.chunk->stride : (frame.width * 4);
@@ -628,4 +649,19 @@ void PortalCaptureSession::onProcess() {
     frame.sessionHandle = reinterpret_cast<void*>(uintptr_t(handle));
 
     if (m_onFrame) m_onFrame(frame);
+}
+
+void PortalCaptureSession::onRemoveBuffer(struct pw_buffer* buf) {
+    // pw_buffer* pointers can be reused for new buffers after a buffer is
+    // removed (e.g., on stream renegotiation). Drop the cache entry so the
+    // next dequeue doesn't re-use a stale VkImage. vkDeviceWaitIdle is too
+    // heavy from a PipeWire callback, so move the imported handles into a
+    // graveyard that teardownPipeWire drains.
+    std::lock_guard<std::mutex> g(m_dmaCacheMutex);
+    auto it = m_dmaCache.find(buf);
+    if (it == m_dmaCache.end()) return;
+    if (it->second.valid && m_vkCtx) {
+        m_dmaGraveyard.push_back(std::move(it->second.imported));
+    }
+    m_dmaCache.erase(it);
 }
