@@ -134,7 +134,38 @@ void RealX11CaptureSession::stop() {
 }
 
 std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
-    return std::nullopt;  // Task 10 fills this in.
+    if (m_sourceKind == SourceKind::Unset) return std::nullopt;
+
+    if (!m_haveXShm) {
+        // Slow path covered in Task 14.
+        return std::nullopt;
+    }
+
+    Drawable d = targetDrawable();
+    int srcX = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropX : 0;
+    int srcY = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropY : 0;
+
+    if (!XShmGetImage(m_display, d, m_image, srcX, srcY, AllPlanes)) {
+        // Try one teardown + reallocate at current size in case of transient
+        // X server hiccup. Resize handling is layered on in Task 13.
+        freeSharedImage();
+        allocSharedImage(m_width, m_height);
+        if (!XShmGetImage(m_display, d, m_image, srcX, srcY, AllPlanes)) {
+            return std::nullopt;
+        }
+    }
+
+    X11SessionFrame f;
+    f.data   = reinterpret_cast<const uint8_t*>(m_image->data);
+    f.stride = m_image->bytes_per_line;
+    // On a 32-bit TrueColor visual the in-memory layout is BGRA, which is
+    // DRM_FORMAT_ARGB8888 (= 0x34325241). If we ever encounter another
+    // visual, fourcc_to_vk() will return VK_FORMAT_UNDEFINED and main.cpp
+    // will exit cleanly.
+    f.fourcc = 0x34325241;
+    f.width  = m_width;
+    f.height = m_height;
+    return f;
 }
 
 void RealX11CaptureSession::allocSharedImage(uint32_t w, uint32_t h) {
