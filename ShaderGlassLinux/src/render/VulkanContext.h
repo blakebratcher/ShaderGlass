@@ -25,6 +25,8 @@ public:
     VkQueue          graphicsQueue()        const { return m_graphicsQueue; }
     uint32_t         graphicsQueueFamily()  const { return m_graphicsQueueFamily; }
 
+    uint32_t findMemoryType(uint32_t typeBits, VkMemoryPropertyFlags flags) const;
+
 private:
     void createInstance(bool enableValidation, bool headless,
                         const std::vector<const char*>& extraExts);

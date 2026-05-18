@@ -120,6 +120,19 @@ void VulkanContext::pickPhysicalDevice() {
     if (!m_phys) m_phys = devs[0];
 }
 
+uint32_t VulkanContext::findMemoryType(uint32_t typeBits,
+                                       VkMemoryPropertyFlags flags) const {
+    VkPhysicalDeviceMemoryProperties mp{};
+    vkGetPhysicalDeviceMemoryProperties(m_phys, &mp);
+    for (uint32_t i = 0; i < mp.memoryTypeCount; ++i) {
+        if ((typeBits & (1u << i)) &&
+            (mp.memoryTypes[i].propertyFlags & flags) == flags) {
+            return i;
+        }
+    }
+    throw std::runtime_error("VulkanContext::findMemoryType: no match");
+}
+
 void VulkanContext::createDevice(bool headless) {
     uint32_t qn = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(m_phys, &qn, nullptr);
