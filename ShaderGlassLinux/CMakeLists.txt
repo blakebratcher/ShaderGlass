@@ -81,6 +81,23 @@ target_link_libraries(shaderglass_core PUBLIC
 )
 add_dependencies(shaderglass_core builtin_shaders_gen)
 
+# Version stamp injected at configure time. Re-run CMake (or do a clean
+# rebuild) to refresh after new commits — that's the standard --version
+# contract. If git isn't available we degrade to "unknown" rather than fail.
+execute_process(
+    COMMAND git -C ${CMAKE_SOURCE_DIR} rev-parse --short HEAD
+    OUTPUT_VARIABLE  SHADERGLASS_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE GIT_RESULT)
+if(NOT GIT_RESULT EQUAL 0 OR NOT SHADERGLASS_GIT_COMMIT)
+    set(SHADERGLASS_GIT_COMMIT "unknown")
+endif()
+string(TIMESTAMP SHADERGLASS_BUILD_DATE "%Y-%m-%d")
+
 add_executable(shaderglass src/main.cpp)
 target_include_directories(shaderglass PRIVATE ${stb_SOURCE_DIR})
 target_link_libraries(shaderglass PRIVATE shaderglass_core)
+target_compile_definitions(shaderglass PRIVATE
+    SHADERGLASS_GIT_COMMIT="${SHADERGLASS_GIT_COMMIT}"
+    SHADERGLASS_BUILD_DATE="${SHADERGLASS_BUILD_DATE}")

@@ -42,10 +42,26 @@ struct Args {
 
 struct ParseResult {
     Args args;
-    bool wantHelp = false;
-    bool hadError = false;
+    bool wantHelp    = false;
+    bool wantVersion = false;
+    bool hadError    = false;
     std::string errorMsg;
 };
+
+#ifndef SHADERGLASS_GIT_COMMIT
+#  define SHADERGLASS_GIT_COMMIT "unknown"
+#endif
+#ifndef SHADERGLASS_BUILD_DATE
+#  define SHADERGLASS_BUILD_DATE "unknown"
+#endif
+
+static void printVersion(FILE* f) {
+    std::fprintf(f,
+        "shaderglass (Linux preview)\n"
+        "commit: %s\n"
+        "built:  %s\n",
+        SHADERGLASS_GIT_COMMIT, SHADERGLASS_BUILD_DATE);
+}
 
 static constexpr uint32_t kMinDim = 1;
 static constexpr uint32_t kMaxDim = 16384;
@@ -93,6 +109,9 @@ static void printUsage(FILE* f) {
         "  shaderglass -h | --help\n"
         "      Show this help and exit.\n"
         "\n"
+        "  shaderglass -V | --version\n"
+        "      Print version info (commit hash + build date) and exit.\n"
+        "\n"
         "OPTIONS\n"
         "  --preset PATH         Apply a .slangp shader preset.\n"
         "  --width N, --height N Output dimensions in pixels (%u..%u, default 1280x720).\n"
@@ -119,6 +138,8 @@ static ParseResult parseArgs(int argc, char** argv) {
         std::string s = argv[i];
         if (s == "-h" || s == "--help") {
             r.wantHelp = true;
+        } else if (s == "-V" || s == "--version") {
+            r.wantVersion = true;
         } else if (s == "--headless")     {
             a.headless = true;
         } else if (s == "--debug-portal") {
@@ -263,6 +284,17 @@ static int runWindowed(const Args& a) {
     window.getDrawableSize(w, h);
     Swapchain swapchain(ctx, surface, w, h);
 
+    // Reject unknown --capture kinds before we silently route to the image
+    // path (--capture imagefoo previously fell through to StaticImageCapture
+    // and failed later with a confusing "no frame" error).
+    if (!a.captureKind.empty()
+        && a.captureKind != "wayland-screen"
+        && a.captureKind != "x11-screen") {
+        LOG_ERROR("unknown --capture kind '%s' (supported: wayland-screen, x11-screen)",
+                  a.captureKind.c_str());
+        return 2;
+    }
+
     std::unique_ptr<CaptureBackend> cap;
     if (a.captureKind == "wayland-screen") {
         cap = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>(&ctx));
@@ -316,7 +348,17 @@ static int runWindowed(const Args& a) {
             std::this_thread::sleep_for(std::chrono::milliseconds(33));
         }
     }
-    if (!frame) { LOG_ERROR("no frame within 5s"); return 3; }
+    if (!frame) {
+        if (a.captureKind == "wayland-screen") {
+            LOG_ERROR("no frame within 5s — did you grant the screencast prompt in xdg-desktop-portal?");
+        } else if (a.captureKind == "x11-screen") {
+            LOG_ERROR("no frame within 5s — is source '%s' still alive and visible?",
+                      a.source.c_str());
+        } else {
+            LOG_ERROR("no frame within 5s from '%s'", a.input.c_str());
+        }
+        return 3;
+    }
 
     VkFormat srcFormat = fourcc_to_vk(frame->fourcc);
     if (srcFormat == VK_FORMAT_UNDEFINED) {
@@ -324,7 +366,10 @@ static int runWindowed(const Args& a) {
                       char((frame->fourcc >> 8) & 0xff),
                       char((frame->fourcc >> 16) & 0xff),
                       char((frame->fourcc >> 24) & 0xff), 0 };
-        LOG_ERROR("unsupported source fourcc 0x%08x ('%s')", frame->fourcc, b);
+        // Supported list mirrors src/util/FourccToVk.cpp — keep in sync.
+        LOG_ERROR("unsupported source pixel format: fourcc 0x%08x ('%s'). "
+                  "Supported: ARGB8888, ABGR8888, XRGB8888, XBGR8888.",
+                  frame->fourcc, b);
         return 6;
     }
     Texture sourceTex(ctx, frame->width, frame->height, srcFormat);
@@ -400,6 +445,10 @@ int main(int argc, char** argv) {
     ParseResult pr = parseArgs(argc, argv);
     if (pr.wantHelp) {
         printUsage(stdout);
+        return 0;
+    }
+    if (pr.wantVersion) {
+        printVersion(stdout);
         return 0;
     }
     if (pr.hadError) {
