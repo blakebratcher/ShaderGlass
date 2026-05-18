@@ -10,6 +10,7 @@
 
 class VulkanContext;
 class Swapchain;
+class ConfigStore;
 
 // Shared state between the ImGui panels and the render loop. All fields are
 // read by panels and the render loop on the main thread; panels write back
@@ -21,6 +22,7 @@ struct AppState {
     VulkanContext*  ctx       = nullptr;
     Swapchain*      swapchain = nullptr;
     PresetLibrary*  library   = nullptr;
+    ConfigStore*    config    = nullptr;
 
     // Active capture
     std::unique_ptr<CaptureBackend> capture;

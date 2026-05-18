@@ -14,6 +14,7 @@ public:
     WaylandCapture(const WaylandCapture&)            = delete;
     WaylandCapture& operator=(const WaylandCapture&) = delete;
 
+    std::string                  kindName() const override { return "wayland-screen"; }
     std::vector<SourceInfo>      enumerateSources() override;
     void                         selectSource(const SourceInfo&) override;
     std::optional<CapturedFrame> acquireFrame() override;

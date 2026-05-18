@@ -1,6 +1,7 @@
 #include "AppState.h"
 #include "render/Swapchain.h"
 #include "render/VulkanContext.h"
+#include "util/ConfigStore.h"
 #include "util/Logging.h"
 #include <stdexcept>
 
@@ -19,6 +20,8 @@ void AppState::applyPending() {
                     capture->selectSource(s);
                     activeSourceId = s.id;
                     matched = true;
+                    if (config) config->setLastSource(
+                        capture->kindName(), activeSourceId);
                 } catch (const std::exception& e) {
                     LOG_ERROR("AppState: selectSource('%s') threw: %s",
                               want.c_str(), e.what());
@@ -39,6 +42,7 @@ void AppState::applyPending() {
         if (want.empty()) {
             preset.reset();
             activePresetPath.clear();
+            if (config) config->setLastPreset("");
             LOG_INFO("AppState: cleared preset (passthrough)");
         } else if (!ctx) {
             LOG_ERROR("AppState: pendingPresetPath set but ctx not wired");
@@ -49,6 +53,17 @@ void AppState::applyPending() {
                 auto next = std::make_unique<Preset>(*ctx, want, fmt);
                 preset = std::move(next);
                 activePresetPath = want;
+                if (config) config->setLastPreset(activePresetPath);
+                if (config) {
+                    auto saved = config->paramsFor(activePresetPath);
+                    if (!saved.empty()) {
+                        for (auto& p : preset->params()) {
+                            auto it = saved.find(p.name);
+                            if (it != saved.end()) p.currentValue = it->second;
+                        }
+                        preset->updateUbo();
+                    }
+                }
                 LOG_INFO("AppState: loaded preset %s", want.c_str());
             } catch (const std::exception& e) {
                 LOG_ERROR("AppState: load preset '%s' failed: %s",

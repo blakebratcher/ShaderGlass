@@ -14,6 +14,7 @@ public:
     X11Capture(const X11Capture&)            = delete;
     X11Capture& operator=(const X11Capture&) = delete;
 
+    std::string                  kindName() const override { return "x11-screen"; }
     std::vector<SourceInfo>      enumerateSources() override;
     void                         selectSource(const SourceInfo& src) override;
     std::optional<CapturedFrame> acquireFrame() override;

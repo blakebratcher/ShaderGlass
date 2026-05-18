@@ -8,6 +8,7 @@ public:
     explicit StaticImageCapture(std::filesystem::path image);
     ~StaticImageCapture() override;
 
+    std::string                  kindName() const override { return "static-image"; }
     std::vector<SourceInfo>      enumerateSources() override;
     void                         selectSource(const SourceInfo&) override;
     std::optional<CapturedFrame> acquireFrame() override;

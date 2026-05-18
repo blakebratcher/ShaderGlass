@@ -14,6 +14,7 @@
 #include "capture/RealX11CaptureSession.h"
 #include "ui/AppState.h"
 #include "ui/ImGuiLayer.h"
+#include "util/ConfigStore.h"
 #include "ui/SourcePickerPanel.h"
 #include "ui/PresetBrowserPanel.h"
 #include "ui/ParamsPanel.h"
@@ -302,6 +303,10 @@ static int runWindowed(const Args& a) {
     state.swapchain = &swapchain;
     state.library   = &library;
 
+    ConfigStore config;
+    config.load();
+    state.config = &config;
+
     // Reject unknown --capture kinds before we silently route to the image
     // path (--capture imagefoo previously fell through to StaticImageCapture
     // and failed later with a confusing "no frame" error).
@@ -360,9 +365,19 @@ static int runWindowed(const Args& a) {
     // Populate the source list so the picker has data to display from frame 1.
     state.refreshSources();
 
-    // Seed preset intent from --preset flag. The local 'pipeline' below is
-    // always the passthrough fallback; the active-preset path is owned by
-    // state.preset (loaded by applyPending on first frame).
+    // Seed from config when the matching CLI flag is absent — CLI always wins.
+    // Source: --source on cmdline wins; else fall back to config.lastSource.
+    if (a.source.empty() && config.lastSource().has_value() &&
+        config.lastSource()->kind == a.captureKind) {
+        state.pendingSourceId = config.lastSource()->id;
+    }
+
+    // Preset: --preset on cmdline wins; else fall back to config.lastPreset.
+    if (a.preset.empty() && !config.lastPreset().empty()) {
+        state.pendingPresetPath = config.lastPreset();
+    }
+
+    // Seed preset intent from --preset flag (takes precedence over config).
     if (!a.preset.empty()) {
         state.pendingPresetPath = a.preset;
     }
@@ -431,6 +446,7 @@ static int runWindowed(const Args& a) {
             paramsPanel.draw(state);
 
             state.applyPending();
+            config.tick();
             if (state.preset) state.preset->updateUbo();
 
             ShaderPipeline& activePipeline =
