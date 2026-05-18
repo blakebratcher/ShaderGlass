@@ -68,6 +68,7 @@ add_library(shaderglass_core STATIC
     src/capture/X11Capture.cpp
     src/ui/AppState.cpp
     src/ui/ImGuiLayer.cpp
+    src/ui/SourcePickerPanel.cpp
     ${BUILTIN_HEADER}
 )
 target_include_directories(shaderglass_core
