@@ -4,6 +4,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(DBUS     REQUIRED IMPORTED_TARGET dbus-1)
 pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
 pkg_check_modules(LIBDRM   REQUIRED libdrm)
+pkg_check_modules(X11      REQUIRED IMPORTED_TARGET x11 xcomposite xext xrandr)
 find_program(GLSLC NAMES glslc REQUIRED
     DOC "glslang/glslc compiler")
 
@@ -70,6 +71,7 @@ target_link_libraries(shaderglass_core PUBLIC
     shadergc
     PkgConfig::DBUS
     PkgConfig::PIPEWIRE
+    PkgConfig::X11
 )
 add_dependencies(shaderglass_core builtin_shaders_gen)
 
