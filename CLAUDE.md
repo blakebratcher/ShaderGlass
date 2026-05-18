@@ -247,3 +247,36 @@ Pre-built binaries in `lib/` and `Tools/` are gitignored. To build:
 - DirectX 11-capable GPU
 - Visual Studio 2026 (Platform Toolset v145) with C++20 support
 - Windows SDK 10.0.26100
+
+## Linux Port (`linux/main` branch)
+
+The repository hosts both the Windows app (`master`, `ShaderGlass/`) and a separate Linux port (`linux/main`, `ShaderGlassLinux/`). The two trunks do not merge across.
+
+**Tech stack (Linux):** C++20, Vulkan, SDL3, Dear ImGui v1.92.8-docking (FetchContent), nlohmann/json (FetchContent), PipeWire + xdg-desktop-portal (Wayland), Xlib + XComposite + XShm (X11). Shared `ShaderGC/` slang→SPIR-V compiler links into both ports.
+
+### Build & test
+
+- `cmake -S . -B build && cmake --build build` — build dir lives at repo root, not under `ShaderGlassLinux/`.
+- `ctest --test-dir build` — runs ~50 gtest binaries (1 pre-existing env skip on systems without GBM iGPU support).
+- `./build/ShaderGlassLinux/shaderglass --help` — CLI surface. Useful flags: `--capture x11-screen|wayland-screen`, `--source <id>`, `--preset <path.slangp>`, `--headless --input X --output Y`, `--reset-config`, `-h`, `-V`. Env: `SHADERGLASS_LOG=debug|info|warn|error|off` (default info).
+
+### Where things live
+
+- `ShaderGlassLinux/src/{capture,render,ui,util,output}/` — source layout. `capture/` = X11/Wayland/static; `render/` = Vulkan + ShaderPipeline + Preset; `ui/` = AppState + ImGuiLayer + panels; `util/` = ConfigStore, PresetLibrary, SourceMatcher, Logging.
+- `docs/build-linux.md` — build deps + run examples + milestone status.
+- `docs/superpowers/specs/` + `docs/superpowers/plans/` — per-milestone design specs and TDD task plans.
+- `docs/manual-tests-m{1..4}.md` — manual smoke checklists per milestone.
+- `ShaderGlassLinux/shaders/starter/` — curated single-pass `.slangp` starter set; CMake `install()` copies to `${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/` and stages into `build/ShaderGlassLinux/shaders-staging/` for dev runs.
+- Runtime config: `~/.config/shaderglass/{config.json,imgui.ini}` (XDG-aware).
+
+### Milestone status
+
+M1 (foundation), M2 (Wayland capture), M3 (X11 capture), M4 (ImGui UI + session restore) all shipped on `linux/main`. M5 = transparent X11 overlay, hotkeys, multi-pass shaders, runtime `.slangp` import, toast UI.
+
+### Code gotchas (Linux)
+
+- **Include order around `ShaderGC/ShaderDef.h`**: it's a Windows-style header that relies on a precompiled `framework.h`. On Linux, include `<filesystem>`, `<map>`, `<string>`, `<vector>` BEFORE it or it won't compile.
+- **LSP false positives**: clangd in this workspace runs without CMake-aware include paths. "file not found" / "unknown identifier" errors on otherwise-compiling Linux source are usually false positives — trust `cmake --build`, not the LSP.
+- **`buildPipelineSource(Args{})` idiom** (`src/main.cpp`): passing a default-constructed `Args` returns the builtin passthrough SPIR-V without invoking ShaderGC. Use this to get a no-op pipeline when the active preset is owned elsewhere (e.g. `state.preset`).
+- **Preset multi-pass guard**: `Preset` (Linux) throws on `ShaderDefs.size() > 1`. Curated starter set is hand-vetted to be single-pass; multi-pass support is M5.
+- **`AppState::applyPending()` is the sole capture/preset rebuild point**, called between `ImGui::Render()` and the next `capture->acquireFrame()`. Panels write into `pending*` intent fields; never touch GPU state from a panel.
