@@ -38,6 +38,7 @@
 
 struct Args {
     bool headless = false;
+    bool resetConfig = false;
     std::string input, output;
     std::string compilePreset;
     std::string preset;
@@ -122,6 +123,9 @@ static void printUsage(FILE* f) {
         "OPTIONS\n"
         "  --preset PATH         Apply a .slangp shader preset.\n"
         "  --width N, --height N Output dimensions in pixels (%u..%u, default 1280x720).\n"
+        "  --reset-config        Delete ~/.config/shaderglass/config.json "
+                                  "and exit (escape hatch when the saved\n"
+        "                        session is bad).\n"
         "\n"
         "ENVIRONMENT\n"
         "  SHADERGLASS_LOG=debug|info|warn|error|off   Runtime log verbosity (default: info).\n",
@@ -151,6 +155,8 @@ static ParseResult parseArgs(int argc, char** argv) {
             a.headless = true;
         } else if (s == "--debug-portal") {
             a.debugPortal = true;
+        } else if (s == "--reset-config") {
+            a.resetConfig = true;
         } else if (s == "--input")        {
             const char* v = needValue(s, i); if (!v) return r;
             a.input = v;
@@ -273,11 +279,25 @@ static int runHeadless(const Args& a) {
     return 0;
 }
 
-static int runWindowed(const Args& a) {
+static int runWindowed(Args& a) {
     if (a.input.empty() && a.captureKind.empty()) {
-        std::fprintf(stderr, "shaderglass: no input or capture source specified\n\n");
-        printUsage(stderr);
-        return 2;
+        // GUI-first no-args launch: infer capture kind from env, or from
+        // a previously persisted lastSource if available.
+        ConfigStore probe;
+        probe.load();
+        if (probe.lastSource().has_value() &&
+            !probe.lastSource()->kind.empty()) {
+            a.captureKind = probe.lastSource()->kind;
+        } else if (std::getenv("WAYLAND_DISPLAY")) {
+            a.captureKind = "wayland-screen";
+        } else if (std::getenv("DISPLAY")) {
+            a.captureKind = "x11-screen";
+        } else {
+            std::fprintf(stderr, "shaderglass: no DISPLAY/WAYLAND_DISPLAY "
+                         "and no saved session — can't infer a backend.\n\n");
+            printUsage(stderr);
+            return 2;
+        }
     }
     SdlWindow window("ShaderGlass", 1280, 720);
 
@@ -522,7 +542,15 @@ int main(int argc, char** argv) {
         printUsage(stderr);
         return 2;
     }
-    const Args& a = pr.args;
+    Args& a = pr.args;
+    if (a.resetConfig) {
+        ConfigStore cfg;
+        cfg.load();
+        cfg.resetAndDelete();
+        std::fprintf(stdout, "shaderglass: removed %s\n",
+                     ConfigStore::defaultPath().string().c_str());
+        return 0;
+    }
     try {
         if (a.debugPortal) return runDebugPortal(a);
         if (!a.compilePreset.empty()) return runCompilePreset(a);
