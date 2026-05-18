@@ -15,6 +15,7 @@
 #include "ui/AppState.h"
 #include "ui/ImGuiLayer.h"
 #include "ui/SourcePickerPanel.h"
+#include "ui/PresetBrowserPanel.h"
 #include "util/FourccToVk.h"
 #include "util/SourceMatcher.h"
 #include "util/Logging.h"
@@ -293,6 +294,11 @@ static int runWindowed(const Args& a) {
 
     AppState state;
     SourcePickerPanel sourcePanel{a.captureKind};
+    PresetLibrary library;
+    PresetBrowserPanel presetPanel;
+    state.ctx       = &ctx;
+    state.swapchain = &swapchain;
+    state.library   = &library;
 
     // Reject unknown --capture kinds before we silently route to the image
     // path (--capture imagefoo previously fell through to StaticImageCapture
@@ -352,6 +358,13 @@ static int runWindowed(const Args& a) {
     // Populate the source list so the picker has data to display from frame 1.
     state.refreshSources();
 
+    // Seed preset intent from --preset flag. The local 'pipeline' below is
+    // always the passthrough fallback; the active-preset path is owned by
+    // state.preset (loaded by applyPending on first frame).
+    if (!a.preset.empty()) {
+        state.pendingPresetPath = a.preset;
+    }
+
     std::optional<CapturedFrame> frame;
     {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -391,7 +404,10 @@ static int runWindowed(const Args& a) {
     }
     // For DMA-BUF first frames, sourceTex stays uninitialized for one iteration;
     // the inner loop branches on f->kind so this is fine.
-    PipelineSource ps = buildPipelineSource(a);
+    // Local 'pipeline' is always the passthrough fallback used when
+    // state.preset is null. The active-preset path is owned by state.preset.
+    Args passthroughArgs{};  // empty preset → buildPipelineSource uses builtin passthrough
+    PipelineSource ps = buildPipelineSource(passthroughArgs);
     {
         ShaderPipeline pipeline(ctx, ps.vert, ps.vertSize, ps.frag, ps.fragSize,
                                 swapchain.format());
@@ -409,14 +425,18 @@ static int runWindowed(const Args& a) {
             // Dock space + menu — kept tiny in Phase A; Phase B/C add panels.
             ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
             sourcePanel.draw(state);
+            presetPanel.draw(state);
 
             state.applyPending();
+
+            ShaderPipeline& activePipeline =
+                state.preset ? state.preset->pipeline() : pipeline;
 
             auto f = state.capture->acquireFrame();
             if (f) {
                 if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
                     auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
-                    engine.renderImageViewWithOverlay(imp->view, pipeline,
+                    engine.renderImageViewWithOverlay(imp->view, activePipeline,
                         [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
                     state.capture->release(*f);
                     continue;
@@ -424,7 +444,7 @@ static int runWindowed(const Args& a) {
                 sourceTex.uploadFromCpu(f->data, f->stride * f->height, f->stride);
                 state.capture->release(*f);
             }
-            engine.renderTextureWithOverlay(sourceTex, pipeline,
+            engine.renderTextureWithOverlay(sourceTex, activePipeline,
                 [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
         }
     }

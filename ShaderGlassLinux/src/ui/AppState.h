@@ -1,5 +1,6 @@
 #pragma once
 #include "capture/CaptureBackend.h"
+#include "render/Preset.h"
 #include "util/PresetLibrary.h"
 #include "util/SourceInfo.h"
 #include <memory>
@@ -7,24 +8,28 @@
 #include <string>
 #include <vector>
 
+class VulkanContext;
+class Swapchain;
+
 // Shared state between the ImGui panels and the render loop. All fields are
 // read by panels and the render loop on the main thread; panels write back
 // only into the `pending*` intent fields. applyPending() is the single point
 // where capture/preset get rebuilt — it runs between ImGui::Render() and
 // capture->acquireFrame() each frame.
-//
-// Phase A: capture state only. preset/params land in Phase B/C.
 struct AppState {
+    // Construction-time wiring (set by main before frame loop starts)
+    VulkanContext*  ctx       = nullptr;
+    Swapchain*      swapchain = nullptr;
+    PresetLibrary*  library   = nullptr;
+
     // Active capture
     std::unique_ptr<CaptureBackend> capture;
     std::string                     activeSourceId;
     std::vector<SourceInfo>         sources;
 
     // Active preset (nullptr → passthrough)
-    std::string                     activePresetPath;       // "" = passthrough
-
-    // Library used by PresetBrowserPanel
-    PresetLibrary*                  library = nullptr;
+    std::unique_ptr<Preset>         preset;
+    std::string                     activePresetPath;
 
     // Pending intents written by panels, consumed by applyPending()
     std::optional<std::string>      pendingSourceId;

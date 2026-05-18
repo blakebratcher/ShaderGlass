@@ -106,4 +106,6 @@ gtest_discover_tests(preset_library_tests)
 
 add_executable(app_state_tests test_app_state.cpp)
 target_link_libraries(app_state_tests PRIVATE shaderglass_core gtest_main)
+target_compile_definitions(app_state_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 gtest_discover_tests(app_state_tests)
