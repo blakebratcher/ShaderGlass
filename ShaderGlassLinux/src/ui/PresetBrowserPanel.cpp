@@ -43,7 +43,16 @@ void PresetBrowserPanel::draw(AppState& state) {
 
     ImGui::Separator();
 
-    auto presets = state.library->scan();   // re-scan each draw; cheap (~ms)
+    if (!m_scanned) {
+        m_cached = state.library->scan();
+        m_scanned = true;
+    }
+    if (ImGui::SmallButton("Rescan")) {
+        m_cached = state.library->scan();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu preset(s)", m_cached.size());
+    const auto& presets = m_cached;
     std::string lastCategory;
     bool openCurrentTree = false;
     for (const auto& p : presets) {

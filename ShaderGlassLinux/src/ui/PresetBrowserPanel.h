@@ -1,5 +1,7 @@
 #pragma once
+#include "util/PresetLibrary.h"
 #include <string>
+#include <vector>
 
 struct AppState;
 
@@ -8,5 +10,7 @@ public:
     void draw(AppState& state);
 
 private:
-    char m_searchBuf[128] = "";
+    char                     m_searchBuf[128] = "";
+    std::vector<PresetEntry> m_cached;        // populated lazily; user-controlled refresh
+    bool                     m_scanned = false;
 };
