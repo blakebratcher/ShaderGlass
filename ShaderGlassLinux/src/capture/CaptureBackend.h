@@ -3,11 +3,7 @@
 #include <vector>
 #include <string>
 #include "CapturedFrame.h"
-
-struct SourceInfo {
-    std::string id;
-    std::string displayName;
-};
+#include "../util/SourceInfo.h"
 
 class CaptureBackend {
 public:

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "util/SourceMatcher.h"
-#include "capture/CaptureBackend.h"
+#include "util/SourceInfo.h"
 
 static std::vector<SourceInfo> threeSources() {
     return {

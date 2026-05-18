@@ -1,5 +1,5 @@
 #pragma once
-#include "capture/CaptureBackend.h"
+#include "SourceInfo.h"
 #include <string>
 #include <vector>
 
