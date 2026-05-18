@@ -60,6 +60,7 @@ add_library(shaderglass_core STATIC
     src/render/DmaBufImport.cpp
     src/capture/StaticImageCapture.cpp
     src/capture/FakeWaylandCaptureSession.cpp
+    src/capture/FakeX11CaptureSession.cpp
     src/capture/PortalCaptureSession.cpp
     src/capture/WaylandCapture.cpp
     ${BUILTIN_HEADER}
