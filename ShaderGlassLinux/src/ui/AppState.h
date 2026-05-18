@@ -1,5 +1,6 @@
 #pragma once
 #include "capture/CaptureBackend.h"
+#include "util/PresetLibrary.h"
 #include "util/SourceInfo.h"
 #include <memory>
 #include <optional>
@@ -19,8 +20,15 @@ struct AppState {
     std::string                     activeSourceId;
     std::vector<SourceInfo>         sources;
 
+    // Active preset (nullptr → passthrough)
+    std::string                     activePresetPath;       // "" = passthrough
+
+    // Library used by PresetBrowserPanel
+    PresetLibrary*                  library = nullptr;
+
     // Pending intents written by panels, consumed by applyPending()
     std::optional<std::string>      pendingSourceId;
+    std::optional<std::string>      pendingPresetPath;      // empty string = clear to passthrough
 
     // Re-enumerate from the current capture backend.
     void refreshSources();
