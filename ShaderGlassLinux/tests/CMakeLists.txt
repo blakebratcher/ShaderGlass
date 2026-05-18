@@ -78,3 +78,10 @@ gtest_discover_tests(fourcc_to_vk_tests)
 add_executable(source_matcher_tests test_source_matcher.cpp)
 target_link_libraries(source_matcher_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(source_matcher_tests)
+
+add_executable(x11_capture_fake_tests test_x11_capture_fake_session.cpp)
+target_link_libraries(x11_capture_fake_tests PRIVATE shaderglass_core gtest_main)
+target_compile_definitions(x11_capture_fake_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+target_include_directories(x11_capture_fake_tests PRIVATE ${stb_SOURCE_DIR})
+gtest_discover_tests(x11_capture_fake_tests)

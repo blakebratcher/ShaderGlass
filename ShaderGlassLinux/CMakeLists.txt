@@ -63,6 +63,7 @@ add_library(shaderglass_core STATIC
     src/capture/FakeX11CaptureSession.cpp
     src/capture/PortalCaptureSession.cpp
     src/capture/WaylandCapture.cpp
+    src/capture/X11Capture.cpp
     ${BUILTIN_HEADER}
 )
 target_include_directories(shaderglass_core
