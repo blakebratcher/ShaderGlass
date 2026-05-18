@@ -1,6 +1,8 @@
 #include "RealX11CaptureSession.h"
 #include "util/Logging.h"
 #include <X11/extensions/Xcomposite.h>
+#include <X11/extensions/Xrandr.h>
+#include <cstdio>
 #include <stdexcept>
 
 RealX11CaptureSession::RealX11CaptureSession() {
@@ -34,7 +36,46 @@ RealX11CaptureSession::~RealX11CaptureSession() {
 // --- placeholders implemented in subsequent tasks ---
 
 std::vector<SourceInfo> RealX11CaptureSession::enumerateSources() {
-    return {};   // Task 8 + Task 11 fill this in.
+    std::vector<SourceInfo> out;
+
+    int rootW = DisplayWidth(m_display, DefaultScreen(m_display));
+    int rootH = DisplayHeight(m_display, DefaultScreen(m_display));
+
+    {
+        SourceInfo s;
+        s.id = "monitor:root";
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "Monitor: full root (%dx%d)", rootW, rootH);
+        s.displayName = buf;
+        out.push_back(std::move(s));
+    }
+
+    XRRScreenResources* res = XRRGetScreenResources(m_display, m_root);
+    if (res) {
+        for (int i = 0; i < res->noutput; ++i) {
+            XRROutputInfo* oi = XRRGetOutputInfo(m_display, res, res->outputs[i]);
+            if (!oi) continue;
+            if (oi->connection == RR_Connected && oi->crtc) {
+                XRRCrtcInfo* ci = XRRGetCrtcInfo(m_display, res, oi->crtc);
+                if (ci) {
+                    SourceInfo s;
+                    s.id = std::string("monitor:") + oi->name;
+                    char buf[128];
+                    std::snprintf(buf, sizeof(buf),
+                                  "Monitor: %s (%ux%u)",
+                                  oi->name, ci->width, ci->height);
+                    s.displayName = buf;
+                    out.push_back(std::move(s));
+                    XRRFreeCrtcInfo(ci);
+                }
+            }
+            XRRFreeOutputInfo(oi);
+        }
+        XRRFreeScreenResources(res);
+    }
+
+    // Windows are appended in Task 11.
+    return out;
 }
 
 void RealX11CaptureSession::start(const SourceInfo& /*source*/) {
