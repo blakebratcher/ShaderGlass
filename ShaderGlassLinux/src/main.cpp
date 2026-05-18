@@ -12,6 +12,7 @@
 #include "capture/PortalCaptureSession.h"
 #include "capture/X11Capture.h"
 #include "capture/RealX11CaptureSession.h"
+#include "util/FourccToVk.h"
 #include "util/SourceMatcher.h"
 #include "util/Logging.h"
 #include "builtin_shaders.h"
@@ -206,7 +207,16 @@ static int runWindowed(const Args& a) {
     }
     if (!frame) { LOG_ERROR("no frame within 5s"); return 3; }
 
-    Texture sourceTex(ctx, frame->width, frame->height, VK_FORMAT_R8G8B8A8_UNORM);
+    VkFormat srcFormat = fourcc_to_vk(frame->fourcc);
+    if (srcFormat == VK_FORMAT_UNDEFINED) {
+        char b[5] = { char(frame->fourcc & 0xff),
+                      char((frame->fourcc >> 8) & 0xff),
+                      char((frame->fourcc >> 16) & 0xff),
+                      char((frame->fourcc >> 24) & 0xff), 0 };
+        LOG_ERROR("unsupported source fourcc 0x%08x ('%s')", frame->fourcc, b);
+        return 6;
+    }
+    Texture sourceTex(ctx, frame->width, frame->height, srcFormat);
     if (frame->kind == CapturedFrame::Kind::CpuBuffer) {
         sourceTex.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
     }
