@@ -27,7 +27,7 @@ private:
     enum class SourceKind { Unset, MonitorRoot, MonitorOutput, XWindow };
     SourceKind  m_sourceKind = SourceKind::Unset;
     std::string m_outputName;          // for MonitorOutput
-    Window      m_windowTarget = 0;    // for Window
+    Window      m_windowTarget = 0;    // for XWindow source kind (Xlib Window type)
     int         m_cropX = 0, m_cropY = 0; // for MonitorOutput
     uint32_t    m_width = 0, m_height = 0;
 
