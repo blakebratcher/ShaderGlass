@@ -20,8 +20,11 @@
 #include "ShaderCache.h"
 #include "PresetDef.h"
 #include <stb_image_write.h>
+#include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -37,24 +40,131 @@ struct Args {
     std::string source;          // --source value for x11-screen
 };
 
-static Args parseArgs(int argc, char** argv) {
-    Args a;
+struct ParseResult {
+    Args args;
+    bool wantHelp = false;
+    bool hadError = false;
+    std::string errorMsg;
+};
+
+static constexpr uint32_t kMinDim = 1;
+static constexpr uint32_t kMaxDim = 16384;
+
+static std::optional<uint32_t> parseDim(const char* s, const char* flag,
+                                        std::string& err) {
+    if (!s || !*s) {
+        err = std::string(flag) + ": missing value";
+        return std::nullopt;
+    }
+    char* end = nullptr;
+    errno = 0;
+    unsigned long v = std::strtoul(s, &end, 10);
+    if (errno != 0 || end == s || *end != '\0' || v < kMinDim || v > kMaxDim) {
+        err = std::string(flag) + ": expected integer in ["
+            + std::to_string(kMinDim) + ".." + std::to_string(kMaxDim)
+            + "], got '" + s + "'";
+        return std::nullopt;
+    }
+    return static_cast<uint32_t>(v);
+}
+
+static void printUsage(FILE* f) {
+    std::fprintf(f,
+        "shaderglass — desktop overlay shader engine (Linux preview)\n"
+        "\n"
+        "USAGE\n"
+        "  shaderglass [<image.png>] [--preset <preset.slangp>]\n"
+        "      Open an image and render it through a shader (passthrough by default).\n"
+        "\n"
+        "  shaderglass --capture <kind> [--source <id-or-name>] [--preset <preset.slangp>]\n"
+        "      Capture a desktop source through a shader. Kinds:\n"
+        "        wayland-screen   xdg-desktop-portal + PipeWire\n"
+        "        x11-screen       X11 + MIT-SHM (omit --source to list available sources)\n"
+        "\n"
+        "  shaderglass --headless --input X --output Y [--width N] [--height N] [--preset P]\n"
+        "      Render an image to a PNG and exit.\n"
+        "\n"
+        "  shaderglass --compile-preset <preset.slangp>\n"
+        "      Compile a .slangp preset and print pass info. Does not render.\n"
+        "\n"
+        "  shaderglass --debug-portal\n"
+        "      Probe xdg-desktop-portal screencast and report the PipeWire fd.\n"
+        "\n"
+        "  shaderglass -h | --help\n"
+        "      Show this help and exit.\n"
+        "\n"
+        "OPTIONS\n"
+        "  --preset PATH         Apply a .slangp shader preset.\n"
+        "  --width N, --height N Output dimensions in pixels (%u..%u, default 1280x720).\n"
+        "\n"
+        "ENVIRONMENT\n"
+        "  SHADERGLASS_LOG=debug|info|warn|error|off   Runtime log verbosity (default: info).\n",
+        kMinDim, kMaxDim);
+}
+
+static ParseResult parseArgs(int argc, char** argv) {
+    ParseResult r;
+    Args& a = r.args;
+
+    auto needValue = [&](const std::string& flag, int& i) -> const char* {
+        if (i + 1 >= argc) {
+            r.hadError = true;
+            r.errorMsg = flag + ": missing value";
+            return nullptr;
+        }
+        return argv[++i];
+    };
+
     for (int i = 1; i < argc; ++i) {
         std::string s = argv[i];
-        if      (s == "--headless")    a.headless = true;
-        else if (s == "--passthrough") { /* deprecated no-op flag, kept to not break callers */ }
-        else if (s == "--input"  && i+1 < argc) a.input  = argv[++i];
-        else if (s == "--output" && i+1 < argc) a.output = argv[++i];
-        else if (s == "--width"  && i+1 < argc) a.width  = (uint32_t)std::stoul(argv[++i]);
-        else if (s == "--height" && i+1 < argc) a.height = (uint32_t)std::stoul(argv[++i]);
-        else if (s == "--compile-preset" && i+1 < argc) a.compilePreset = argv[++i];
-        else if (s == "--preset" && i+1 < argc) a.preset = argv[++i];
-        else if (s == "--debug-portal") a.debugPortal = true;
-        else if (s == "--capture" && i+1 < argc) a.captureKind = argv[++i];
-        else if (s == "--source"  && i+1 < argc) a.source = argv[++i];
-        else if (a.input.empty())               a.input  = s;  // bare positional input
+        if (s == "-h" || s == "--help") {
+            r.wantHelp = true;
+        } else if (s == "--headless")     {
+            a.headless = true;
+        } else if (s == "--debug-portal") {
+            a.debugPortal = true;
+        } else if (s == "--input")        {
+            const char* v = needValue(s, i); if (!v) return r;
+            a.input = v;
+        } else if (s == "--output")       {
+            const char* v = needValue(s, i); if (!v) return r;
+            a.output = v;
+        } else if (s == "--compile-preset") {
+            const char* v = needValue(s, i); if (!v) return r;
+            a.compilePreset = v;
+        } else if (s == "--preset")       {
+            const char* v = needValue(s, i); if (!v) return r;
+            a.preset = v;
+        } else if (s == "--capture")      {
+            const char* v = needValue(s, i); if (!v) return r;
+            a.captureKind = v;
+        } else if (s == "--source")       {
+            const char* v = needValue(s, i); if (!v) return r;
+            a.source = v;
+        } else if (s == "--width")        {
+            const char* v = needValue(s, i); if (!v) return r;
+            auto d = parseDim(v, "--width", r.errorMsg);
+            if (!d) { r.hadError = true; return r; }
+            a.width = *d;
+        } else if (s == "--height")       {
+            const char* v = needValue(s, i); if (!v) return r;
+            auto d = parseDim(v, "--height", r.errorMsg);
+            if (!d) { r.hadError = true; return r; }
+            a.height = *d;
+        } else if (!s.empty() && s[0] == '-') {
+            // Catches typos in long flags and any unsupported short flag.
+            r.hadError = true;
+            r.errorMsg = "unknown option: " + s + " (try --help)";
+            return r;
+        } else if (a.input.empty()) {
+            a.input = s;  // bare positional input
+        } else {
+            r.hadError = true;
+            r.errorMsg = "unexpected extra positional argument: " + s;
+            return r;
+        }
     }
-    return a;
+    return r;
 }
 
 struct PipelineSource {
@@ -137,10 +247,11 @@ static int runHeadless(const Args& a) {
 
 static int runWindowed(const Args& a) {
     if (a.input.empty() && a.captureKind.empty()) {
-        LOG_ERROR("usage: shaderglass <input.png>  OR  shaderglass --capture wayland-screen  OR  shaderglass --headless --input X --output Y --width N --height M");
+        std::fprintf(stderr, "shaderglass: no input or capture source specified\n\n");
+        printUsage(stderr);
         return 2;
     }
-    SdlWindow window("ShaderGlass (Linux M1)", 1280, 720);
+    SdlWindow window("ShaderGlass", 1280, 720);
 
     VulkanContextOptions opts;
     opts.enableValidation        = true;
@@ -286,7 +397,17 @@ static int runDebugPortal(const Args&) {
 }
 
 int main(int argc, char** argv) {
-    Args a = parseArgs(argc, argv);
+    ParseResult pr = parseArgs(argc, argv);
+    if (pr.wantHelp) {
+        printUsage(stdout);
+        return 0;
+    }
+    if (pr.hadError) {
+        std::fprintf(stderr, "shaderglass: %s\n\n", pr.errorMsg.c_str());
+        printUsage(stderr);
+        return 2;
+    }
+    const Args& a = pr.args;
     try {
         if (a.debugPortal) return runDebugPortal(a);
         if (!a.compilePreset.empty()) return runCompilePreset(a);
