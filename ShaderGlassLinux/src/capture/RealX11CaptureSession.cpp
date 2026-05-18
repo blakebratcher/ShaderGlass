@@ -198,8 +198,35 @@ void RealX11CaptureSession::start(const SourceInfo& source) {
         XRRFreeScreenResources(res);
         if (!found) throw std::runtime_error("X11: output not found: " + m_outputName);
     } else if (id.rfind("window:", 0) == 0) {
-        // Window sources handled in Task 12.
-        throw std::runtime_error("X11: window sources not yet implemented");
+        m_sourceKind = SourceKind::XWindow;
+        unsigned long xid = 0;
+        if (std::sscanf(id.c_str() + strlen("window:"), "0x%lx", &xid) != 1) {
+            throw std::runtime_error("X11: bad window id: " + id);
+        }
+        m_windowTarget = (Window)xid;
+
+        // Composite-redirect so we can capture even when the window is
+        // partially obscured or minimized. The pixmap is the off-screen
+        // backing store the composite manager renders into.
+        XCompositeRedirectWindow(m_display, m_windowTarget,
+                                 CompositeRedirectAutomatic);
+        XSync(m_display, False);
+
+        m_pixmap = XCompositeNameWindowPixmap(m_display, m_windowTarget);
+        if (!m_pixmap) {
+            XCompositeUnredirectWindow(m_display, m_windowTarget,
+                                       CompositeRedirectAutomatic);
+            throw std::runtime_error("X11: XCompositeNameWindowPixmap failed");
+        }
+        m_havePixmap = true;
+
+        XWindowAttributes attr{};
+        if (!XGetWindowAttributes(m_display, m_windowTarget, &attr)) {
+            throw std::runtime_error("X11: XGetWindowAttributes failed");
+        }
+        m_width  = attr.width;
+        m_height = attr.height;
+        m_cropX  = m_cropY = 0;
     } else {
         throw std::runtime_error("X11: unrecognized source id: " + id);
     }
@@ -213,6 +240,13 @@ void RealX11CaptureSession::stop() {
         XFreePixmap(m_display, m_pixmap);
         m_pixmap = 0;
         m_havePixmap = false;
+    }
+    if (m_sourceKind == SourceKind::XWindow && m_windowTarget) {
+        // Best-effort. If the window's already gone this is a no-op
+        // (and the error handler installed in Task 15 swallows the BadWindow).
+        XCompositeUnredirectWindow(m_display, m_windowTarget,
+                                   CompositeRedirectAutomatic);
+        m_windowTarget = 0;
     }
     m_sourceKind = SourceKind::Unset;
     m_width = m_height = 0;
