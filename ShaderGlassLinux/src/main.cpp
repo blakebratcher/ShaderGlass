@@ -16,6 +16,7 @@
 #include "ui/ImGuiLayer.h"
 #include "ui/SourcePickerPanel.h"
 #include "ui/PresetBrowserPanel.h"
+#include "ui/ParamsPanel.h"
 #include "util/FourccToVk.h"
 #include "util/SourceMatcher.h"
 #include "util/Logging.h"
@@ -296,6 +297,7 @@ static int runWindowed(const Args& a) {
     SourcePickerPanel sourcePanel{a.captureKind};
     PresetLibrary library;
     PresetBrowserPanel presetPanel;
+    ParamsPanel paramsPanel;
     state.ctx       = &ctx;
     state.swapchain = &swapchain;
     state.library   = &library;
@@ -426,6 +428,7 @@ static int runWindowed(const Args& a) {
             ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
             sourcePanel.draw(state);
             presetPanel.draw(state);
+            paramsPanel.draw(state);
 
             state.applyPending();
 

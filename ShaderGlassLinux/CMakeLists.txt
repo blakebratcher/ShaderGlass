@@ -70,6 +70,7 @@ add_library(shaderglass_core STATIC
     src/capture/X11Capture.cpp
     src/ui/AppState.cpp
     src/ui/ImGuiLayer.cpp
+    src/ui/ParamsPanel.cpp
     src/ui/PresetBrowserPanel.cpp
     src/ui/SourcePickerPanel.cpp
     ${BUILTIN_HEADER}
