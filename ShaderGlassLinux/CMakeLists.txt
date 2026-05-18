@@ -61,6 +61,7 @@ add_library(shaderglass_core STATIC
     src/capture/StaticImageCapture.cpp
     src/capture/FakeWaylandCaptureSession.cpp
     src/capture/FakeX11CaptureSession.cpp
+    src/capture/RealX11CaptureSession.cpp
     src/capture/PortalCaptureSession.cpp
     src/capture/WaylandCapture.cpp
     src/capture/X11Capture.cpp
