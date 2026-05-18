@@ -42,5 +42,45 @@ the X11 entries; Wayland entries need the user's actual desktop).
       (any tweaks you made earlier are NOT preserved; spec-confirmed).
 - [ ] All Phase C automated tests (`ctest -R AppState`) pass.
 
-## Phase D
-_(extended by later tasks)_
+## Phase D — Config persistence + session restore
+
+- [ ] `shaderglass --reset-config` exits 0 with "removed ..." message;
+      ~/.config/shaderglass/config.json is gone afterwards.
+- [ ] Launch with `--capture x11-screen --source monitor:root --preset
+      .../crt-easymode.slangp`, tweak a few sliders, exit.
+- [ ] Re-launch `shaderglass --capture x11-screen --source monitor:root`
+      (no --preset). crt-easymode is auto-restored with the tweaks intact.
+- [ ] Re-launch `shaderglass` (no flags). Window opens; same source +
+      preset + params are restored.
+- [ ] Drag a panel to a new dock position, exit, re-launch. The new
+      dock layout is restored (imgui.ini is the proof).
+- [ ] Hand-corrupt ~/.config/shaderglass/config.json (e.g. `echo "{"
+      > $_`); re-launch. App starts with defaults, logs a warning.
+
+## M4 final integration
+
+- [ ] All Phase A/B/C/D automated tests pass (`ctest`).
+- [ ] All Phase A/B/C/D manual checks pass on the user's actual desktop
+      (X11 *and* Wayland, where applicable).
+- [ ] `shaderglass --version` still reports a sensible commit hash + date.
+- [ ] `shaderglass --help` includes the `--reset-config` line.
+- [ ] No new validation-layer errors in `cmake --build` or `ctest`
+      output beyond the M3 baseline.
+
+## Known limitations (M4 → M5 follow-ups)
+
+- **Bare `shaderglass` requires a saved session.** On a fresh config
+  (after `--reset-config` or first install), `shaderglass` with no flags
+  infers the capture kind from env but still needs `--source` for X11.
+  Once a session is saved, subsequent bare launches auto-resume the
+  source. Fixing the first-run UX (deferred capture + GUI-only source
+  pick) is M5 scope — it requires relaxing the no-source guard and
+  making the render loop tolerate a null capture for the lifetime of
+  the picker.
+- **Multi-pass shaders unsupported.** Preset constructor throws on
+  `ShaderDefs.size() > 1`. The starter set is hand-curated to be
+  single-pass. M5 will add multi-pass + inter-pass render-target
+  management.
+- **No toast UI for errors.** Source-switch failures, preset compile
+  failures, and unsupported-fourcc errors log to stderr instead of
+  surfacing in the ImGui window. M5 will add a transient toast component.
