@@ -274,8 +274,26 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
     }
 
     if (!m_haveXShm) {
-        // Slow path covered in Task 14.
-        return std::nullopt;
+        Drawable d = targetDrawable();
+        int srcX = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropX : 0;
+        int srcY = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropY : 0;
+        // XGetImage allocates a new XImage each call; we copy out the data
+        // into a thread-local staging buffer so the caller's pointer
+        // lifetime matches the rest of the contract.
+        XImage* img = XGetImage(m_display, d, srcX, srcY,
+                                m_width, m_height, AllPlanes, ZPixmap);
+        if (!img) return std::nullopt;
+        thread_local std::vector<uint8_t> staging;
+        staging.assign(img->data, img->data + size_t(img->bytes_per_line) * img->height);
+
+        X11SessionFrame f;
+        f.data   = staging.data();
+        f.stride = img->bytes_per_line;
+        f.fourcc = 0x34325241;  // ARGB8888 (BGRA in memory) on TrueColor visuals
+        f.width  = m_width;
+        f.height = m_height;
+        XDestroyImage(img);
+        return f;
     }
 
     Drawable d = targetDrawable();
@@ -306,7 +324,16 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
 }
 
 void RealX11CaptureSession::allocSharedImage(uint32_t w, uint32_t h) {
-    if (!m_haveXShm) return;   // XGetImage fallback path doesn't need SHM.
+    if (!m_haveXShm) {
+        // XGetImage path: we allocate no SHM resources. XGetImage will return
+        // a fresh XImage* each call (freed by XDestroyImage). We only use
+        // m_image as a sentinel here; the slow grab path in grab() does the
+        // per-call alloc itself.
+        m_image = nullptr;
+        m_width  = w;
+        m_height = h;
+        return;
+    }
 
     int screen = DefaultScreen(m_display);
     Visual* visual = DefaultVisual(m_display, screen);
