@@ -10,7 +10,7 @@
 struct X11SessionFrame {
     const uint8_t* data   = nullptr;
     size_t         stride = 0;
-    uint32_t       fourcc = 0;     // DRM fourcc, e.g. DRM_FORMAT_BGRA8888
+    uint32_t       fourcc = 0;     // DRM fourcc, e.g. DRM_FORMAT_ARGB8888 (BGRA in memory)
     uint32_t       width  = 0;
     uint32_t       height = 0;
 };
