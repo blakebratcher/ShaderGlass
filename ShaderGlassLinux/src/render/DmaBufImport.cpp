@@ -2,23 +2,13 @@
 #include "VulkanContext.h"
 #include "../util/VkCheck.h"
 #include "../util/Logging.h"
+#include "../util/FourccToVk.h"
 #include <unistd.h>
 #include <cstring>
 #include <vector>
 #include <stdexcept>
 
 namespace {
-
-VkFormat fourccToVkFormat(uint32_t fourcc) {
-    // DRM fourccs: little-endian byte order.
-    // 'AR24' = DRM_FORMAT_ARGB8888 -> BGRA in memory -> VK_FORMAT_B8G8R8A8_UNORM
-    // 'AB24' = DRM_FORMAT_ABGR8888 -> RGBA in memory -> VK_FORMAT_R8G8B8A8_UNORM
-    switch (fourcc) {
-        case 0x34325241: return VK_FORMAT_B8G8R8A8_UNORM; // AR24
-        case 0x34324241: return VK_FORMAT_R8G8B8A8_UNORM; // AB24
-        default: return VK_FORMAT_UNDEFINED;
-    }
-}
 
 bool deviceExtensionAvailable(VkPhysicalDevice dev, const char* name) {
     uint32_t n = 0;
@@ -52,7 +42,7 @@ ImportedDmaBuf DmaBufImport::importFd(VulkanContext& ctx,
                                       uint64_t drmModifier,
                                       uint64_t planeOffset,
                                       uint32_t planeStride) {
-    VkFormat vkfmt = fourccToVkFormat(drmFourcc);
+    VkFormat vkfmt = fourcc_to_vk(drmFourcc);
     if (vkfmt == VK_FORMAT_UNDEFINED)
         throw std::runtime_error("DmaBufImport: unsupported DRM fourcc 0x" + std::to_string(drmFourcc));
 
