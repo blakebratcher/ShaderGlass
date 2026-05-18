@@ -6,6 +6,8 @@
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <stdexcept>
+#include <filesystem>
+#include <cstdlib>
 
 ImGuiLayer::ImGuiLayer(VulkanContext& ctx, Swapchain& sc, SDL_Window* window)
     : m_ctx(ctx), m_sc(sc), m_window(window) {
@@ -32,6 +34,18 @@ ImGuiLayer::ImGuiLayer(VulkanContext& ctx, Swapchain& sc, SDL_Window* window)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME")) {
+        m_iniPath = std::string(xdg) + "/shaderglass/imgui.ini";
+    } else if (const char* home = std::getenv("HOME")) {
+        m_iniPath = std::string(home) + "/.config/shaderglass/imgui.ini";
+    } else {
+        m_iniPath = "shaderglass_imgui.ini";
+    }
+    std::filesystem::create_directories(
+        std::filesystem::path(m_iniPath).parent_path());
+    io.IniFilename = m_iniPath.c_str();
+
     ImGui::StyleColorsDark();
 
     if (!ImGui_ImplSDL3_InitForVulkan(m_window)) {

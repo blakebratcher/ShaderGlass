@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL.h>
 
@@ -31,4 +32,5 @@ private:
     Swapchain&       m_sc;
     SDL_Window*      m_window = nullptr;
     VkDescriptorPool m_pool   = VK_NULL_HANDLE;
+    std::string      m_iniPath;
 };
