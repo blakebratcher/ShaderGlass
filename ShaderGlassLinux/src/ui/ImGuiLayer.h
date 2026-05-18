@@ -19,9 +19,10 @@ public:
     // Call once per SDL event so ImGui captures keyboard/mouse state.
     void processSdlEvent(const SDL_Event& e);
 
-    // Frame lifecycle. beginFrame() must come before any ImGui:: calls;
-    // recordDrawData() must come AFTER ImGui::Render() and inside an active
-    // VkRenderPass / dynamic-rendering scope that targets the swapchain.
+    // Frame lifecycle. beginFrame() must come before any ImGui:: calls.
+    // recordDrawData() calls ImGui::Render() internally, then submits the
+    // draw data to the command buffer. It must be called inside an active
+    // dynamic-rendering scope that targets the swapchain image.
     void beginFrame();
     void recordDrawData(VkCommandBuffer cb);
 
