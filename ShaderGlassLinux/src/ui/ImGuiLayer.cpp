@@ -30,7 +30,8 @@ ImGuiLayer::ImGuiLayer(VulkanContext& ctx, Swapchain& sc, SDL_Window* window)
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::GetIO();  // (void) — reserved for future flag configuration
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
 
     if (!ImGui_ImplSDL3_InitForVulkan(m_window)) {
@@ -38,23 +39,25 @@ ImGuiLayer::ImGuiLayer(VulkanContext& ctx, Swapchain& sc, SDL_Window* window)
     }
 
     ImGui_ImplVulkan_InitInfo init{};
-    init.Instance       = m_ctx.instance();
-    init.PhysicalDevice = m_ctx.physicalDevice();
-    init.Device         = m_ctx.device();
-    init.QueueFamily    = m_ctx.graphicsQueueFamily();
-    init.Queue          = m_ctx.graphicsQueue();
-    init.DescriptorPool = m_pool;
-    init.RenderPass     = VK_NULL_HANDLE;  // we use dynamic rendering
-    init.MinImageCount  = 2;
-    init.ImageCount     = m_sc.imageCount();
+    init.ApiVersion      = VK_API_VERSION_1_3;
+    init.Instance        = m_ctx.instance();
+    init.PhysicalDevice  = m_ctx.physicalDevice();
+    init.Device          = m_ctx.device();
+    init.QueueFamily     = m_ctx.graphicsQueueFamily();
+    init.Queue           = m_ctx.graphicsQueue();
+    init.DescriptorPool  = m_pool;
+    init.MinImageCount   = 2;
+    init.ImageCount      = m_sc.imageCount();
     init.UseDynamicRendering = true;
-    init.PipelineRenderingCreateInfo = {};
-    init.PipelineRenderingCreateInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    // v1.92+: pipeline fields moved into PipelineInfoMain sub-struct
     VkFormat fmt = m_sc.format();
-    init.PipelineRenderingCreateInfo.colorAttachmentCount    = 1;
-    init.PipelineRenderingCreateInfo.pColorAttachmentFormats = &fmt;
-    init.MSAASamples    = VK_SAMPLE_COUNT_1_BIT;
+    init.PipelineInfoMain.RenderPass = VK_NULL_HANDLE;  // dynamic rendering
+    init.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init.PipelineInfoMain.PipelineRenderingCreateInfo = {};
+    init.PipelineInfoMain.PipelineRenderingCreateInfo.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    init.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount    = 1;
+    init.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &fmt;
     if (!ImGui_ImplVulkan_Init(&init)) {
         throw std::runtime_error("ImGuiLayer: ImGui_ImplVulkan_Init failed");
     }
