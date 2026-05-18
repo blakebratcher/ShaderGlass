@@ -98,6 +98,12 @@ add_executable(log_level_tests test_log_level.cpp)
 target_link_libraries(log_level_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(log_level_tests)
 
+add_executable(preset_library_tests test_preset_library.cpp)
+target_link_libraries(preset_library_tests PRIVATE shaderglass_core gtest_main)
+target_compile_definitions(preset_library_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+gtest_discover_tests(preset_library_tests)
+
 add_executable(app_state_tests test_app_state.cpp)
 target_link_libraries(app_state_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(app_state_tests)

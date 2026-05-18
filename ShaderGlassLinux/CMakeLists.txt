@@ -48,6 +48,7 @@ add_library(shaderglass_core STATIC
     src/output/SdlWindow.cpp
     src/util/FourccToVk.cpp
     src/util/Logging.cpp
+    src/util/PresetLibrary.cpp
     src/util/SourceMatcher.cpp
     src/util/XdgConfig.cpp
     src/util/stb_image_impl.cpp
