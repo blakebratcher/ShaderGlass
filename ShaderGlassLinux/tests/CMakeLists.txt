@@ -74,3 +74,7 @@ gtest_discover_tests(dmabuf_import_tests)
 add_executable(fourcc_to_vk_tests test_fourcc_to_vk.cpp)
 target_link_libraries(fourcc_to_vk_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(fourcc_to_vk_tests)
+
+add_executable(source_matcher_tests test_source_matcher.cpp)
+target_link_libraries(source_matcher_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(source_matcher_tests)
