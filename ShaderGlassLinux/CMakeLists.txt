@@ -66,6 +66,7 @@ add_library(shaderglass_core STATIC
     src/capture/PortalCaptureSession.cpp
     src/capture/WaylandCapture.cpp
     src/capture/X11Capture.cpp
+    src/ui/ImGuiLayer.cpp
     ${BUILTIN_HEADER}
 )
 target_include_directories(shaderglass_core
@@ -75,6 +76,7 @@ target_link_libraries(shaderglass_core PUBLIC
     SDL3::SDL3
     Vulkan::Vulkan
     shadergc
+    imgui
     PkgConfig::DBUS
     PkgConfig::PIPEWIRE
     PkgConfig::X11
