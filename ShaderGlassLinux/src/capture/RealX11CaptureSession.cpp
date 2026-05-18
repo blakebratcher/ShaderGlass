@@ -2,9 +2,49 @@
 #include "util/Logging.h"
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/Xatom.h>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+
+namespace {
+
+std::string getStringProp(Display* d, Window w, Atom prop, Atom type) {
+    Atom actualType = None;
+    int actualFormat = 0;
+    unsigned long nitems = 0, bytesAfter = 0;
+    unsigned char* data = nullptr;
+    std::string out;
+    if (XGetWindowProperty(d, w, prop, 0, 1024, False, type,
+                           &actualType, &actualFormat, &nitems, &bytesAfter,
+                           &data) == Success && data) {
+        out.assign(reinterpret_cast<const char*>(data), nitems);
+        XFree(data);
+    }
+    return out;
+}
+
+bool windowHasHiddenState(Display* d, Window w) {
+    Atom netWmState   = XInternAtom(d, "_NET_WM_STATE", False);
+    Atom hiddenState  = XInternAtom(d, "_NET_WM_STATE_HIDDEN", False);
+    Atom actualType = None;
+    int actualFormat = 0;
+    unsigned long nitems = 0, bytesAfter = 0;
+    unsigned char* data = nullptr;
+    bool isHidden = false;
+    if (XGetWindowProperty(d, w, netWmState, 0, 128, False, XA_ATOM,
+                           &actualType, &actualFormat, &nitems, &bytesAfter,
+                           &data) == Success && data) {
+        const Atom* atoms = reinterpret_cast<const Atom*>(data);
+        for (unsigned long i = 0; i < nitems; ++i) {
+            if (atoms[i] == hiddenState) { isHidden = true; break; }
+        }
+        XFree(data);
+    }
+    return isHidden;
+}
+
+} // namespace
 
 RealX11CaptureSession::RealX11CaptureSession() {
     m_display = XOpenDisplay(nullptr);
@@ -75,7 +115,52 @@ std::vector<SourceInfo> RealX11CaptureSession::enumerateSources() {
         XRRFreeScreenResources(res);
     }
 
-    // Windows are appended in Task 11.
+    Atom netWmName = XInternAtom(m_display, "_NET_WM_NAME", False);
+    Atom utf8      = XInternAtom(m_display, "UTF8_STRING", False);
+
+    Window dummyRoot, dummyParent;
+    Window* children = nullptr;
+    unsigned int nChildren = 0;
+    if (XQueryTree(m_display, m_root, &dummyRoot, &dummyParent,
+                   &children, &nChildren)) {
+        for (unsigned int i = 0; i < nChildren; ++i) {
+            Window w = children[i];
+
+            XWindowAttributes attr{};
+            if (!XGetWindowAttributes(m_display, w, &attr)) continue;
+            if (attr.override_redirect) continue;
+            if (attr.map_state != IsViewable && !windowHasHiddenState(m_display, w)) {
+                // unmapped and not "hidden" (minimized) — skip
+                continue;
+            }
+
+            std::string name = getStringProp(m_display, w, netWmName, utf8);
+            if (name.empty()) continue;  // unnamed: skip
+
+            std::string wmClass = getStringProp(m_display, w,
+                                                XA_WM_CLASS, XA_STRING);
+            // WM_CLASS is "<instance>\0<class>\0" — keep only the first token.
+            if (auto nul = wmClass.find('\0'); nul != std::string::npos) {
+                wmClass.resize(nul);
+            }
+
+            SourceInfo s;
+            char idbuf[32];
+            std::snprintf(idbuf, sizeof(idbuf), "window:0x%lx", (unsigned long)w);
+            s.id = idbuf;
+
+            char dnbuf[256];
+            if (!wmClass.empty()) {
+                std::snprintf(dnbuf, sizeof(dnbuf), "Window: %s (%s)",
+                              name.c_str(), wmClass.c_str());
+            } else {
+                std::snprintf(dnbuf, sizeof(dnbuf), "Window: %s", name.c_str());
+            }
+            s.displayName = dnbuf;
+            out.push_back(std::move(s));
+        }
+        if (children) XFree(children);
+    }
     return out;
 }
 
