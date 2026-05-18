@@ -46,6 +46,7 @@ add_custom_target(builtin_shaders_gen DEPENDS ${BUILTIN_HEADER})
 
 add_library(shaderglass_core STATIC
     src/output/SdlWindow.cpp
+    src/util/FourccToVk.cpp
     src/util/Logging.cpp
     src/util/XdgConfig.cpp
     src/util/stb_image_impl.cpp

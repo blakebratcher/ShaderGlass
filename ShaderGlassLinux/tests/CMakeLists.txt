@@ -70,3 +70,7 @@ if(GBM_FOUND)
     target_link_libraries(dmabuf_import_tests PRIVATE ${GBM_LIBRARIES})
 endif()
 gtest_discover_tests(dmabuf_import_tests)
+
+add_executable(fourcc_to_vk_tests test_fourcc_to_vk.cpp)
+target_link_libraries(fourcc_to_vk_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(fourcc_to_vk_tests)
