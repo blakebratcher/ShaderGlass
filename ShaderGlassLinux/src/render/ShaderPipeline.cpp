@@ -3,7 +3,6 @@
 #include "Texture.h"
 #include "../util/VkCheck.h"
 #include <stdexcept>
-#include <array>
 
 static VkShaderModule makeModule(VkDevice dev, const void* code, size_t size) {
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -133,8 +132,8 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
         if (vkAllocateMemory(ctx.device(), &mai, nullptr, &m_uboMemory) != VK_SUCCESS)
             throw std::runtime_error("ShaderPipeline: vkAllocateMemory (UBO) failed");
 
-        vkBindBufferMemory(ctx.device(), m_uboBuffer, m_uboMemory, 0);
-        vkMapMemory(ctx.device(), m_uboMemory, 0, uboSize, 0, &m_uboMapped);
+        VK_CHECK(vkBindBufferMemory(ctx.device(), m_uboBuffer, m_uboMemory, 0));
+        VK_CHECK(vkMapMemory(ctx.device(), m_uboMemory, 0, uboSize, 0, &m_uboMapped));
         m_uboSize = uboSize;
 
         // Write UBO descriptor at binding 0
