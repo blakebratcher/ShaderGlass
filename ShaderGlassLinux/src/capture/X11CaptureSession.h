@@ -25,6 +25,9 @@ struct X11SessionFrame {
 //     grab()/stop().
 //   - stop() releases all per-session resources (SHM segment, composite
 //     redirection). It is safe to call from the destructor.
+//   - All methods must be called from a single thread. The session does not
+//     internally synchronize; Xlib is not thread-safe without XInitThreads(),
+//     which we do not call.
 class X11CaptureSession {
 public:
     virtual ~X11CaptureSession() = default;

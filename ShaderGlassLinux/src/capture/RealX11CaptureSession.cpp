@@ -301,6 +301,7 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
 
     if (!m_haveXShm) {
         Drawable d = targetDrawable();
+        if (d == 0) return std::nullopt;
         int srcX = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropX : 0;
         int srcY = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropY : 0;
         // XGetImage allocates a new XImage each call; we copy out the data
@@ -309,11 +310,10 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
         XImage* img = XGetImage(m_display, d, srcX, srcY,
                                 m_width, m_height, AllPlanes, ZPixmap);
         if (!img) return std::nullopt;
-        thread_local std::vector<uint8_t> staging;
-        staging.assign(img->data, img->data + size_t(img->bytes_per_line) * img->height);
+        m_xgetImageStaging.assign(img->data, img->data + size_t(img->bytes_per_line) * img->height);
 
         X11SessionFrame f;
-        f.data   = staging.data();
+        f.data   = m_xgetImageStaging.data();
         f.stride = img->bytes_per_line;
         f.fourcc = 0x34325241;  // ARGB8888 (BGRA in memory) on TrueColor visuals
         f.width  = m_width;
@@ -323,6 +323,7 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
     }
 
     Drawable d = targetDrawable();
+    if (d == 0) return std::nullopt;
     int srcX = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropX : 0;
     int srcY = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropY : 0;
 
@@ -382,19 +383,20 @@ void RealX11CaptureSession::allocSharedImage(uint32_t w, uint32_t h) {
         XDestroyImage(m_image); m_image = nullptr;
         throw std::runtime_error("X11: shmat failed");
     }
+    // Mark for deletion immediately — the segment stays alive as long as X
+    // server attaches via XShmAttach. Standard idiom; closes the leak window
+    // between here and XSync.
+    shmctl(m_shm.shmid, IPC_RMID, nullptr);
     m_image->data  = m_shm.shmaddr;
     m_shm.readOnly = False;
 
     if (!XShmAttach(m_display, &m_shm)) {
         shmdt(m_shm.shmaddr);
-        shmctl(m_shm.shmid, IPC_RMID, nullptr);
+        // (shmctl IPC_RMID already done above)
         XDestroyImage(m_image); m_image = nullptr;
         throw std::runtime_error("X11: XShmAttach failed");
     }
     XSync(m_display, False);  // server-side attach must complete
-    // The SHM segment is marked for deletion immediately; it stays alive
-    // until the server detaches it on XShmDetach() / process exit.
-    shmctl(m_shm.shmid, IPC_RMID, nullptr);
     m_shmAttached = true;
 }
 
@@ -429,6 +431,11 @@ bool RealX11CaptureSession::reallocIfDimsChanged(uint32_t newW, uint32_t newH) {
 }
 
 Drawable RealX11CaptureSession::targetDrawable() const {
-    if (m_sourceKind == SourceKind::XWindow && m_havePixmap) return m_pixmap;
+    if (m_sourceKind == SourceKind::XWindow) {
+        // Window source without a backing pixmap (post-resize failure, etc.)
+        // returns 0 to signal "no target"; grab() converts that to nullopt
+        // rather than silently capturing the whole desktop.
+        return m_havePixmap ? m_pixmap : 0;
+    }
     return m_root;
 }

@@ -40,6 +40,7 @@ private:
     XImage*        m_image        = nullptr;
     XShmSegmentInfo m_shm{};
     bool           m_shmAttached  = false;
+    std::vector<uint8_t> m_xgetImageStaging; // staging buffer for XGetImage fallback path
 
     // Internals.
     void   allocSharedImage(uint32_t w, uint32_t h);
