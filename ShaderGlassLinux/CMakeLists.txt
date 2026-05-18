@@ -101,7 +101,7 @@ string(TIMESTAMP SHADERGLASS_BUILD_DATE "%Y-%m-%d")
 
 add_executable(shaderglass src/main.cpp)
 target_include_directories(shaderglass PRIVATE ${stb_SOURCE_DIR})
-target_link_libraries(shaderglass PRIVATE shaderglass_core)
+target_link_libraries(shaderglass PRIVATE shaderglass_core imgui)
 target_compile_definitions(shaderglass PRIVATE
     SHADERGLASS_GIT_COMMIT="${SHADERGLASS_GIT_COMMIT}"
     SHADERGLASS_BUILD_DATE="${SHADERGLASS_BUILD_DATE}")

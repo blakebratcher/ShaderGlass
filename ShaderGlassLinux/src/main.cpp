@@ -12,9 +12,13 @@
 #include "capture/PortalCaptureSession.h"
 #include "capture/X11Capture.h"
 #include "capture/RealX11CaptureSession.h"
+#include "ui/AppState.h"
+#include "ui/ImGuiLayer.h"
+#include "ui/SourcePickerPanel.h"
 #include "util/FourccToVk.h"
 #include "util/SourceMatcher.h"
 #include "util/Logging.h"
+#include <imgui.h>
 #include "builtin_shaders.h"
 #include "ShaderGC.h"
 #include "ShaderCache.h"
@@ -284,6 +288,12 @@ static int runWindowed(const Args& a) {
     window.getDrawableSize(w, h);
     Swapchain swapchain(ctx, surface, w, h);
 
+    ImGuiLayer imgui(ctx, swapchain, window.handle());
+    window.setImGuiLayer(&imgui);
+
+    AppState state;
+    SourcePickerPanel sourcePanel{a.captureKind};
+
     // Reject unknown --capture kinds before we silently route to the image
     // path (--capture imagefoo previously fell through to StaticImageCapture
     // and failed later with a confusing "no frame" error).
@@ -295,13 +305,12 @@ static int runWindowed(const Args& a) {
         return 2;
     }
 
-    std::unique_ptr<CaptureBackend> cap;
     if (a.captureKind == "wayland-screen") {
-        cap = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>(&ctx));
-        cap->selectSource(cap->enumerateSources()[0]);
+        state.capture = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>(&ctx));
+        state.capture->selectSource(state.capture->enumerateSources()[0]);
     } else if (a.captureKind == "x11-screen") {
-        cap = std::make_unique<X11Capture>(std::make_unique<RealX11CaptureSession>());
-        auto sources = cap->enumerateSources();
+        state.capture = std::make_unique<X11Capture>(std::make_unique<RealX11CaptureSession>());
+        auto sources = state.capture->enumerateSources();
 
         if (a.source.empty()) {
             std::fprintf(stderr,
@@ -333,17 +342,21 @@ static int runWindowed(const Args& a) {
             }
             return 3;
         }
-        cap->selectSource(picked);
+        state.capture->selectSource(picked);
+        state.activeSourceId = picked.id;
     } else {
-        cap = std::make_unique<StaticImageCapture>(a.input);
-        cap->selectSource(cap->enumerateSources()[0]);
+        state.capture = std::make_unique<StaticImageCapture>(a.input);
+        state.capture->selectSource(state.capture->enumerateSources()[0]);
     }
+
+    // Populate the source list so the picker has data to display from frame 1.
+    state.refreshSources();
 
     std::optional<CapturedFrame> frame;
     {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
         while (std::chrono::steady_clock::now() < deadline) {
-            frame = cap->acquireFrame();
+            frame = state.capture->acquireFrame();
             if (frame) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(33));
         }
@@ -388,22 +401,31 @@ static int runWindowed(const Args& a) {
                  a.captureKind.empty() ? a.input.c_str() : a.captureKind.c_str(),
                  frame->width, frame->height);
 
-        cap->release(*frame);  // first frame already uploaded
+        state.capture->release(*frame);  // first frame already uploaded
 
         while (window.pollEvents()) {
-            auto f = cap->acquireFrame();
+            imgui.beginFrame();
+
+            // Dock space + menu — kept tiny in Phase A; Phase B/C add panels.
+            ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+            sourcePanel.draw(state);
+
+            state.applyPending();
+
+            auto f = state.capture->acquireFrame();
             if (f) {
                 if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
                     auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
-                    engine.renderImageView(imp->view, pipeline);
-                    cap->release(*f);
+                    engine.renderImageViewWithOverlay(imp->view, pipeline,
+                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                    state.capture->release(*f);
                     continue;
-                } else {
-                    sourceTex.uploadFromCpu(f->data, f->stride * f->height, f->stride);
-                    cap->release(*f);
                 }
+                sourceTex.uploadFromCpu(f->data, f->stride * f->height, f->stride);
+                state.capture->release(*f);
             }
-            engine.renderTexture(sourceTex, pipeline);
+            engine.renderTextureWithOverlay(sourceTex, pipeline,
+                [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
         }
     }
     releasePipelineSource(ps);
