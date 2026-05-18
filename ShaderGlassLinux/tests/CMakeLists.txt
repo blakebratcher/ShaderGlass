@@ -93,3 +93,7 @@ gtest_discover_tests(x11_capture_real_tests)
 add_executable(bad_window_registry_tests test_bad_window_registry.cpp)
 target_link_libraries(bad_window_registry_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(bad_window_registry_tests)
+
+add_executable(log_level_tests test_log_level.cpp)
+target_link_libraries(log_level_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(log_level_tests)

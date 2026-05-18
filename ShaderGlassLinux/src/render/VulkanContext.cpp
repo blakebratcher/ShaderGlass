@@ -61,8 +61,9 @@ void VulkanContext::createInstance(bool enableValidation, bool headless,
             exts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
             validationActive = true;
         } else {
-            LOG_WARN("Validation layer requested but VK_LAYER_KHRONOS_validation is "
-                     "not installed; continuing without validation.");
+            // Expected on systems without the LunarG/Vulkan dev SDK installed.
+            // Demoted from WARN so normal end-user runs aren't noisy.
+            LOG_INFO("Vulkan validation layer not installed; running without it.");
         }
     }
 
