@@ -105,3 +105,37 @@ target_link_libraries(shaderglass PRIVATE shaderglass_core imgui)
 target_compile_definitions(shaderglass PRIVATE
     SHADERGLASS_GIT_COMMIT="${SHADERGLASS_GIT_COMMIT}"
     SHADERGLASS_BUILD_DATE="${SHADERGLASS_BUILD_DATE}")
+
+# Starter shader set: install to ${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/
+# for packaged installs, and stage into the build dir at configure time so
+# dev runs find them at ${CMAKE_BINARY_DIR}/ShaderGlassLinux/shaders-staging/.
+include(GNUInstallDirs)
+
+set(SHADERGLASS_STARTER_SRC ${CMAKE_CURRENT_SOURCE_DIR}/shaders/starter)
+set(SHADERGLASS_STARTER_STAGING
+    ${CMAKE_CURRENT_BINARY_DIR}/shaders-staging)
+file(MAKE_DIRECTORY ${SHADERGLASS_STARTER_STAGING})
+
+# Glob at configure time — adding a new starter file requires re-running
+# cmake. That's the standard CMake glob caveat; documented in starter/README.
+file(GLOB STARTER_FILES RELATIVE ${SHADERGLASS_STARTER_SRC}
+     ${SHADERGLASS_STARTER_SRC}/*.slangp
+     ${SHADERGLASS_STARTER_SRC}/*.slang
+     ${SHADERGLASS_STARTER_SRC}/*.png
+     ${SHADERGLASS_STARTER_SRC}/*.md)
+foreach(f IN LISTS STARTER_FILES)
+    configure_file(
+        ${SHADERGLASS_STARTER_SRC}/${f}
+        ${SHADERGLASS_STARTER_STAGING}/${f}
+        COPYONLY)
+endforeach()
+
+install(DIRECTORY ${SHADERGLASS_STARTER_SRC}/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/shaderglass/shaders)
+
+# Inject the staging path into shaderglass so PresetLibrary can find it
+# without an installed copy. (Production binaries also probe XDG paths.)
+target_compile_definitions(shaderglass PRIVATE
+    SHADERGLASS_DEV_SHADERS_DIR="${SHADERGLASS_STARTER_STAGING}")
+target_compile_definitions(shaderglass_core PRIVATE
+    SHADERGLASS_DEV_SHADERS_DIR="${SHADERGLASS_STARTER_STAGING}")
