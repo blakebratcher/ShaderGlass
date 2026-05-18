@@ -40,13 +40,13 @@ void AppState::applyPending() {
             preset.reset();
             activePresetPath.clear();
             LOG_INFO("AppState: cleared preset (passthrough)");
-        } else if (!ctx || !swapchain) {
-            LOG_ERROR("AppState: pendingPresetPath set but ctx/swapchain "
-                      "not wired");
+        } else if (!ctx) {
+            LOG_ERROR("AppState: pendingPresetPath set but ctx not wired");
         } else {
             try {
-                auto next = std::make_unique<Preset>(*ctx, want,
-                                                     swapchain->format());
+                VkFormat fmt = swapchain ? swapchain->format()
+                                         : VK_FORMAT_B8G8R8A8_UNORM;
+                auto next = std::make_unique<Preset>(*ctx, want, fmt);
                 preset = std::move(next);
                 activePresetPath = want;
                 LOG_INFO("AppState: loaded preset %s", want.c_str());

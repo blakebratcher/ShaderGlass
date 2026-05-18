@@ -78,21 +78,22 @@ TEST(AppState, ApplyPendingSwitchesPresetWhenIntentSet) {
     ShaderPipeline& pl = p.pipeline();
     (void)pl;  // just verify the reference is valid
 
-    // Part 2: applyPending path — ctx wired but swapchain null → logs error, no crash
+    // Part 2: applyPending path — ctx wired, swapchain null → falls back to
+    // VK_FORMAT_B8G8R8A8_UNORM and successfully builds the Preset.
     {
         AppState state;
         state.ctx       = &ctx;
-        state.swapchain = nullptr;  // deliberately null to exercise the guard
+        state.swapchain = nullptr;  // null swapchain → fallback format used
         state.capture   = makeFakeCapture();
         state.refreshSources();
 
         state.pendingPresetPath = path.string();
-        state.applyPending();  // must not crash; swapchain null → LOG_ERROR path
+        state.applyPending();  // must not crash; uses fallback VkFormat
 
         // intent is consumed regardless
         EXPECT_FALSE(state.pendingPresetPath.has_value());
-        // preset stays null because swapchain was null
-        EXPECT_EQ(state.preset, nullptr);
+        // preset is now built (ctx is wired; swapchain null uses fallback format)
+        EXPECT_NE(state.preset, nullptr);
     }
 
     // Part 3: clear passthrough path (want.empty())
@@ -109,4 +110,37 @@ TEST(AppState, ApplyPendingSwitchesPresetWhenIntentSet) {
         EXPECT_TRUE(state.activePresetPath.empty());
         EXPECT_FALSE(state.pendingPresetPath.has_value());
     }
+}
+
+TEST(AppState, PresetSwitchResetsActiveParamsToDefaults) {
+    VulkanContext ctx({.headless = true, .enableValidation = false});
+
+    AppState state;
+    state.ctx       = &ctx;
+    state.swapchain = nullptr;  // not used by test path
+    state.capture   = makeFakeCapture();
+    state.refreshSources();
+
+    auto path = std::filesystem::path(TEST_DATA_DIR) / "stock.slangp";
+    state.pendingPresetPath = path.string();
+    state.applyPending();
+    ASSERT_NE(state.preset, nullptr);
+
+    // stock.slangp is passthrough with no params — confirm + skip if so.
+    if (state.preset->params().empty()) {
+        GTEST_SKIP() << "stock.slangp declares no params; nothing to verify";
+    }
+
+    // Mutate the first param away from its default
+    auto& p0 = state.preset->params()[0];
+    float originalDefault = p0.defaultValue;
+    p0.currentValue = (p0.minValue + p0.maxValue) * 0.5f + 0.123f;
+    ASSERT_NE(p0.currentValue, originalDefault);
+
+    // Re-pick the same preset — applyPending rebuilds the Preset object
+    state.pendingPresetPath = path.string();
+    state.applyPending();
+
+    ASSERT_NE(state.preset, nullptr);
+    EXPECT_FLOAT_EQ(state.preset->params()[0].currentValue, originalDefault);
 }
