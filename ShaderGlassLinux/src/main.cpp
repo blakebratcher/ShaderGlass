@@ -431,6 +431,7 @@ static int runWindowed(const Args& a) {
             paramsPanel.draw(state);
 
             state.applyPending();
+            if (state.preset) state.preset->updateUbo();
 
             ShaderPipeline& activePipeline =
                 state.preset ? state.preset->pipeline() : pipeline;

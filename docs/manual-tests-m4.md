@@ -28,5 +28,19 @@ the X11 entries; Wayland entries need the user's actual desktop).
 - [ ] `--preset starter/crt-easymode.slangp` on launch starts with that
       preset already active.
 
-## Phase C / D
+## Phase C — Parameter editor
+
+- [ ] Launch with a CRT preset (`--preset .../crt-easymode.slangp`); the
+      Parameters panel shows sliders + checkboxes for the preset's params.
+- [ ] Dragging a slider visibly changes the rendered output within the
+      same frame (no perceptible lag).
+- [ ] Clicking "Reset to defaults" snaps every slider back to its default
+      and the output updates accordingly.
+- [ ] Switching to a different preset (e.g. `lcd-grid`) replaces the
+      param list with the new preset's params; values are at defaults.
+- [ ] Switching back to `crt-easymode` again — params reset to defaults
+      (any tweaks you made earlier are NOT preserved; spec-confirmed).
+- [ ] All Phase C automated tests (`ctest -R AppState`) pass.
+
+## Phase D
 _(extended by later tasks)_
