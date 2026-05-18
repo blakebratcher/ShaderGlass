@@ -255,6 +255,24 @@ void RealX11CaptureSession::stop() {
 std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
     if (m_sourceKind == SourceKind::Unset) return std::nullopt;
 
+    // Detect source resize. Cheap query (no server roundtrip cache).
+    Window  rootRet;
+    int     xRet, yRet;
+    unsigned int wRet, hRet, borderRet, depthRet;
+    Drawable probe = (m_sourceKind == SourceKind::XWindow)
+                     ? (Drawable)m_windowTarget
+                     : (Drawable)m_root;
+    if (XGetGeometry(m_display, probe, &rootRet, &xRet, &yRet,
+                     &wRet, &hRet, &borderRet, &depthRet)) {
+        if (m_sourceKind == SourceKind::MonitorOutput) {
+            // Output dimensions tracked via XRandR; only detect root resize
+            // by also clamping to current width/height of the cached crop.
+        } else if (reallocIfDimsChanged(wRet, hRet)) {
+            // Skip this frame — the new SHM segment is fresh and uninitialised.
+            return std::nullopt;
+        }
+    }
+
     if (!m_haveXShm) {
         // Slow path covered in Task 14.
         return std::nullopt;
@@ -343,7 +361,19 @@ void RealX11CaptureSession::freeSharedImage() {
     }
 }
 
-bool RealX11CaptureSession::reallocIfDimsChanged(uint32_t, uint32_t) { return true; }
+bool RealX11CaptureSession::reallocIfDimsChanged(uint32_t newW, uint32_t newH) {
+    if (newW == m_width && newH == m_height) return false;
+    freeSharedImage();
+    if (m_sourceKind == SourceKind::XWindow && m_havePixmap) {
+        XFreePixmap(m_display, m_pixmap);
+        m_pixmap = XCompositeNameWindowPixmap(m_display, m_windowTarget);
+        if (!m_pixmap) { m_havePixmap = false; return true; }
+    }
+    m_width  = newW;
+    m_height = newH;
+    allocSharedImage(m_width, m_height);
+    return true;
+}
 
 Drawable RealX11CaptureSession::targetDrawable() const {
     if (m_sourceKind == SourceKind::XWindow && m_havePixmap) return m_pixmap;
