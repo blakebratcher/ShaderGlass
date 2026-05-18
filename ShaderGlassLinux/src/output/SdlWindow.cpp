@@ -1,4 +1,5 @@
 #include "SdlWindow.h"
+#include "ui/ImGuiLayer.h"
 #include "../util/Logging.h"
 #include <stdexcept>
 
@@ -22,10 +23,20 @@ SdlWindow::~SdlWindow() {
 }
 
 bool SdlWindow::pollEvents() {
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-        if (ev.type == SDL_EVENT_QUIT) m_open = false;
-        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) m_open = false;
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        if (m_imguiLayer) {
+            m_imguiLayer->processSdlEvent(e);
+        }
+        if (e.type == SDL_EVENT_QUIT) {
+            m_open = false;
+        } else if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                   e.window.windowID == SDL_GetWindowID(m_window)) {
+            m_open = false;
+        } else if (e.type == SDL_EVENT_KEY_DOWN &&
+                   e.key.scancode == SDL_SCANCODE_ESCAPE) {
+            m_open = false;
+        }
     }
     return m_open;
 }

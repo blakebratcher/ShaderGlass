@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+class ImGuiLayer;
+
 class SdlWindow {
 public:
     SdlWindow(const std::string& title, uint32_t width, uint32_t height);
@@ -26,7 +28,10 @@ public:
     std::vector<const char*> requiredVulkanInstanceExtensions() const;
     VkSurfaceKHR createVulkanSurface(VkInstance inst) const;
 
+    void setImGuiLayer(ImGuiLayer* layer) noexcept { m_imguiLayer = layer; }
+
 private:
-    SDL_Window* m_window = nullptr;
-    bool        m_open   = true;
+    SDL_Window* m_window     = nullptr;
+    bool        m_open       = true;
+    ImGuiLayer* m_imguiLayer = nullptr;
 };
