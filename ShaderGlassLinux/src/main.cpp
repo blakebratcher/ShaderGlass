@@ -10,6 +10,9 @@
 #include "capture/StaticImageCapture.h"
 #include "capture/WaylandCapture.h"
 #include "capture/PortalCaptureSession.h"
+#include "capture/X11Capture.h"
+#include "capture/RealX11CaptureSession.h"
+#include "util/SourceMatcher.h"
 #include "util/Logging.h"
 #include "builtin_shaders.h"
 #include "ShaderGC.h"
@@ -30,6 +33,7 @@ struct Args {
     uint32_t width = 1280, height = 720;
     bool debugPortal = false;
     std::string captureKind;
+    std::string source;          // --source value for x11-screen
 };
 
 static Args parseArgs(int argc, char** argv) {
@@ -46,6 +50,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--preset" && i+1 < argc) a.preset = argv[++i];
         else if (s == "--debug-portal") a.debugPortal = true;
         else if (s == "--capture" && i+1 < argc) a.captureKind = argv[++i];
+        else if (s == "--source"  && i+1 < argc) a.source = argv[++i];
         else if (a.input.empty())               a.input  = s;  // bare positional input
     }
     return a;
@@ -149,10 +154,46 @@ static int runWindowed(const Args& a) {
     std::unique_ptr<CaptureBackend> cap;
     if (a.captureKind == "wayland-screen") {
         cap = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>(&ctx));
+        cap->selectSource(cap->enumerateSources()[0]);
+    } else if (a.captureKind == "x11-screen") {
+        cap = std::make_unique<X11Capture>(std::make_unique<RealX11CaptureSession>());
+        auto sources = cap->enumerateSources();
+
+        if (a.source.empty()) {
+            std::fprintf(stderr,
+                "no --source given; pick one with --source <id-or-name>:\n");
+            for (const auto& s : sources) {
+                std::fprintf(stderr, "  %-32s  %s\n",
+                             s.id.c_str(), s.displayName.c_str());
+            }
+            return 2;
+        }
+
+        SourceInfo picked;
+        auto result = matchSource(sources, a.source, picked);
+        if (result == SourceMatchResult::NoMatch) {
+            std::fprintf(stderr,
+                "no source matched '%s'; available:\n", a.source.c_str());
+            for (const auto& s : sources) {
+                std::fprintf(stderr, "  %-32s  %s\n",
+                             s.id.c_str(), s.displayName.c_str());
+            }
+            return 4;
+        }
+        if (result == SourceMatchResult::Ambiguous) {
+            std::fprintf(stderr,
+                "'%s' matched more than one source:\n", a.source.c_str());
+            for (const auto& s : collectSubstringMatches(sources, a.source)) {
+                std::fprintf(stderr, "  %-32s  %s\n",
+                             s.id.c_str(), s.displayName.c_str());
+            }
+            return 3;
+        }
+        cap->selectSource(picked);
     } else {
         cap = std::make_unique<StaticImageCapture>(a.input);
+        cap->selectSource(cap->enumerateSources()[0]);
     }
-    cap->selectSource(cap->enumerateSources()[0]);
 
     std::optional<CapturedFrame> frame;
     {
