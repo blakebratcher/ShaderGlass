@@ -109,3 +109,7 @@ target_link_libraries(app_state_tests PRIVATE shaderglass_core gtest_main)
 target_compile_definitions(app_state_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 gtest_discover_tests(app_state_tests)
+
+add_executable(config_store_tests test_config_store.cpp)
+target_link_libraries(config_store_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(config_store_tests)

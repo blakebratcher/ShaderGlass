@@ -46,6 +46,7 @@ add_custom_target(builtin_shaders_gen DEPENDS ${BUILTIN_HEADER})
 
 add_library(shaderglass_core STATIC
     src/output/SdlWindow.cpp
+    src/util/ConfigStore.cpp
     src/util/FourccToVk.cpp
     src/util/Logging.cpp
     src/util/PresetLibrary.cpp
@@ -83,6 +84,7 @@ target_link_libraries(shaderglass_core PUBLIC
     Vulkan::Vulkan
     shadergc
     imgui
+    nlohmann_json::nlohmann_json
     PkgConfig::DBUS
     PkgConfig::PIPEWIRE
     PkgConfig::X11
