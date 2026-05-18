@@ -3,11 +3,27 @@
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/Xatom.h>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
 
 namespace {
+
+std::atomic<bool> g_badWindowFlag{false};
+
+int x11ErrorHandler(Display* /*d*/, XErrorEvent* ev) {
+    if (ev->error_code == BadWindow) {
+        g_badWindowFlag.store(true, std::memory_order_release);
+    }
+    // Returning 0 tells Xlib not to abort the process.
+    return 0;
+}
+
+struct X11ErrorHandlerInstaller {
+    X11ErrorHandlerInstaller() { XSetErrorHandler(x11ErrorHandler); }
+};
+X11ErrorHandlerInstaller g_x11ErrorHandlerInstaller;
 
 std::string getStringProp(Display* d, Window w, Atom prop, Atom type) {
     Atom actualType = None;
@@ -271,6 +287,16 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
             // Skip this frame — the new SHM segment is fresh and uninitialised.
             return std::nullopt;
         }
+    }
+
+    if (m_sourceKind == SourceKind::XWindow &&
+        g_badWindowFlag.exchange(false, std::memory_order_acq_rel)) {
+        LOG_ERROR("source window 0x%lx was destroyed",
+                  (unsigned long)m_windowTarget);
+        m_havePixmap = false;
+        m_windowTarget = 0;
+        m_sourceKind = SourceKind::Unset;
+        return std::nullopt;
     }
 
     if (!m_haveXShm) {
