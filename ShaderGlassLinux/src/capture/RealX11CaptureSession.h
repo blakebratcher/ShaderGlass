@@ -1,5 +1,6 @@
 #pragma once
 #include "X11CaptureSession.h"
+#include <X11/X.h>     // Atom
 #include <X11/Xlib.h>
 #include <X11/extensions/XShm.h>
 #include <sys/shm.h>
@@ -42,9 +43,17 @@ private:
     bool           m_shmAttached  = false;
     std::vector<uint8_t> m_xgetImageStaging; // staging buffer for XGetImage fallback path
 
+    // Cached EWMH/ICCCM atoms — interned once at construction so enumerateSources
+    // doesn't pay a server roundtrip per window per call.
+    Atom m_atomNetWmState       = 0;
+    Atom m_atomNetWmStateHidden = 0;
+    Atom m_atomNetWmName        = 0;
+    Atom m_atomUtf8String       = 0;
+
     // Internals.
     void   allocSharedImage(uint32_t w, uint32_t h);
     void   freeSharedImage();
     bool   reallocIfDimsChanged(uint32_t newW, uint32_t newH);
     Drawable targetDrawable() const;
+    bool   windowHasHiddenState(Window w) const;
 };

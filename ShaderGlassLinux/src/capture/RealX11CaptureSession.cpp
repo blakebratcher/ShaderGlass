@@ -1,20 +1,20 @@
 #include "RealX11CaptureSession.h"
+#include "BadWindowRegistry.h"
 #include "util/Logging.h"
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/Xatom.h>
-#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
 
 namespace {
 
-std::atomic<bool> g_badWindowFlag{false};
-
-int x11ErrorHandler(Display* /*d*/, XErrorEvent* ev) {
+int x11ErrorHandler(Display* d, XErrorEvent* ev) {
     if (ev->error_code == BadWindow) {
-        g_badWindowFlag.store(true, std::memory_order_release);
+        // Dispatch to the right session by its Display* — important once M4
+        // ever runs two RealX11CaptureSession instances concurrently.
+        BadWindowRegistry::note(d);
     }
     // Returning 0 tells Xlib not to abort the process.
     return 0;
@@ -40,26 +40,6 @@ std::string getStringProp(Display* d, Window w, Atom prop, Atom type) {
     return out;
 }
 
-bool windowHasHiddenState(Display* d, Window w) {
-    Atom netWmState   = XInternAtom(d, "_NET_WM_STATE", False);
-    Atom hiddenState  = XInternAtom(d, "_NET_WM_STATE_HIDDEN", False);
-    Atom actualType = None;
-    int actualFormat = 0;
-    unsigned long nitems = 0, bytesAfter = 0;
-    unsigned char* data = nullptr;
-    bool isHidden = false;
-    if (XGetWindowProperty(d, w, netWmState, 0, 128, False, XA_ATOM,
-                           &actualType, &actualFormat, &nitems, &bytesAfter,
-                           &data) == Success && data) {
-        const Atom* atoms = reinterpret_cast<const Atom*>(data);
-        for (unsigned long i = 0; i < nitems; ++i) {
-            if (atoms[i] == hiddenState) { isHidden = true; break; }
-        }
-        XFree(data);
-    }
-    return isHidden;
-}
-
 } // namespace
 
 RealX11CaptureSession::RealX11CaptureSession() {
@@ -80,17 +60,25 @@ RealX11CaptureSession::RealX11CaptureSession() {
     if (!m_haveXShm) {
         LOG_WARN("XShm unavailable, will fall back to slow XGetImage path");
     }
+
+    // Intern EWMH/ICCCM atoms once. enumerateSources() touches every top-level
+    // window, so re-interning per call was an N×4 server roundtrip storm.
+    m_atomNetWmState       = XInternAtom(m_display, "_NET_WM_STATE",        False);
+    m_atomNetWmStateHidden = XInternAtom(m_display, "_NET_WM_STATE_HIDDEN", False);
+    m_atomNetWmName        = XInternAtom(m_display, "_NET_WM_NAME",         False);
+    m_atomUtf8String       = XInternAtom(m_display, "UTF8_STRING",          False);
+
+    BadWindowRegistry::add(m_display);
 }
 
 RealX11CaptureSession::~RealX11CaptureSession() {
     stop();
     if (m_display) {
+        BadWindowRegistry::remove(m_display);
         XCloseDisplay(m_display);
         m_display = nullptr;
     }
 }
-
-// --- placeholders implemented in subsequent tasks ---
 
 std::vector<SourceInfo> RealX11CaptureSession::enumerateSources() {
     std::vector<SourceInfo> out;
@@ -131,9 +119,6 @@ std::vector<SourceInfo> RealX11CaptureSession::enumerateSources() {
         XRRFreeScreenResources(res);
     }
 
-    Atom netWmName = XInternAtom(m_display, "_NET_WM_NAME", False);
-    Atom utf8      = XInternAtom(m_display, "UTF8_STRING", False);
-
     Window dummyRoot, dummyParent;
     Window* children = nullptr;
     unsigned int nChildren = 0;
@@ -145,12 +130,13 @@ std::vector<SourceInfo> RealX11CaptureSession::enumerateSources() {
             XWindowAttributes attr{};
             if (!XGetWindowAttributes(m_display, w, &attr)) continue;
             if (attr.override_redirect) continue;
-            if (attr.map_state != IsViewable && !windowHasHiddenState(m_display, w)) {
+            if (attr.map_state != IsViewable && !windowHasHiddenState(w)) {
                 // unmapped and not "hidden" (minimized) — skip
                 continue;
             }
 
-            std::string name = getStringProp(m_display, w, netWmName, utf8);
+            std::string name = getStringProp(m_display, w,
+                                             m_atomNetWmName, m_atomUtf8String);
             if (name.empty()) continue;  // unnamed: skip
 
             std::string wmClass = getStringProp(m_display, w,
@@ -290,7 +276,7 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
     }
 
     if (m_sourceKind == SourceKind::XWindow &&
-        g_badWindowFlag.exchange(false, std::memory_order_acq_rel)) {
+        BadWindowRegistry::consume(m_display)) {
         LOG_ERROR("source window 0x%lx was destroyed",
                   (unsigned long)m_windowTarget);
         m_havePixmap = false;
@@ -438,4 +424,22 @@ Drawable RealX11CaptureSession::targetDrawable() const {
         return m_havePixmap ? m_pixmap : 0;
     }
     return m_root;
+}
+
+bool RealX11CaptureSession::windowHasHiddenState(Window w) const {
+    Atom actualType = None;
+    int actualFormat = 0;
+    unsigned long nitems = 0, bytesAfter = 0;
+    unsigned char* data = nullptr;
+    bool isHidden = false;
+    if (XGetWindowProperty(m_display, w, m_atomNetWmState, 0, 128, False, XA_ATOM,
+                           &actualType, &actualFormat, &nitems, &bytesAfter,
+                           &data) == Success && data) {
+        const Atom* atoms = reinterpret_cast<const Atom*>(data);
+        for (unsigned long i = 0; i < nitems; ++i) {
+            if (atoms[i] == m_atomNetWmStateHidden) { isHidden = true; break; }
+        }
+        XFree(data);
+    }
+    return isHidden;
 }

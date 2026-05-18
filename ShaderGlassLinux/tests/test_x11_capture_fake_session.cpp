@@ -29,16 +29,17 @@ static std::vector<uint8_t> readFile(const fs::path& p) {
 }
 
 TEST(X11CaptureWithFakeSession, RendersBgraFrameToReferencePng) {
-    // 4x4 red in BGRA layout: B=0, G=0, R=255, A=255.
-    std::vector<uint8_t> pixels(4 * 4 * 4);
-    for (size_t i = 0; i < 16; ++i) {
+    constexpr uint32_t kW = 4, kH = 4;
+    // kW*kH red pixels in BGRA layout: B=0, G=0, R=255, A=255.
+    std::vector<uint8_t> pixels(kW * kH * 4);
+    for (size_t i = 0; i < kW * kH; ++i) {
         pixels[i*4 + 0] = 0;     // B
         pixels[i*4 + 1] = 0;     // G
         pixels[i*4 + 2] = 255;   // R
         pixels[i*4 + 3] = 255;   // A
     }
 
-    auto session = std::make_unique<FakeX11CaptureSession>(4, 4, pixels);
+    auto session = std::make_unique<FakeX11CaptureSession>(kW, kH, pixels);
     X11Capture cap(std::move(session));
 
     auto sources = cap.enumerateSources();
@@ -48,8 +49,8 @@ TEST(X11CaptureWithFakeSession, RendersBgraFrameToReferencePng) {
     auto frame = cap.acquireFrame();
     ASSERT_TRUE(frame.has_value());
     EXPECT_EQ(frame->kind,   CapturedFrame::Kind::CpuBuffer);
-    EXPECT_EQ(frame->width,  4u);
-    EXPECT_EQ(frame->height, 4u);
+    EXPECT_EQ(frame->width,  kW);
+    EXPECT_EQ(frame->height, kH);
     EXPECT_EQ(frame->fourcc, 0x34325241u);  // ARGB8888 (BGRA in memory)
 
     VulkanContext ctx({.headless = true, .enableValidation = true});
@@ -65,13 +66,13 @@ TEST(X11CaptureWithFakeSession, RendersBgraFrameToReferencePng) {
         g_passthrough_vert_spv, g_passthrough_vert_spv_len,
         g_passthrough_frag_spv, g_passthrough_frag_spv_len,
         fmt);
-    HeadlessOutput out(ctx, 4, 4, fmt);
+    HeadlessOutput out(ctx, kW, kH, fmt);
     auto bytes = out.renderToBytes(src, pipeline);
 
     fs::path tmp = fs::temp_directory_path() / "shaderglass_x11_fake_out.png";
     fs::remove(tmp);
-    ASSERT_TRUE(stbi_write_png(tmp.string().c_str(), 4, 4, 4,
-                               bytes.data(), 4 * 4));
+    ASSERT_TRUE(stbi_write_png(tmp.string().c_str(), kW, kH, 4,
+                               bytes.data(), kW * 4));
 
     fs::path ref = fs::path(TEST_DATA_DIR) / "reference_x11_fake_4x4.png";
     auto a = readFile(tmp);

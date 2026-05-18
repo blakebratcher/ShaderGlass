@@ -59,6 +59,7 @@ add_library(shaderglass_core STATIC
     src/render/HeadlessOutput.cpp
     src/render/DmaBufImport.cpp
     src/capture/StaticImageCapture.cpp
+    src/capture/BadWindowRegistry.cpp
     src/capture/FakeWaylandCaptureSession.cpp
     src/capture/FakeX11CaptureSession.cpp
     src/capture/RealX11CaptureSession.cpp
