@@ -156,3 +156,25 @@ void RenderEngine::renderImageView(VkImageView view, ShaderPipeline& pipeline) {
         pipeline.bindAndDrawWithImageView(cb, view, ext);
     });
 }
+
+void RenderEngine::renderTextureWithOverlay(const Texture& src,
+                                            ShaderPipeline& pipeline,
+                                            const std::function<void(VkCommandBuffer)>& imguiBody) {
+    VkClearValue cv{};
+    cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
+        pipeline.bindAndDraw(cb, src, ext);
+        if (imguiBody) imguiBody(cb);
+    });
+}
+
+void RenderEngine::renderImageViewWithOverlay(VkImageView view,
+                                              ShaderPipeline& pipeline,
+                                              const std::function<void(VkCommandBuffer)>& imguiBody) {
+    VkClearValue cv{};
+    cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
+        pipeline.bindAndDrawWithImageView(cb, view, ext);
+        if (imguiBody) imguiBody(cb);
+    });
+}

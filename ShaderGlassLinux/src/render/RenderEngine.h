@@ -23,6 +23,14 @@ public:
     void renderTexture(const Texture& src, ShaderPipeline& pipeline);
     void renderImageView(VkImageView view, ShaderPipeline& pipeline);
 
+    // Variants that also record an ImGui pass on top of the shader output.
+    // `imguiBody(cb)` is called after the shader body, still inside the
+    // dynamic-rendering scope on the swapchain image.
+    void renderTextureWithOverlay(const Texture& src, ShaderPipeline& pipeline,
+                                  const std::function<void(VkCommandBuffer)>& imguiBody);
+    void renderImageViewWithOverlay(VkImageView view, ShaderPipeline& pipeline,
+                                    const std::function<void(VkCommandBuffer)>& imguiBody);
+
 private:
     void renderFrame(VkClearValue clearColor,
                      const std::function<void(VkCommandBuffer, VkExtent2D)>& body);
