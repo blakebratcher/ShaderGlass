@@ -2,7 +2,9 @@
 #include "AppState.h"
 #include "render/Preset.h"
 #include "ShaderDef.h"
+#include "util/ConfigStore.h"
 #include <imgui.h>
+#include <unordered_map>
 
 namespace {
 
@@ -72,6 +74,14 @@ void ParamsPanel::draw(AppState& state) {
     }
     if (edited) {
         state.preset->updateUbo();
+        if (state.config) {
+            std::unordered_map<std::string, float> snapshot;
+            for (const auto& p : state.preset->params()) {
+                snapshot.emplace(p.name, p.currentValue);
+            }
+            state.config->setPresetParams(state.preset->path().string(),
+                                          std::move(snapshot));
+        }
     }
 
     ImGui::End();

@@ -468,6 +468,7 @@ static int runWindowed(const Args& a) {
                 [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
         }
     }
+    config.saveSync();
     releasePipelineSource(ps);
     // Clear the non-owning ImGuiLayer pointer so SdlWindow doesn't outlive
     // its target — imgui destructs first when runWindowed returns.
