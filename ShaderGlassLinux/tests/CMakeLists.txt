@@ -97,3 +97,7 @@ gtest_discover_tests(bad_window_registry_tests)
 add_executable(log_level_tests test_log_level.cpp)
 target_link_libraries(log_level_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(log_level_tests)
+
+add_executable(app_state_tests test_app_state.cpp)
+target_link_libraries(app_state_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(app_state_tests)

@@ -66,6 +66,7 @@ add_library(shaderglass_core STATIC
     src/capture/PortalCaptureSession.cpp
     src/capture/WaylandCapture.cpp
     src/capture/X11Capture.cpp
+    src/ui/AppState.cpp
     src/ui/ImGuiLayer.cpp
     ${BUILTIN_HEADER}
 )
