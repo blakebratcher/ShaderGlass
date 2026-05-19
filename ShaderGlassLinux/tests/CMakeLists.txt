@@ -129,3 +129,7 @@ gtest_discover_tests(app_state_crop_tests)
 add_executable(crop_overlay_tests test_crop_overlay.cpp)
 target_link_libraries(crop_overlay_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(crop_overlay_tests)
+
+add_executable(screenshot_path_tests test_screenshot_path.cpp)
+target_link_libraries(screenshot_path_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(screenshot_path_tests)

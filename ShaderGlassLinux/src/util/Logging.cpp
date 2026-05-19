@@ -59,33 +59,25 @@ void resetThresholdForTesting() noexcept {
 
 #include "ui/AppState.h"
 #include "ui/ToastQueue.h"
-#include <chrono>
-
-// TODO(Task 16): replace with Time::nowMonotonicMs() once the public helper exists.
-namespace {
-int64_t nowMonotonicMs() {
-    using namespace std::chrono;
-    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
-}
-} // anonymous namespace (append)
+#include "util/Time.h"
 
 namespace Logging {
 
 void infoToast(AppState& state, std::string msg) {
     LOG_INFO("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Info, std::move(msg), nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Info, std::move(msg), Time::nowMonotonicMs());
 }
 void okToast(AppState& state, std::string msg) {
     LOG_INFO("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Success, std::move(msg), nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Success, std::move(msg), Time::nowMonotonicMs());
 }
 void warnToast(AppState& state, std::string msg) {
     LOG_WARN("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), Time::nowMonotonicMs());
 }
 void errorToast(AppState& state, std::string msg) {
     LOG_ERROR("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), Time::nowMonotonicMs());
 }
 
 } // namespace Logging
