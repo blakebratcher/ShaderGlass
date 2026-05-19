@@ -51,6 +51,7 @@ add_library(shaderglass_core STATIC
     src/util/Logging.cpp
     src/util/PresetLibrary.cpp
     src/util/ScreenshotPath.cpp
+    src/util/ScreenshotWriter.cpp
     src/util/SourceMatcher.cpp
     src/util/Time.cpp
     src/util/XdgConfig.cpp
