@@ -40,6 +40,24 @@ void SourcePickerPanel::draw(AppState& state) {
     ImGui::SameLine();
     ImGui::TextDisabled("%zu source(s)", state.sources.size());
 
+    ImGui::SameLine();
+    const bool canCrop = state.capture && !state.activeSourceId.empty();
+    ImGui::BeginDisabled(!canCrop);
+    if (ImGui::Button("Crop region")) {
+        state.cropMode = true;
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered() && canCrop) {
+        ImGui::SetTooltip("Drag a rectangle on the viewport. Enter to confirm, Esc to cancel.");
+    }
+
+    if (canCrop && state.currentCrop) {
+        ImGui::SameLine();
+        if (ImGui::Button("Clear crop")) {
+            state.pendingClearCrop = true;
+        }
+    }
+
     if (ImGui::BeginTable("##sources", 2,
             ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
         ImGui::TableSetupColumn("ID",   ImGuiTableColumnFlags_WidthFixed, 220.0f);
