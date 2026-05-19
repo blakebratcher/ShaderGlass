@@ -1,6 +1,7 @@
 #pragma once
 #include "capture/CaptureBackend.h"
 #include "render/Preset.h"
+#include "ui/ToastQueue.h"
 #include "util/PresetLibrary.h"
 #include "util/SourceInfo.h"
 #include <memory>
@@ -23,6 +24,10 @@ struct AppState {
     Swapchain*      swapchain = nullptr;
     PresetLibrary*  library   = nullptr;
     ConfigStore*    config    = nullptr;
+
+    // Toast surface. Constructed by main; panels and renderer post via
+    // Logging::*Toast() helpers which call through to this queue.
+    std::unique_ptr<ToastQueue>  toasts;
 
     // Active capture
     std::unique_ptr<CaptureBackend> capture;

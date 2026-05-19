@@ -42,3 +42,21 @@ void resetThresholdForTesting() noexcept;
 #define LOG_INFO(fmt, ...)  LOG_AT(LogLevel::Info,  "[INFO]  ", fmt, ##__VA_ARGS__)
 #define LOG_WARN(fmt, ...)  LOG_AT(LogLevel::Warn,  "[WARN]  ", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) LOG_AT(LogLevel::Error, "[ERROR] ", fmt, ##__VA_ARGS__)
+
+#include <string>
+
+struct AppState;  // forward decl (for Logging::*Toast variants)
+
+namespace Logging {
+    // Toast variants: write through to the existing LOG_* macros AND
+    // post a toast on AppState.toasts (when present). Safe to call from
+    // any thread (ToastQueue is mutex-protected).
+    //
+    // Each helper stamps the toast with steady_clock::now() ms so the
+    // queue's relative-TTL expiry works correctly at runtime. Callers
+    // do NOT need to thread a clock through.
+    void infoToast (AppState& state, std::string msg);
+    void okToast   (AppState& state, std::string msg);   // success severity in queue; info in log
+    void warnToast (AppState& state, std::string msg);
+    void errorToast(AppState& state, std::string msg);
+} // namespace Logging

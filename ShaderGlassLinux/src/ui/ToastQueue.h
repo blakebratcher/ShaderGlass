@@ -5,6 +5,11 @@
 #include <string>
 #include <vector>
 
+// X11/X.h defines `Success` as 0 — undefine before the enum to avoid
+// token substitution when this header is included after X11 headers.
+#ifdef Success
+#  undef Success
+#endif
 enum class ToastSeverity { Error, Info, Success };
 
 struct Toast {
