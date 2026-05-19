@@ -2,6 +2,7 @@
 #include "capture/CaptureBackend.h"
 #include "render/Preset.h"
 #include "ui/ToastQueue.h"
+#include "util/ConfigStore.h"
 #include "util/PresetLibrary.h"
 #include "util/SourceInfo.h"
 #include <memory>
@@ -11,7 +12,6 @@
 
 class VulkanContext;
 class Swapchain;
-class ConfigStore;
 
 // Shared state between the ImGui panels and the render loop. All fields are
 // read by panels and the render loop on the main thread; panels write back
@@ -41,6 +41,15 @@ struct AppState {
     // Pending intents written by panels, consumed by applyPending()
     std::optional<std::string>      pendingSourceId;
     std::optional<std::string>      pendingPresetPath;      // empty string = clear to passthrough
+
+    // Crop state
+    bool                            cropMode         = false;
+    std::optional<CropRect>         currentCrop;
+    std::optional<CropRect>         pendingCrop;
+    bool                            pendingClearCrop = false;
+
+    // Phase D: screenshot request flag
+    bool                            screenshotPending = false;
 
     // Re-enumerate from the current capture backend.
     void refreshSources();

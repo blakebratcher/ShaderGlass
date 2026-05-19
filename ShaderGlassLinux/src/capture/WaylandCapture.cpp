@@ -43,9 +43,15 @@ void WaylandCapture::onFrame(const CapturedFrame& f) {
         }
         m_latest = f;
     }
+    m_lastWidth.store((int)f.width);
+    m_lastHeight.store((int)f.height);
     // Release the stale frame outside the slot mutex so a future blocking
     // releaseBuffer (or one that re-enters onFrame) doesn't deadlock.
     if (stale) m_session->releaseBuffer(stale);
+}
+
+CaptureBackend::Size WaylandCapture::size() const {
+    return { m_lastWidth.load(), m_lastHeight.load() };
 }
 
 std::string WaylandCapture::consumeLastError() {

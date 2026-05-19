@@ -19,4 +19,9 @@ public:
     // "nothing to surface". Used by AppState::applyPending() to translate
     // backend-level events into toast notifications.
     virtual std::string consumeLastError() { return {}; }
+
+    // Active source's pixel size. Returns {0,0} if no source is selected
+    // or the size is unknown. May be called every frame; must be cheap.
+    struct Size { int width; int height; };
+    virtual Size size() const = 0;
 };

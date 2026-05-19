@@ -13,6 +13,7 @@ public:
     void                         selectSource(const SourceInfo&) override;
     std::optional<CapturedFrame> acquireFrame() override;
     void                         release(CapturedFrame&) override;
+    Size                         size() const override;
 
 private:
     void load();

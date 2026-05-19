@@ -19,6 +19,7 @@ public:
     void                           start(const SourceInfo& source) override;
     void                           stop() override;
     std::optional<X11SessionFrame> grab() override;
+    std::pair<int,int>             size() const override { return {(int)m_width, (int)m_height}; }
 
 private:
     uint32_t              m_width, m_height;

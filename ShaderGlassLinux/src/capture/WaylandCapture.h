@@ -20,6 +20,7 @@ public:
     std::optional<CapturedFrame> acquireFrame() override;
     void                         release(CapturedFrame&) override;
     std::string                  consumeLastError() override;
+    Size                         size() const override;
 
 private:
     void onFrame(const CapturedFrame& f);
@@ -29,4 +30,6 @@ private:
     std::optional<CapturedFrame>           m_latest;
     std::atomic<bool>                      m_started{false};
     std::vector<SourceInfo>                m_sources;
+    std::atomic<int>                       m_lastWidth{0};
+    std::atomic<int>                       m_lastHeight{0};
 };

@@ -33,7 +33,18 @@ std::optional<CapturedFrame> X11Capture::acquireFrame() {
     f.fourcc        = raw->fourcc;
     f.data          = raw->data;
     f.sessionHandle = nullptr;  // no per-frame resource for X11/SHM
+    m_lastWidth.store((int)raw->width);
+    m_lastHeight.store((int)raw->height);
     return f;
+}
+
+CaptureBackend::Size X11Capture::size() const {
+    int w = m_lastWidth.load(), h = m_lastHeight.load();
+    if (w == 0 && h == 0 && m_session) {
+        auto [sw, sh] = m_session->size();
+        return { sw, sh };
+    }
+    return { w, h };
 }
 
 void X11Capture::release(CapturedFrame& f) {

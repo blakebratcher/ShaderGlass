@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <optional>
+#include <utility>
 #include <vector>
 
 // A single CPU-side frame returned by an X11CaptureSession::grab() call.
@@ -36,4 +37,8 @@ public:
     virtual void                              start(const SourceInfo& source) = 0;
     virtual void                              stop() = 0;
     virtual std::optional<X11SessionFrame>    grab() = 0;
+
+    // Pixel dimensions of the last captured frame (or the session's known
+    // source size before the first grab). Returns {0,0} if unknown.
+    virtual std::pair<int,int>               size() const { return {0,0}; }
 };

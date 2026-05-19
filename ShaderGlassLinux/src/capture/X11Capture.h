@@ -19,10 +19,13 @@ public:
     void                         selectSource(const SourceInfo& src) override;
     std::optional<CapturedFrame> acquireFrame() override;
     void                         release(CapturedFrame& f) override;
+    Size                         size() const override;
 
 private:
     std::unique_ptr<X11CaptureSession> m_session;
     std::vector<SourceInfo>            m_sources;
     std::atomic<bool>                  m_started{false};
     std::mutex                         m_grabMutex;  // serializes grab() calls
+    std::atomic<int>                   m_lastWidth{0};
+    std::atomic<int>                   m_lastHeight{0};
 };

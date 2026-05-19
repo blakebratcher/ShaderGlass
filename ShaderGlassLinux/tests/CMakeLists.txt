@@ -121,3 +121,7 @@ gtest_discover_tests(config_store_tests)
 add_executable(toast_queue_tests test_toast_queue.cpp)
 target_link_libraries(toast_queue_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(toast_queue_tests)
+
+add_executable(app_state_crop_tests test_app_state_crop.cpp)
+target_link_libraries(app_state_crop_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(app_state_crop_tests)

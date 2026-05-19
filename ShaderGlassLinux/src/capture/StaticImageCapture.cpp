@@ -38,3 +38,7 @@ std::optional<CapturedFrame> StaticImageCapture::acquireFrame() {
 }
 
 void StaticImageCapture::release(CapturedFrame&) { /* memory owned by us */ }
+
+CaptureBackend::Size StaticImageCapture::size() const {
+    return { m_width, m_height };
+}

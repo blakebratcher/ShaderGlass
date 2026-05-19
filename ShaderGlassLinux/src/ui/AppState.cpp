@@ -3,6 +3,7 @@
 #include "render/VulkanContext.h"
 #include "util/ConfigStore.h"
 #include "util/Logging.h"
+#include <algorithm>
 #include <stdexcept>
 
 void AppState::refreshSources() {
@@ -71,6 +72,46 @@ void AppState::applyPending() {
             } catch (const std::exception& e) {
                 Logging::errorToast(*this, "Failed to load preset '" + want +
                                           "': " + e.what());
+            }
+        }
+    }
+
+    // --- crop intents ---
+    if (pendingClearCrop) {
+        currentCrop.reset();
+        if (config && capture) {
+            config->clearCropFor(capture->kindName(), activeSourceId);
+        }
+        pendingClearCrop = false;
+    }
+    if (pendingCrop) {
+        currentCrop = pendingCrop;
+        if (config && capture) {
+            config->setCropFor(capture->kindName(), activeSourceId, *currentCrop);
+        }
+        pendingCrop.reset();
+    }
+
+    // --- resolution-change clamp ---
+    if (currentCrop && capture) {
+        auto srcSize = capture->size();
+        int W = srcSize.width, H = srcSize.height;
+        if (W > 0 && H > 0) {
+            CropRect r = *currentCrop;
+            r.w = std::min(r.w, W);
+            r.h = std::min(r.h, H);
+            r.x = std::clamp(r.x, 0, W - r.w);
+            r.y = std::clamp(r.y, 0, H - r.h);
+            bool changed = (r.x != currentCrop->x || r.y != currentCrop->y
+                         || r.w != currentCrop->w || r.h != currentCrop->h);
+
+            if (r.w < 16 || r.h < 16) {
+                currentCrop.reset();
+                if (config) config->clearCropFor(capture->kindName(), activeSourceId);
+                if (toasts) Logging::infoToast(*this, "Crop reset (source resolution changed)");
+            } else if (changed) {
+                currentCrop = r;
+                if (config) config->setCropFor(capture->kindName(), activeSourceId, r);
             }
         }
     }
