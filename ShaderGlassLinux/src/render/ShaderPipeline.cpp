@@ -88,8 +88,16 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
     }
 
     // ── Pipeline layout ──────────────────────────────────────────────────────
+    // Push constant: vec4 uvTransform (16 bytes) in fragment stage.
+    // Default (0,0,1,1) = full source; crop sets a sub-rect.
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pcRange.offset     = 0;
+    pcRange.size       = sizeof(float) * 4;  // vec4
+
     VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pli.setLayoutCount = 1; pli.pSetLayouts = &m_dsl;
+    pli.setLayoutCount         = 1; pli.pSetLayouts = &m_dsl;
+    pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pcRange;
     VK_CHECK(vkCreatePipelineLayout(ctx.device(), &pli, nullptr, &m_pipelineLayout));
 
     // ── Descriptor pool ──────────────────────────────────────────────────────
@@ -222,11 +230,22 @@ void ShaderPipeline::bindAndDrawWithImageView(VkCommandBuffer cb, VkImageView vi
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_pipelineLayout, 0, 1, &m_ds, 0, nullptr);
 
+    // Push uvTransform so the fragment shader can map fragUV into crop window.
+    vkCmdPushConstants(cb, m_pipelineLayout,
+        VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(m_uvTransform), m_uvTransform);
+
     VkViewport vp{ 0, 0, (float)viewport.width, (float)viewport.height, 0.0f, 1.0f };
     VkRect2D   sc{ {0,0}, viewport };
     vkCmdSetViewport(cb, 0, 1, &vp);
     vkCmdSetScissor (cb, 0, 1, &sc);
     vkCmdDraw(cb, 3, 1, 0, 0);
+}
+
+void ShaderPipeline::setUvTransform(float u0, float v0, float u1, float v1) noexcept {
+    m_uvTransform[0] = u0;
+    m_uvTransform[1] = v0;
+    m_uvTransform[2] = u1;
+    m_uvTransform[3] = v1;
 }
 
 void ShaderPipeline::bindAndDraw(VkCommandBuffer cb, const Texture& src, VkExtent2D viewport) {

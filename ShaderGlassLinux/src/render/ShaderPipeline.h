@@ -40,6 +40,15 @@ public:
     void*    mappedUbo()    const noexcept { return m_uboMapped; }
     uint32_t uboSizeBytes() const noexcept { return m_uboSize; }
 
+    // Sets the UV window for the pipeline's input sampler. Coordinates are
+    // normalised: (0,0,1,1) = full source (default). When a crop is active,
+    // pass (x/W, y/H, (x+w)/W, (y+h)/H) so the passthrough samples only
+    // that rect. Takes effect on the next renderFrame() / bindAndDraw().
+    // NOTE: applies to the built-in passthrough shader (which honours the
+    // push_constant). Slang-compiled preset shaders control their own UV
+    // sampling and do not consume this value.
+    void setUvTransform(float u0, float v0, float u1, float v1) noexcept;
+
 private:
     void createPipeline(VulkanContext& ctx,
                         const void* vertSpv, size_t vertSize,
@@ -60,4 +69,8 @@ private:
     VkDeviceMemory m_uboMemory = VK_NULL_HANDLE;
     void*          m_uboMapped = nullptr;
     uint32_t       m_uboSize   = 0;
+
+    // UV crop window pushed as push_constant before each draw.
+    // Default (0,0,1,1) = full source (identity).
+    float m_uvTransform[4] = {0.0f, 0.0f, 1.0f, 1.0f};
 };
