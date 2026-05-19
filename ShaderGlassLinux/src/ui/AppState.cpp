@@ -23,15 +23,18 @@ void AppState::applyPending() {
                     if (config) config->setLastSource(
                         capture->kindName(), activeSourceId);
                 } catch (const std::exception& e) {
-                    LOG_ERROR("AppState: selectSource('%s') threw: %s",
-                              want.c_str(), e.what());
+                    Logging::errorToast(*this, "Failed to switch source '" +
+                                               want + "': " + e.what());
                 }
+                // Drain any backend-level warning (e.g. unsupported fourcc)
+                // that fired during selectSource / stream negotiation.
+                if (auto err = capture->consumeLastError(); !err.empty())
+                    Logging::warnToast(*this, std::move(err));
                 break;
             }
         }
         if (!matched && !want.empty()) {
-            LOG_WARN("AppState: pendingSourceId '%s' not in current sources",
-                     want.c_str());
+            Logging::warnToast(*this, "Source '" + want + "' not found");
         }
         pendingSourceId.reset();
     }
@@ -45,7 +48,7 @@ void AppState::applyPending() {
             if (config) config->setLastPreset("");
             LOG_INFO("AppState: cleared preset (passthrough)");
         } else if (!ctx) {
-            LOG_ERROR("AppState: pendingPresetPath set but ctx not wired");
+            Logging::errorToast(*this, "Cannot load preset: Vulkan context not ready");
         } else {
             try {
                 VkFormat fmt = swapchain ? swapchain->format()
@@ -66,8 +69,8 @@ void AppState::applyPending() {
                 }
                 LOG_INFO("AppState: loaded preset %s", want.c_str());
             } catch (const std::exception& e) {
-                LOG_ERROR("AppState: load preset '%s' failed: %s",
-                          want.c_str(), e.what());
+                Logging::errorToast(*this, "Failed to load preset '" + want +
+                                          "': " + e.what());
             }
         }
     }

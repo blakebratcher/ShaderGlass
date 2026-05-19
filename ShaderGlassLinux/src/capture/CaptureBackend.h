@@ -13,4 +13,10 @@ public:
     virtual void                         selectSource(const SourceInfo&) = 0;
     virtual std::optional<CapturedFrame> acquireFrame() = 0;
     virtual void                         release(CapturedFrame&) = 0;
+
+    // Last error/warning produced by the backend that should be surfaced to
+    // the user. Drained (returned + cleared) on each call. Empty string means
+    // "nothing to surface". Used by AppState::applyPending() to translate
+    // backend-level events into toast notifications.
+    virtual std::string consumeLastError() { return {}; }
 };

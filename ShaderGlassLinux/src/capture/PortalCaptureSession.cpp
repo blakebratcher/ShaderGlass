@@ -556,6 +556,11 @@ void PortalCaptureSession::onParamChanged(uint32_t id, const struct spa_pod* par
                   m_pw->negotiatedFormat.format);
         // Cannot throw from callback context. The next on_process will be
         // a no-op and acquireFrame() will keep returning nullopt.
+        // Surface to AppState via consumeLastError() on the next applyPending.
+        std::lock_guard<std::mutex> g(m_lastErrorMutex);
+        m_lastError = "Unsupported capture format " +
+                      std::to_string(m_pw->negotiatedFormat.format) +
+                      " (want BGRA/RGBA)";
     }
 }
 
@@ -664,4 +669,11 @@ void PortalCaptureSession::onRemoveBuffer(struct pw_buffer* buf) {
         m_dmaGraveyard.push_back(std::move(it->second.imported));
     }
     m_dmaCache.erase(it);
+}
+
+std::string PortalCaptureSession::consumeLastError() {
+    std::lock_guard<std::mutex> g(m_lastErrorMutex);
+    std::string out = std::move(m_lastError);
+    m_lastError.clear();
+    return out;
 }

@@ -30,6 +30,13 @@ public:
 
     // Cleanly tear down stream + portal session.
     virtual void stop() = 0;
+
+    // Last error/warning produced by the session that should be surfaced to
+    // the user (e.g., unsupported negotiated pixel format). Drained on each
+    // call; empty string means nothing to surface. Thread-safe: implementations
+    // must protect m_lastError with their own mutex or atomic if written from a
+    // PipeWire callback thread.
+    virtual std::string consumeLastError() { return {}; }
 };
 
 class WaylandCaptureUnsupportedFormat : public std::runtime_error {

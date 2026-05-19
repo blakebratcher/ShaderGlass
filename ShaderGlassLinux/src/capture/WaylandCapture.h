@@ -19,6 +19,7 @@ public:
     void                         selectSource(const SourceInfo&) override;
     std::optional<CapturedFrame> acquireFrame() override;
     void                         release(CapturedFrame&) override;
+    std::string                  consumeLastError() override;
 
 private:
     void onFrame(const CapturedFrame& f);

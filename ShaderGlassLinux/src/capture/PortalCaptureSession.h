@@ -38,6 +38,7 @@ public:
     void start(std::function<void(const CapturedFrame&)> onFrame) override;
     void releaseBuffer(void* sessionHandle) override;
     void stop() override;
+    std::string consumeLastError() override;
 
     // Internal — exposed for the --debug-portal CLI mode.
     int      pipewireFd()      const { return m_pipewireFd; }
@@ -77,6 +78,12 @@ private:
     // .cpp file to keep libpipewire/spa includes out of this header.
     struct PipeWireState;
     std::unique_ptr<PipeWireState> m_pw;
+
+    // Written from the PipeWire callback thread (onParamChanged) when an
+    // unsupported format is negotiated. Drained by consumeLastError(), which
+    // may be called from any thread.
+    std::mutex  m_lastErrorMutex;
+    std::string m_lastError;
 
     // Implemented in Task 6.
     void  doPortalHandshake();

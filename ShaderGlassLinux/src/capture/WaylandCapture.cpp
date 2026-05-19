@@ -47,3 +47,7 @@ void WaylandCapture::onFrame(const CapturedFrame& f) {
     // releaseBuffer (or one that re-enters onFrame) doesn't deadlock.
     if (stale) m_session->releaseBuffer(stale);
 }
+
+std::string WaylandCapture::consumeLastError() {
+    return m_session ? m_session->consumeLastError() : std::string{};
+}
