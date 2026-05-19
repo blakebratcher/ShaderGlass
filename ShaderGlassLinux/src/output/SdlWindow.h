@@ -3,6 +3,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,8 +31,23 @@ public:
 
     void setImGuiLayer(ImGuiLayer* layer) noexcept { m_imguiLayer = layer; }
 
+    // Called for each file dropped onto the window. main.cpp wires this to
+    // AppState::pendingPresetPath so .slangp files can be imported via DnD.
+    void setDropFileHandler(std::function<void(const std::string&)> h) {
+        m_dropHandler = std::move(h);
+    }
+
+    // Called for each unhandled key-down event (after ImGui has had its
+    // chance). Hotkeys live here. Escape is consumed by the window itself
+    // (closes) and never forwarded.
+    void setKeyDownHandler(std::function<void(SDL_Scancode, SDL_Keymod)> h) {
+        m_keyHandler = std::move(h);
+    }
+
 private:
     SDL_Window* m_window     = nullptr;
     bool        m_open       = true;
     ImGuiLayer* m_imguiLayer = nullptr;
+    std::function<void(const std::string&)>            m_dropHandler;
+    std::function<void(SDL_Scancode, SDL_Keymod)>      m_keyHandler;
 };

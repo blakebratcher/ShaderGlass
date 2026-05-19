@@ -326,6 +326,29 @@ static int runWindowed(Args& a) {
 
     AppState state;
     state.toasts = std::make_unique<ToastQueue>();
+
+    // Drag-and-drop: feed any .slangp dropped onto the window into
+    // applyPending() the same way the preset browser does. Must be set up
+    // AFTER `state` exists since the handler captures it by reference.
+    window.setDropFileHandler([&state](const std::string& path) {
+        auto endsWithCi = [](const std::string& s, const char* suf) {
+            const size_t n = std::strlen(suf);
+            if (s.size() < n) return false;
+            for (size_t i = 0; i < n; ++i) {
+                char a = s[s.size() - n + i];
+                char b = suf[i];
+                if (std::tolower(static_cast<unsigned char>(a)) !=
+                    std::tolower(static_cast<unsigned char>(b))) return false;
+            }
+            return true;
+        };
+        if (endsWithCi(path, ".slangp")) {
+            state.pendingPresetPath = path;
+            Logging::infoToast(state, "Loading preset: " + path);
+        } else {
+            Logging::warnToast(state, "Drop ignored — expected .slangp: " + path);
+        }
+    });
     PresetLibrary library;
     PresetBrowserPanel presetPanel;
     ParamsPanel paramsPanel;

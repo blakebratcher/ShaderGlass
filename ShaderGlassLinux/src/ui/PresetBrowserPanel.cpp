@@ -33,6 +33,26 @@ void PresetBrowserPanel::draw(AppState& state) {
     ImGui::InputTextWithHint("##search", "filter", m_searchBuf,
                              sizeof(m_searchBuf));
 
+    // Import any .slangp from disk — either by typing the path or by
+    // dragging the file onto the window (handled by main.cpp's SDL drop
+    // handler).
+    if (ImGui::TreeNodeEx("Import\xe2\x80\xa6",
+                          ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        ImGui::TextDisabled("Or drag a .slangp file onto the window");
+        ImGui::SetNextItemWidth(-100.0f);
+        bool submit = ImGui::InputTextWithHint("##importpath",
+            "/path/to/preset.slangp", m_importBuf, sizeof(m_importBuf),
+            ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        if (ImGui::Button("Open") || submit) {
+            if (m_importBuf[0] != '\0') {
+                state.pendingPresetPath = std::string(m_importBuf);
+                m_importBuf[0] = '\0';
+            }
+        }
+        ImGui::TreePop();
+    }
+
     ImGui::Separator();
 
     // Special "Passthrough" entry at the top

@@ -33,9 +33,14 @@ bool SdlWindow::pollEvents() {
         } else if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
                    e.window.windowID == SDL_GetWindowID(m_window)) {
             m_open = false;
-        } else if (e.type == SDL_EVENT_KEY_DOWN &&
-                   e.key.scancode == SDL_SCANCODE_ESCAPE) {
-            m_open = false;
+        } else if (e.type == SDL_EVENT_KEY_DOWN) {
+            if (e.key.scancode == SDL_SCANCODE_ESCAPE) {
+                m_open = false;
+            } else if (m_keyHandler) {
+                m_keyHandler(e.key.scancode, e.key.mod);
+            }
+        } else if (e.type == SDL_EVENT_DROP_FILE) {
+            if (m_dropHandler && e.drop.data) m_dropHandler(e.drop.data);
         }
     }
     return m_open;
