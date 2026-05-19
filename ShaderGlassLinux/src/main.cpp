@@ -18,6 +18,8 @@
 #include "ui/SourcePickerPanel.h"
 #include "ui/PresetBrowserPanel.h"
 #include "ui/ParamsPanel.h"
+#include "ui/ToastQueue.h"
+#include "ui/ToastPanel.h"
 #include "util/FourccToVk.h"
 #include "util/SourceMatcher.h"
 #include "util/Logging.h"
@@ -35,6 +37,16 @@
 #include <sstream>
 #include <string>
 #include <thread>
+
+namespace {
+// TODO(Task 16): replace with Time::nowMonotonicMs() once the public helper exists.
+// Duplicated in Logging.cpp for the same reason — both call sites will collapse
+// to a single header in Task 16.
+int64_t nowMonotonicMs() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+} // namespace
 
 struct Args {
     bool headless = false;
@@ -315,10 +327,12 @@ static int runWindowed(Args& a) {
     window.setImGuiLayer(&imgui);
 
     AppState state;
+    state.toasts = std::make_unique<ToastQueue>();
     SourcePickerPanel sourcePanel{a.captureKind};
     PresetLibrary library;
     PresetBrowserPanel presetPanel;
     ParamsPanel paramsPanel;
+    ToastPanel toastPanel;
     state.ctx       = &ctx;
     state.swapchain = &swapchain;
     state.library   = &library;
@@ -464,6 +478,14 @@ static int runWindowed(Args& a) {
             sourcePanel.draw(state);
             presetPanel.draw(state);
             paramsPanel.draw(state);
+
+            // Toasts render on top of everything. AppState owns the queue; the
+            // panel just renders the snapshot. Dismiss-clicks propagate back.
+            if (state.toasts) {
+                auto snap = state.toasts->snapshot(nowMonotonicMs());
+                auto dismissed = toastPanel.draw(snap);
+                for (auto id : dismissed) state.toasts->dismiss(id);
+            }
 
             state.applyPending();
             config.tick();
