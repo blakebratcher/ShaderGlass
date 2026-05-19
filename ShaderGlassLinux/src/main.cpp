@@ -388,7 +388,21 @@ static int runWindowed(Args& a) {
                 break;
             case SDL_SCANCODE_F1:
                 Logging::infoToast(state,
-                    "Hotkeys: F11 screenshot | B bypass | [ ] cycle preset | F1 help");
+                    "Hotkeys: F11 shot | B bypass | [ ] cycle | F2 chrome | F3 top | F4 borderless");
+                break;
+            case SDL_SCANCODE_F2:
+                state.hideChrome = !state.hideChrome;
+                Logging::infoToast(state, state.hideChrome ? "Chrome hidden" : "Chrome shown");
+                break;
+            case SDL_SCANCODE_F3:
+                state.alwaysOnTop = !state.alwaysOnTop;
+                SDL_SetWindowAlwaysOnTop(window.handle(), state.alwaysOnTop);
+                Logging::infoToast(state, state.alwaysOnTop ? "Always-on-top on" : "Always-on-top off");
+                break;
+            case SDL_SCANCODE_F4:
+                state.borderless = !state.borderless;
+                SDL_SetWindowBordered(window.handle(), !state.borderless);
+                Logging::infoToast(state, state.borderless ? "Borderless on" : "Borderless off");
                 break;
             default:
                 break;
@@ -538,12 +552,14 @@ static int runWindowed(Args& a) {
         while (window.pollEvents()) {
             imgui.beginFrame();
 
-            // Dock space + panels.
-            ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
-            sourcePanel.draw(state);
-            presetPanel.draw(state);
-            paramsPanel.draw(state);
-            cropOverlay.draw(state);
+            // Dock space + panels. F2 hides the chrome for an overlay-style view.
+            if (!state.hideChrome) {
+                ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+                sourcePanel.draw(state);
+                presetPanel.draw(state);
+                paramsPanel.draw(state);
+            }
+            cropOverlay.draw(state);   // crop drag overlay must still work in chrome-hidden mode
 
             // Centered splash text in the viewport when no capture is active.
             if (!state.capture || state.activeSourceId.empty()) {

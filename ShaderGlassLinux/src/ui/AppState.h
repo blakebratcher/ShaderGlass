@@ -51,6 +51,13 @@ struct AppState {
     // Phase D: screenshot request flag
     bool                            screenshotPending = false;
 
+    // Overlay-style toggles (F2/F3/F4 hotkeys). When `hideChrome` is true,
+    // main.cpp skips every panel draw — only the shader output and toast
+    // stack remain visible.
+    bool                            hideChrome     = false;
+    bool                            borderless     = false;
+    bool                            alwaysOnTop    = false;
+
     // Re-enumerate from the current capture backend.
     void refreshSources();
 
