@@ -1,5 +1,6 @@
 #include "ui/ToastPanel.h"
 #include "imgui.h"
+#include <algorithm>
 
 namespace {
 constexpr float kToastWidth   = 360.0f;
@@ -37,15 +38,20 @@ std::vector<uint32_t> ToastPanel::draw(const std::vector<Toast>& toasts) {
     };
 
     // Stack bottom-up. toasts[0] is newest (top of stack visually).
+    const ImGuiStyle& style    = ImGui::GetStyle();
+    const float lineHeight     = ImGui::GetTextLineHeightWithSpacing();
     float yCursor = origin.y;
     for (size_t i = 0; i < toasts.size(); ++i) {
         const Toast& t = toasts[i];
 
-        // Estimate row height: 2 lines of text + padding. ImGui::CalcTextSize
-        // will give a closer fit but we approximate to one frame ahead.
-        const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
-        const float estHeight  = lineHeight * 2.4f + 16.0f;
+        // Compute actual height from wrapped text so long messages aren't clipped.
+        const float iconWidth = ImGui::CalcTextSize(severityIcon(t.severity)).x;
+        const float wrapWidth = kToastWidth - kBorderPx - 4.0f - iconWidth
+                              - style.ItemSpacing.x - style.WindowPadding.x * 2;
+        const ImVec2 textSize = ImGui::CalcTextSize(t.message.c_str(), nullptr, false, wrapWidth);
+        const float estHeight = std::max(lineHeight, textSize.y) + style.WindowPadding.y * 2 + 4;
         yCursor -= estHeight;
+        if (yCursor < vp->WorkPos.y) break;   // would draw above the viewport
 
         char winId[32];
         std::snprintf(winId, sizeof(winId), "##toast_%u", t.id);
