@@ -494,9 +494,13 @@ static int runWindowed(Args& a) {
             if (state.preset) state.preset->updateUbo();
 
             ShaderPipeline& activePipeline =
-                state.preset ? state.preset->pipeline() : pipeline;
+                state.preset ? state.preset->finalPipeline() : pipeline;
+            const bool multiPass = state.preset && state.preset->isMultiPass();
 
             // Feed crop UV transform every frame so the pipeline stays in sync.
+            // Only the builtin passthrough actually honours this push constant
+            // (slang preset shaders control their own sampling), so this is
+            // effectively a no-op when a slang preset is active.
             if (state.capture) {
                 auto sz = state.capture->size();
                 if (sz.width > 0 && sz.height > 0) {
@@ -513,14 +517,29 @@ static int runWindowed(Args& a) {
                 }
             }
 
+            auto imguiBody = [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); };
+
             if (state.capture) {
                 auto f = state.capture->acquireFrame();
                 if (f) {
                     if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
                         auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
-                        engine.renderImageViewWithOverlay(imp->view, activePipeline,
-                            [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); },
-                            &screenshotWriter, &state);
+                        if (multiPass) {
+                            state.preset->ensureSourceSize(f->width, f->height);
+                            const VkExtent2D srcExt{f->width, f->height};
+                            auto prePassBody = [&, view = imp->view, srcExt](VkCommandBuffer cb) {
+                                state.preset->recordIntermediatePasses(cb, view, srcExt);
+                            };
+                            auto shaderBody = [&](VkCommandBuffer cb, VkExtent2D ext) {
+                                activePipeline.bindAndDrawWithImageView(
+                                    cb, state.preset->finalInputView(), ext);
+                            };
+                            engine.renderCustomWithOverlay(shaderBody, imguiBody,
+                                &screenshotWriter, &state, prePassBody);
+                        } else {
+                            engine.renderImageViewWithOverlay(imp->view, activePipeline,
+                                imguiBody, &screenshotWriter, &state);
+                        }
                         screenshotWriter.tick();
                         state.capture->release(*f);
                         continue;
@@ -553,18 +572,30 @@ static int runWindowed(Args& a) {
                 }
 
                 if (sourceTex) {
-                    engine.renderTextureWithOverlay(*sourceTex, activePipeline,
-                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); },
-                        &screenshotWriter, &state);
+                    if (multiPass) {
+                        state.preset->ensureSourceSize(sourceTex->width(), sourceTex->height());
+                        const VkImageView srcView = sourceTex->view();
+                        const VkExtent2D  srcExt{sourceTex->width(), sourceTex->height()};
+                        auto prePassBody = [&, srcView, srcExt](VkCommandBuffer cb) {
+                            state.preset->recordIntermediatePasses(cb, srcView, srcExt);
+                        };
+                        auto shaderBody = [&](VkCommandBuffer cb, VkExtent2D ext) {
+                            activePipeline.bindAndDrawWithImageView(
+                                cb, state.preset->finalInputView(), ext);
+                        };
+                        engine.renderCustomWithOverlay(shaderBody, imguiBody,
+                            &screenshotWriter, &state, prePassBody);
+                    } else {
+                        engine.renderTextureWithOverlay(*sourceTex, activePipeline,
+                            imguiBody, &screenshotWriter, &state);
+                    }
                 } else {
                     // Capture present but no valid frame yet — show splash.
-                    engine.renderEmpty(
-                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                    engine.renderEmpty(imguiBody);
                 }
             } else {
                 // No active capture: render a splash (dark clear + ImGui).
-                engine.renderEmpty(
-                    [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                engine.renderEmpty(imguiBody);
             }
             screenshotWriter.tick();
         }

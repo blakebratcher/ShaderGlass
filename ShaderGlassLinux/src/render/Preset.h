@@ -4,44 +4,85 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "OffscreenTarget.h"
 #include "ShaderDef.h"
 #include "ShaderPipeline.h"
 
 class VulkanContext;
 class PresetDef;
 
-// Owns one compiled .slangp preset + the ShaderPipeline it drives. M4 only
-// models single-pass presets; multi-pass support is M5.
+// Owns one compiled .slangp preset and the ShaderPipeline chain that
+// renders it. Single-pass presets compile to N=1 pipeline + zero
+// intermediates; multi-pass presets compile to N pipelines + (N-1)
+// intermediate render targets that ping-pong source→intermediate[0]→
+// intermediate[1]→…→swapchain.
 //
-// Phase C: owns activeParams (mutable currentValue copy of ShaderDef::Params)
-// and sizes the pipeline UBO from ParamsSize(0). updateUbo() copies currentValues
-// into the host-coherent mapped UBO at declared offsets.
+// Per-frame contract:
+//   - main.cpp calls ensureSourceSize(w, h) before recording any draws
+//     so intermediates match the current capture resolution.
+//   - main.cpp calls recordIntermediatePasses(cb, sourceView, sourceExt)
+//     OUTSIDE the swapchain rendering scope (RenderEngine::prePassBody).
+//   - main.cpp calls finalPipeline().bindAndDraw...() INSIDE the
+//     swapchain rendering scope (RenderEngine::shaderBody).
+//   - For single-pass, recordIntermediatePasses stores the source view
+//     so the caller can bind finalPipeline() with finalInputView().
 class Preset {
 public:
     Preset(VulkanContext& ctx, const std::filesystem::path& path,
-           VkFormat colorFormat);
+           VkFormat swapchainFormat);
     ~Preset();
 
     Preset(const Preset&)            = delete;
     Preset& operator=(const Preset&) = delete;
 
     const std::filesystem::path& path() const { return m_path; }
-    ShaderPipeline&              pipeline()    { return *m_pipeline; }
 
-    // Mutable list of params — ParamsPanel writes currentValue in place.
+    size_t          passCount()      const { return m_pipelines.size(); }
+    bool            isMultiPass()    const { return m_pipelines.size() > 1; }
+    ShaderPipeline& finalPipeline()        { return *m_pipelines.back(); }
+
+    // Mutable list of params for the LAST pass (where user-facing UI
+    // attaches). updateUbo() walks all passes that have a UBO.
     std::vector<ShaderParam>&       params()       { return m_params; }
     const std::vector<ShaderParam>& params() const { return m_params; }
 
-    // Reset every param's currentValue to its declared defaultValue.
     void resetParamsToDefaults();
 
-    // Copy currentValues into the pipeline's mapped UBO at declared offsets.
-    // Cheap; safe to call every frame.
+    // Reflect currentValue into the host-coherent UBOs across all passes
+    // that own one. Cheap; safe to call every frame.
     void updateUbo();
 
+    // Allocate / resize intermediates to match the source extent. No-op
+    // on single-pass presets. Idempotent — rebuilds only on size change.
+    void ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight);
+
+    // Records passes 0..N-2 into the intermediates. Must be called BEFORE
+    // any vkCmdBeginRendering on the swapchain. No-op for single-pass.
+    // After this returns, finalInputView() / finalInputExtent() yield the
+    // view + extent the final pass should sample (== source for
+    // single-pass, == intermediates[N-2] for multi-pass).
+    void recordIntermediatePasses(VkCommandBuffer cb,
+                                  VkImageView sourceView,
+                                  VkExtent2D  sourceExtent);
+
+    VkImageView finalInputView()   const { return m_finalInputView; }
+    VkExtent2D  finalInputExtent() const { return m_finalInputExtent; }
+
 private:
-    std::filesystem::path           m_path;
-    std::unique_ptr<PresetDef>      m_def;
-    std::unique_ptr<ShaderPipeline> m_pipeline;
-    std::vector<ShaderParam>        m_params;
+    void buildPipelines(VulkanContext& ctx, VkFormat swapFmt);
+
+    std::filesystem::path                          m_path;
+    std::unique_ptr<PresetDef>                     m_def;
+    std::vector<std::unique_ptr<ShaderPipeline>>   m_pipelines;
+    std::vector<std::unique_ptr<OffscreenTarget>>  m_intermediates;
+    std::vector<uint32_t>                          m_uboSizes;
+    std::vector<ShaderParam>                       m_params;
+
+    VulkanContext*   m_ctx                = nullptr;
+    VkFormat         m_intermediateFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat         m_swapFormat         = VK_FORMAT_UNDEFINED;
+    uint32_t         m_srcWidth           = 0;
+    uint32_t         m_srcHeight          = 0;
+    VkImageView      m_finalInputView     = VK_NULL_HANDLE;
+    VkExtent2D       m_finalInputExtent   = {};
 };

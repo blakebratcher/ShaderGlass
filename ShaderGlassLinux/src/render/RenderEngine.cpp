@@ -62,7 +62,8 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
                                const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
                                const std::function<void(VkCommandBuffer)>& imguiBody,
                                ScreenshotWriter* screenshotWriter,
-                               AppState* state) {
+                               AppState* state,
+                               const std::function<void(VkCommandBuffer)>& prePassBody) {
     VkFence fence = m_inFlight[m_frame];
     vkWaitForFences(m_ctx.device(), 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences  (m_ctx.device(), 1, &fence);
@@ -80,6 +81,11 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(cb, &bi));
+
+    // Pre-pass body runs OUTSIDE any rendering scope. Multi-pass presets
+    // render their intermediate passes here, into offscreen targets that
+    // the swapchain pass will then sample.
+    if (prePassBody) prePassBody(cb);
 
     transitionImage(cb, m_sc.image(idx),
                     VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -204,7 +210,7 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
 void RenderEngine::renderClear(float r, float g, float b, float a) {
     VkClearValue cv{};
     cv.color = {{ r, g, b, a }};
-    renderFrame(cv, nullptr, nullptr, nullptr, nullptr);
+    renderFrame(cv, nullptr, nullptr, nullptr, nullptr, nullptr);
 }
 
 void RenderEngine::renderTexture(const Texture& src, ShaderPipeline& pipeline) {
@@ -214,7 +220,7 @@ void RenderEngine::renderTexture(const Texture& src, ShaderPipeline& pipeline) {
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDraw(cb, src, ext);
         },
-        nullptr, nullptr, nullptr);
+        nullptr, nullptr, nullptr, nullptr);
 }
 
 void RenderEngine::renderImageView(VkImageView view, ShaderPipeline& pipeline) {
@@ -224,39 +230,51 @@ void RenderEngine::renderImageView(VkImageView view, ShaderPipeline& pipeline) {
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDrawWithImageView(cb, view, ext);
         },
-        nullptr, nullptr, nullptr);
+        nullptr, nullptr, nullptr, nullptr);
 }
 
 void RenderEngine::renderTextureWithOverlay(const Texture& src,
                                             ShaderPipeline& pipeline,
                                             const std::function<void(VkCommandBuffer)>& imguiBody,
                                             ScreenshotWriter* screenshotWriter,
-                                            AppState*         state) {
+                                            AppState*         state,
+                                            const std::function<void(VkCommandBuffer)>& prePassBody) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
     renderFrame(cv,
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDraw(cb, src, ext);
         },
-        imguiBody, screenshotWriter, state);
+        imguiBody, screenshotWriter, state, prePassBody);
 }
 
 void RenderEngine::renderImageViewWithOverlay(VkImageView view,
                                               ShaderPipeline& pipeline,
                                               const std::function<void(VkCommandBuffer)>& imguiBody,
                                               ScreenshotWriter* screenshotWriter,
-                                              AppState*         state) {
+                                              AppState*         state,
+                                              const std::function<void(VkCommandBuffer)>& prePassBody) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
     renderFrame(cv,
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDrawWithImageView(cb, view, ext);
         },
-        imguiBody, screenshotWriter, state);
+        imguiBody, screenshotWriter, state, prePassBody);
+}
+
+void RenderEngine::renderCustomWithOverlay(const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
+                                           const std::function<void(VkCommandBuffer)>& imguiBody,
+                                           ScreenshotWriter* screenshotWriter,
+                                           AppState*         state,
+                                           const std::function<void(VkCommandBuffer)>& prePassBody) {
+    VkClearValue cv{};
+    cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+    renderFrame(cv, shaderBody, imguiBody, screenshotWriter, state, prePassBody);
 }
 
 void RenderEngine::renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody) {
     VkClearValue cv{};
     cv.color = {{ 0.063f, 0.063f, 0.063f, 1.0f }};
-    renderFrame(cv, nullptr, imguiBody, nullptr, nullptr);
+    renderFrame(cv, nullptr, imguiBody, nullptr, nullptr, nullptr);
 }

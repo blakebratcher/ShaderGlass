@@ -74,9 +74,10 @@ TEST(AppState, ApplyPendingSwitchesPresetWhenIntentSet) {
 
     Preset p(ctx, path, VK_FORMAT_R8G8B8A8_UNORM);
     EXPECT_EQ(p.path(), path);
-    // pipeline() must return a usable ShaderPipeline (not crash on access)
-    ShaderPipeline& pl = p.pipeline();
+    // finalPipeline() must return a usable ShaderPipeline (not crash on access)
+    ShaderPipeline& pl = p.finalPipeline();
     (void)pl;  // just verify the reference is valid
+    EXPECT_GE(p.passCount(), 1u);
 
     // Part 2: applyPending path — ctx wired, swapchain null → falls back to
     // VK_FORMAT_B8G8R8A8_UNORM and successfully builds the Preset.
@@ -110,6 +111,24 @@ TEST(AppState, ApplyPendingSwitchesPresetWhenIntentSet) {
         EXPECT_TRUE(state.activePresetPath.empty());
         EXPECT_FALSE(state.pendingPresetPath.has_value());
     }
+}
+
+TEST(Preset, MultiPassCompilesAndExposesNPipelines) {
+    VulkanContext ctx({.headless = true, .enableValidation = false});
+
+    auto path = std::filesystem::path(TEST_DATA_DIR) / "stock-2pass.slangp";
+    ASSERT_TRUE(std::filesystem::exists(path)) << "test fixture missing: " << path;
+
+    Preset p(ctx, path, VK_FORMAT_R8G8B8A8_UNORM);
+    EXPECT_EQ(p.passCount(), 2u);
+    EXPECT_TRUE(p.isMultiPass());
+
+    // ensureSourceSize allocates intermediates; recordIntermediatePasses is a
+    // command-buffer-level operation we don't exercise here, but the size hook
+    // must be idempotent and not throw.
+    p.ensureSourceSize(640, 480);
+    p.ensureSourceSize(640, 480);  // no-op repeat
+    p.ensureSourceSize(800, 600);  // resize
 }
 
 TEST(AppState, PresetSwitchResetsActiveParamsToDefaults) {

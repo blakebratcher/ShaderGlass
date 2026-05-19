@@ -1,0 +1,5 @@
+shaders = 2
+shader0 = stock.slang
+filter_linear0 = false
+shader1 = stock.slang
+filter_linear1 = false

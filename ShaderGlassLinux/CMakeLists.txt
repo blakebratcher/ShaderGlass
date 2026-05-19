@@ -63,6 +63,7 @@ add_library(shaderglass_core STATIC
     src/render/ShaderPipeline.cpp
     src/render/HeadlessOutput.cpp
     src/render/DmaBufImport.cpp
+    src/render/OffscreenTarget.cpp
     src/render/Preset.cpp
     src/capture/StaticImageCapture.cpp
     src/capture/BadWindowRegistry.cpp

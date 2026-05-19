@@ -26,6 +26,9 @@ public:
     void renderImageView(VkImageView view, ShaderPipeline& pipeline);
 
     // Variants that also record an ImGui pass on top of the shader output.
+    // `prePassBody` (optional) runs OUTSIDE any rendering scope — used by
+    // multi-pass presets to render intermediate passes into offscreen
+    // targets before the final swapchain pass.
     // When a screenshot is pending and a writer is supplied, the post-shader
     // / pre-ImGui image is copied to a host-visible buffer (so the resulting
     // PNG has no ImGui chrome). The writer's fence is signalled by an empty
@@ -33,11 +36,22 @@ public:
     void renderTextureWithOverlay(const Texture& src, ShaderPipeline& pipeline,
                                   const std::function<void(VkCommandBuffer)>& imguiBody,
                                   ScreenshotWriter* screenshotWriter = nullptr,
-                                  AppState*         state            = nullptr);
+                                  AppState*         state            = nullptr,
+                                  const std::function<void(VkCommandBuffer)>& prePassBody = nullptr);
     void renderImageViewWithOverlay(VkImageView view, ShaderPipeline& pipeline,
                                     const std::function<void(VkCommandBuffer)>& imguiBody,
                                     ScreenshotWriter* screenshotWriter = nullptr,
-                                    AppState*         state            = nullptr);
+                                    AppState*         state            = nullptr,
+                                    const std::function<void(VkCommandBuffer)>& prePassBody = nullptr);
+
+    // Fully custom variant: caller controls the final shader body and any
+    // pre-pass setup. Use this when the input view comes from a multi-pass
+    // intermediate rather than a Texture / ImageView directly.
+    void renderCustomWithOverlay(const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
+                                 const std::function<void(VkCommandBuffer)>& imguiBody,
+                                 ScreenshotWriter* screenshotWriter = nullptr,
+                                 AppState*         state            = nullptr,
+                                 const std::function<void(VkCommandBuffer)>& prePassBody = nullptr);
 
     // Renders an ImGui-only frame with a dark background. Used when there
     // is no active capture (cold launch, no saved session). The clear colour
@@ -49,7 +63,8 @@ private:
                      const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
                      const std::function<void(VkCommandBuffer)>&             imguiBody,
                      ScreenshotWriter* screenshotWriter,
-                     AppState*         state);
+                     AppState*         state,
+                     const std::function<void(VkCommandBuffer)>& prePassBody);
 
     static constexpr uint32_t kFramesInFlight = 2;
 
