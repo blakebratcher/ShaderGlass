@@ -23,6 +23,9 @@ void AppState::applyPending() {
                     matched = true;
                     if (config) config->setLastSource(
                         capture->kindName(), activeSourceId);
+                    // Restore any saved crop for this source. nullopt if none.
+                    if (config)
+                        currentCrop = config->cropFor(capture->kindName(), activeSourceId);
                 } catch (const std::exception& e) {
                     Logging::errorToast(*this, "Failed to switch source '" +
                                                want + "': " + e.what());
