@@ -133,3 +133,8 @@ gtest_discover_tests(crop_overlay_tests)
 add_executable(screenshot_path_tests test_screenshot_path.cpp)
 target_link_libraries(screenshot_path_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(screenshot_path_tests)
+
+add_executable(screenshot_encode_tests test_screenshot_encode.cpp)
+target_link_libraries(screenshot_encode_tests PRIVATE shaderglass_core gtest_main)
+target_include_directories(screenshot_encode_tests PRIVATE ${stb_SOURCE_DIR})
+gtest_discover_tests(screenshot_encode_tests)
