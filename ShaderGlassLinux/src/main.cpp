@@ -327,9 +327,76 @@ static int runWindowed(Args& a) {
     AppState state;
     state.toasts = std::make_unique<ToastQueue>();
 
+    PresetLibrary library;
+    PresetBrowserPanel presetPanel;
+    ParamsPanel paramsPanel;
+    CropOverlay cropOverlay;
+    ToastPanel toastPanel;
+
+    // Last preset path captured before a bypass toggle, so 'B' can restore it.
+    std::string bypassRestorePath;
+
+    // Hotkeys — fire only when ImGui doesn't have keyboard focus (so the
+    // user can still type in text inputs without triggering a preset
+    // cycle). Escape is consumed by SdlWindow itself (closes the window).
+    window.setKeyDownHandler([&](SDL_Scancode sc, SDL_Keymod /*mod*/) {
+        if (ImGui::GetIO().WantCaptureKeyboard) return;
+        auto cyclePreset = [&](int dir) {
+            auto presets = library.scan();
+            if (presets.empty()) {
+                Logging::warnToast(state, "No presets to cycle through");
+                return;
+            }
+            int idx = -1;
+            for (int i = 0; i < static_cast<int>(presets.size()); ++i) {
+                if (presets[i].path.string() == state.activePresetPath) { idx = i; break; }
+            }
+            const int n = static_cast<int>(presets.size());
+            idx = ((idx + dir) % n + n) % n;
+            state.pendingPresetPath = presets[idx].path.string();
+            Logging::infoToast(state, "Preset: " + presets[idx].displayName);
+        };
+        switch (sc) {
+            case SDL_SCANCODE_F11:
+                if (state.capture && !state.activeSourceId.empty() && !state.screenshotPending) {
+                    state.screenshotPending = true;
+                } else {
+                    Logging::warnToast(state, "Screenshot: no active capture");
+                }
+                break;
+            case SDL_SCANCODE_B:
+                if (state.activePresetPath.empty()) {
+                    if (!bypassRestorePath.empty()) {
+                        state.pendingPresetPath = bypassRestorePath;
+                        Logging::infoToast(state, "Bypass off");
+                    } else {
+                        Logging::warnToast(state, "No previous preset to restore");
+                    }
+                } else {
+                    bypassRestorePath = state.activePresetPath;
+                    state.pendingPresetPath = std::string{};
+                    Logging::infoToast(state, "Bypass on (passthrough)");
+                }
+                break;
+            case SDL_SCANCODE_RIGHTBRACKET:
+            case SDL_SCANCODE_PAGEDOWN:
+                cyclePreset(+1);
+                break;
+            case SDL_SCANCODE_LEFTBRACKET:
+            case SDL_SCANCODE_PAGEUP:
+                cyclePreset(-1);
+                break;
+            case SDL_SCANCODE_F1:
+                Logging::infoToast(state,
+                    "Hotkeys: F11 screenshot | B bypass | [ ] cycle preset | F1 help");
+                break;
+            default:
+                break;
+        }
+    });
+
     // Drag-and-drop: feed any .slangp dropped onto the window into
-    // applyPending() the same way the preset browser does. Must be set up
-    // AFTER `state` exists since the handler captures it by reference.
+    // applyPending() the same way the preset browser does.
     window.setDropFileHandler([&state](const std::string& path) {
         auto endsWithCi = [](const std::string& s, const char* suf) {
             const size_t n = std::strlen(suf);
@@ -349,11 +416,6 @@ static int runWindowed(Args& a) {
             Logging::warnToast(state, "Drop ignored — expected .slangp: " + path);
         }
     });
-    PresetLibrary library;
-    PresetBrowserPanel presetPanel;
-    ParamsPanel paramsPanel;
-    CropOverlay cropOverlay;
-    ToastPanel toastPanel;
     state.ctx       = &ctx;
     state.swapchain = &swapchain;
     state.library   = &library;
