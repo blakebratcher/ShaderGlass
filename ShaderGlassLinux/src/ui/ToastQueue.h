@@ -5,12 +5,16 @@
 #include <string>
 #include <vector>
 
-// X11/X.h defines `Success` as 0 — undefine before the enum to avoid
-// token substitution when this header is included after X11 headers.
-#ifdef Success
-#  undef Success
-#endif
+// X11/X.h defines `Success` as a preprocessor macro (value 0), which would
+// clobber the enum value below. Save the macro, undef it for the enum
+// declaration, then restore it. push_macro/pop_macro are supported by GCC
+// and Clang as a de-facto standard extension.
+#pragma push_macro("Success")
+#undef Success
+
 enum class ToastSeverity { Error, Info, Success };
+
+#pragma pop_macro("Success")
 
 struct Toast {
     ToastSeverity severity;

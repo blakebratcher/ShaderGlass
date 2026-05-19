@@ -61,6 +61,7 @@ void resetThresholdForTesting() noexcept {
 #include "ui/ToastQueue.h"
 #include <chrono>
 
+// TODO(Task 16): replace with Time::nowMonotonicMs() once the public helper exists.
 namespace {
 int64_t nowMonotonicMs() {
     using namespace std::chrono;

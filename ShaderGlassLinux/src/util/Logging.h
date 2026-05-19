@@ -57,6 +57,6 @@ namespace Logging {
     // do NOT need to thread a clock through.
     void infoToast (AppState& state, std::string msg);
     void okToast   (AppState& state, std::string msg);   // success severity in queue; info in log
-    void warnToast (AppState& state, std::string msg);
+    void warnToast (AppState& state, std::string msg);   // error severity in queue; warn in log
     void errorToast(AppState& state, std::string msg);
 } // namespace Logging
