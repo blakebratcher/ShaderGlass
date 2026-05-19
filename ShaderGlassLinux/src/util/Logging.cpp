@@ -65,19 +65,19 @@ namespace Logging {
 
 void infoToast(AppState& state, std::string msg) {
     LOG_INFO("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Info, std::move(msg), Time::nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Info, std::move(msg), TimeUtil::nowMonotonicMs());
 }
 void okToast(AppState& state, std::string msg) {
     LOG_INFO("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Success, std::move(msg), Time::nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Success, std::move(msg), TimeUtil::nowMonotonicMs());
 }
 void warnToast(AppState& state, std::string msg) {
     LOG_WARN("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), Time::nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), TimeUtil::nowMonotonicMs());
 }
 void errorToast(AppState& state, std::string msg) {
     LOG_ERROR("%s", msg.c_str());
-    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), Time::nowMonotonicMs());
+    if (state.toasts) state.toasts->post(ToastSeverity::Error, std::move(msg), TimeUtil::nowMonotonicMs());
 }
 
 } // namespace Logging

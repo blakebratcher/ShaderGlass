@@ -3,7 +3,9 @@
 #include "Swapchain.h"
 #include "Texture.h"
 #include "ShaderPipeline.h"
+#include "../util/ScreenshotWriter.h"
 #include "../util/VkCheck.h"
+#include "../ui/AppState.h"
 
 RenderEngine::RenderEngine(VulkanContext& ctx, Swapchain& sc) : m_ctx(ctx), m_sc(sc) {
     VkCommandPoolCreateInfo pi{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -57,7 +59,10 @@ static void transitionImage(VkCommandBuffer cb, VkImage img,
 }
 
 void RenderEngine::renderFrame(VkClearValue clearColor,
-                               const std::function<void(VkCommandBuffer, VkExtent2D)>& body) {
+                               const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
+                               const std::function<void(VkCommandBuffer)>& imguiBody,
+                               ScreenshotWriter* screenshotWriter,
+                               AppState* state) {
     VkFence fence = m_inFlight[m_frame];
     vkWaitForFences(m_ctx.device(), 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences  (m_ctx.device(), 1, &fence);
@@ -82,22 +87,74 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
                     VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
-    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    color.imageView   = m_sc.view(idx);
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue  = clearColor;
+    const bool wantsScreenshot = screenshotWriter && state
+                                 && state->screenshotPending
+                                 && !screenshotWriter->inFlight();
 
-    VkRenderingInfo rinfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
-    rinfo.renderArea           = { {0,0}, m_sc.extent() };
-    rinfo.layerCount           = 1;
-    rinfo.colorAttachmentCount = 1;
-    rinfo.pColorAttachments    = &color;
+    // Pass 1: clear + shader. When no screenshot is pending, ImGui composites
+    // in this same pass — preserves the original single-pass cost.
+    {
+        VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        color.imageView   = m_sc.view(idx);
+        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+        color.clearValue  = clearColor;
 
-    vkCmdBeginRendering(cb, &rinfo);
-    body(cb, m_sc.extent());
-    vkCmdEndRendering(cb);
+        VkRenderingInfo rinfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        rinfo.renderArea           = { {0,0}, m_sc.extent() };
+        rinfo.layerCount           = 1;
+        rinfo.colorAttachmentCount = 1;
+        rinfo.pColorAttachments    = &color;
+
+        vkCmdBeginRendering(cb, &rinfo);
+        if (shaderBody) shaderBody(cb, m_sc.extent());
+        if (!wantsScreenshot && imguiBody) imguiBody(cb);
+        vkCmdEndRendering(cb);
+    }
+
+    bool screenshotRecorded = false;
+    if (wantsScreenshot) {
+        transitionImage(cb, m_sc.image(idx),
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_2_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        VK_PIPELINE_STAGE_2_COPY_BIT);
+
+        screenshotRecorded = screenshotWriter->requestReadback(
+            cb, m_sc.image(idx), m_sc.extent(), m_sc.format(), *state);
+
+        transitionImage(cb, m_sc.image(idx),
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                        VK_ACCESS_2_TRANSFER_READ_BIT,
+                        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_COPY_BIT,
+                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+        state->screenshotPending = false;
+
+        // Pass 2: ImGui on top — LOAD_OP_LOAD preserves the shader output.
+        if (imguiBody) {
+            VkRenderingAttachmentInfo color2{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+            color2.imageView   = m_sc.view(idx);
+            color2.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            color2.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+            color2.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingInfo rinfo2{VK_STRUCTURE_TYPE_RENDERING_INFO};
+            rinfo2.renderArea           = { {0,0}, m_sc.extent() };
+            rinfo2.layerCount           = 1;
+            rinfo2.colorAttachmentCount = 1;
+            rinfo2.pColorAttachments    = &color2;
+
+            vkCmdBeginRendering(cb, &rinfo2);
+            imguiBody(cb);
+            vkCmdEndRendering(cb);
+        }
+    }
 
     transitionImage(cb, m_sc.image(idx),
                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -123,6 +180,15 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
     si.signalSemaphoreInfoCount = 1; si.pSignalSemaphoreInfos = &sigSem;
     VK_CHECK(vkQueueSubmit2(m_ctx.graphicsQueue(), 1, &si, fence));
 
+    // Same-queue FIFO ordering guarantees this empty submit's fence signals
+    // after the readback recorded in `si` completes — ScreenshotWriter::tick()
+    // polls it without ever touching the per-frame fence.
+    if (screenshotRecorded) {
+        VkSubmitInfo2 emptySi{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        VK_CHECK(vkQueueSubmit2(m_ctx.graphicsQueue(), 1, &emptySi,
+                                screenshotWriter->pendingFence()));
+    }
+
     VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     VkSwapchainKHR sc = m_sc.handle();
     pi.waitSemaphoreCount = 1;
@@ -138,51 +204,59 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
 void RenderEngine::renderClear(float r, float g, float b, float a) {
     VkClearValue cv{};
     cv.color = {{ r, g, b, a }};
-    renderFrame(cv, [](VkCommandBuffer, VkExtent2D) {});
+    renderFrame(cv, nullptr, nullptr, nullptr, nullptr);
 }
 
 void RenderEngine::renderTexture(const Texture& src, ShaderPipeline& pipeline) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
-        pipeline.bindAndDraw(cb, src, ext);
-    });
+    renderFrame(cv,
+        [&](VkCommandBuffer cb, VkExtent2D ext) {
+            pipeline.bindAndDraw(cb, src, ext);
+        },
+        nullptr, nullptr, nullptr);
 }
 
 void RenderEngine::renderImageView(VkImageView view, ShaderPipeline& pipeline) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
-        pipeline.bindAndDrawWithImageView(cb, view, ext);
-    });
+    renderFrame(cv,
+        [&](VkCommandBuffer cb, VkExtent2D ext) {
+            pipeline.bindAndDrawWithImageView(cb, view, ext);
+        },
+        nullptr, nullptr, nullptr);
 }
 
 void RenderEngine::renderTextureWithOverlay(const Texture& src,
                                             ShaderPipeline& pipeline,
-                                            const std::function<void(VkCommandBuffer)>& imguiBody) {
+                                            const std::function<void(VkCommandBuffer)>& imguiBody,
+                                            ScreenshotWriter* screenshotWriter,
+                                            AppState*         state) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
-        pipeline.bindAndDraw(cb, src, ext);
-        if (imguiBody) imguiBody(cb);
-    });
+    renderFrame(cv,
+        [&](VkCommandBuffer cb, VkExtent2D ext) {
+            pipeline.bindAndDraw(cb, src, ext);
+        },
+        imguiBody, screenshotWriter, state);
 }
 
 void RenderEngine::renderImageViewWithOverlay(VkImageView view,
                                               ShaderPipeline& pipeline,
-                                              const std::function<void(VkCommandBuffer)>& imguiBody) {
+                                              const std::function<void(VkCommandBuffer)>& imguiBody,
+                                              ScreenshotWriter* screenshotWriter,
+                                              AppState*         state) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D ext) {
-        pipeline.bindAndDrawWithImageView(cb, view, ext);
-        if (imguiBody) imguiBody(cb);
-    });
+    renderFrame(cv,
+        [&](VkCommandBuffer cb, VkExtent2D ext) {
+            pipeline.bindAndDrawWithImageView(cb, view, ext);
+        },
+        imguiBody, screenshotWriter, state);
 }
 
 void RenderEngine::renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody) {
     VkClearValue cv{};
     cv.color = {{ 0.063f, 0.063f, 0.063f, 1.0f }};
-    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D) {
-        if (imguiBody) imguiBody(cb);
-    });
+    renderFrame(cv, nullptr, imguiBody, nullptr, nullptr);
 }

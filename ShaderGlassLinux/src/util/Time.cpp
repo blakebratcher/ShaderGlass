@@ -2,7 +2,7 @@
 #include <ctime>
 #include <cstdio>
 
-namespace Time {
+namespace TimeUtil {
 
 int64_t nowMonotonicMs() {
     using namespace std::chrono;
@@ -20,4 +20,4 @@ std::string formatStamp(std::chrono::system_clock::time_point t) {
     return buf;
 }
 
-} // namespace Time
+} // namespace TimeUtil

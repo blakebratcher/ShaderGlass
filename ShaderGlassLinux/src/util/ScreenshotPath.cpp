@@ -47,7 +47,7 @@ std::filesystem::path Resolver::resolve(std::chrono::system_clock::time_point no
         else dir = home;
     }
 
-    std::string stamp = Time::formatStamp(now);
+    std::string stamp = TimeUtil::formatStamp(now);
     auto base = dir / ("shaderglass-" + stamp);
     auto candidate = base;
     candidate += ".png";

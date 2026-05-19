@@ -1,6 +1,7 @@
 #include "SourcePickerPanel.h"
 #include "AppState.h"
 #include <imgui.h>
+#include <cstdlib>
 
 void SourcePickerPanel::draw(AppState& state) {
     if (!ImGui::Begin("Source")) { ImGui::End(); return; }
@@ -56,6 +57,21 @@ void SourcePickerPanel::draw(AppState& state) {
         if (ImGui::Button("Clear crop")) {
             state.pendingClearCrop = true;
         }
+    }
+
+    ImGui::SameLine();
+    const bool canShot = state.capture && !state.activeSourceId.empty()
+                         && !state.screenshotPending;
+    ImGui::BeginDisabled(!canShot);
+    if (ImGui::Button("Screenshot")) {
+        state.screenshotPending = true;
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered() && canShot) {
+        ImGui::SetTooltip("Save the rendered output to %s/shaderglass-*.png",
+                          std::getenv("XDG_PICTURES_DIR")
+                            ? std::getenv("XDG_PICTURES_DIR")
+                            : "~/Pictures");
     }
 
     if (ImGui::BeginTable("##sources", 2,

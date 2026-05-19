@@ -22,7 +22,9 @@
 #include "ui/ToastPanel.h"
 #include "ui/CropOverlay.h"
 #include "util/FourccToVk.h"
+#include "util/ScreenshotWriter.h"
 #include "util/SourceMatcher.h"
+#include "util/Time.h"
 #include "util/Logging.h"
 #include <imgui.h>
 #include "builtin_shaders.h"
@@ -38,16 +40,6 @@
 #include <sstream>
 #include <string>
 #include <thread>
-
-namespace {
-// TODO(Task 16): replace with Time::nowMonotonicMs() once the public helper exists.
-// Duplicated in Logging.cpp for the same reason — both call sites will collapse
-// to a single header in Task 16.
-int64_t nowMonotonicMs() {
-    using namespace std::chrono;
-    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
-}
-} // namespace
 
 struct Args {
     bool headless = false;
@@ -442,6 +434,7 @@ static int runWindowed(Args& a) {
                                 swapchain.format());
 
         RenderEngine engine(ctx, swapchain);
+        ScreenshotWriter screenshotWriter(ctx);
 
         // sourceTex is lazily created on the first captured frame; null means
         // no frame has been received yet (null-capture or waiting for first frame).
@@ -491,7 +484,7 @@ static int runWindowed(Args& a) {
 
             // Toasts render on top of everything.
             if (state.toasts) {
-                auto snap = state.toasts->snapshot(nowMonotonicMs());
+                auto snap = state.toasts->snapshot(TimeUtil::nowMonotonicMs());
                 auto dismissed = toastPanel.draw(snap);
                 for (auto id : dismissed) state.toasts->dismiss(id);
             }
@@ -526,7 +519,9 @@ static int runWindowed(Args& a) {
                     if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
                         auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
                         engine.renderImageViewWithOverlay(imp->view, activePipeline,
-                            [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                            [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); },
+                            &screenshotWriter, &state);
+                        screenshotWriter.tick();
                         state.capture->release(*f);
                         continue;
                     }
@@ -559,7 +554,8 @@ static int runWindowed(Args& a) {
 
                 if (sourceTex) {
                     engine.renderTextureWithOverlay(*sourceTex, activePipeline,
-                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); },
+                        &screenshotWriter, &state);
                 } else {
                     // Capture present but no valid frame yet — show splash.
                     engine.renderEmpty(
@@ -570,6 +566,7 @@ static int runWindowed(Args& a) {
                 engine.renderEmpty(
                     [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
             }
+            screenshotWriter.tick();
         }
     }
     config.saveSync();

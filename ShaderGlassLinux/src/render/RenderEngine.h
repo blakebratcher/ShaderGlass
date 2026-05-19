@@ -8,6 +8,8 @@ class VulkanContext;
 class Swapchain;
 class Texture;
 class ShaderPipeline;
+class ScreenshotWriter;
+struct AppState;
 
 class RenderEngine {
 public:
@@ -24,22 +26,30 @@ public:
     void renderImageView(VkImageView view, ShaderPipeline& pipeline);
 
     // Variants that also record an ImGui pass on top of the shader output.
-    // `imguiBody(cb)` is called after the shader body, still inside the
-    // dynamic-rendering scope on the swapchain image.
+    // When a screenshot is pending and a writer is supplied, the post-shader
+    // / pre-ImGui image is copied to a host-visible buffer (so the resulting
+    // PNG has no ImGui chrome). The writer's fence is signalled by an empty
+    // submit on the same queue after the main submit.
     void renderTextureWithOverlay(const Texture& src, ShaderPipeline& pipeline,
-                                  const std::function<void(VkCommandBuffer)>& imguiBody);
+                                  const std::function<void(VkCommandBuffer)>& imguiBody,
+                                  ScreenshotWriter* screenshotWriter = nullptr,
+                                  AppState*         state            = nullptr);
     void renderImageViewWithOverlay(VkImageView view, ShaderPipeline& pipeline,
-                                    const std::function<void(VkCommandBuffer)>& imguiBody);
+                                    const std::function<void(VkCommandBuffer)>& imguiBody,
+                                    ScreenshotWriter* screenshotWriter = nullptr,
+                                    AppState*         state            = nullptr);
 
     // Renders an ImGui-only frame with a dark background. Used when there
     // is no active capture (cold launch, no saved session). The clear colour
-    // matches (16,16,16,255). `imguiBody(cb)` is called inside the
-    // dynamic-rendering scope so panels render normally.
+    // matches (16,16,16,255).
     void renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody);
 
 private:
     void renderFrame(VkClearValue clearColor,
-                     const std::function<void(VkCommandBuffer, VkExtent2D)>& body);
+                     const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
+                     const std::function<void(VkCommandBuffer)>&             imguiBody,
+                     ScreenshotWriter* screenshotWriter,
+                     AppState*         state);
 
     static constexpr uint32_t kFramesInFlight = 2;
 
