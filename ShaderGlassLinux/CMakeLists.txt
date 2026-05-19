@@ -74,6 +74,7 @@ add_library(shaderglass_core STATIC
     src/ui/ParamsPanel.cpp
     src/ui/PresetBrowserPanel.cpp
     src/ui/SourcePickerPanel.cpp
+    src/ui/ToastQueue.cpp
     ${BUILTIN_HEADER}
 )
 target_include_directories(shaderglass_core

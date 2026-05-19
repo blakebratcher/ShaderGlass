@@ -113,3 +113,7 @@ gtest_discover_tests(app_state_tests)
 add_executable(config_store_tests test_config_store.cpp)
 target_link_libraries(config_store_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(config_store_tests)
+
+add_executable(toast_queue_tests test_toast_queue.cpp)
+target_link_libraries(toast_queue_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(toast_queue_tests)
