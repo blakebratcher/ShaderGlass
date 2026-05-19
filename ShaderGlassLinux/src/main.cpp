@@ -464,6 +464,28 @@ static int runWindowed(Args& a) {
             presetPanel.draw(state);
             paramsPanel.draw(state);
 
+            // Centered splash text in the viewport when no capture is active.
+            if (!state.capture || state.activeSourceId.empty()) {
+                const ImGuiViewport* vp = ImGui::GetMainViewport();
+                const char* msg = "Pick a source to begin";
+                ImVec2 sz = ImGui::CalcTextSize(msg);
+                ImVec2 pos{vp->WorkPos.x + (vp->WorkSize.x - sz.x) * 0.5f,
+                           vp->WorkPos.y + (vp->WorkSize.y - sz.y) * 0.5f};
+
+                ImGui::SetNextWindowPos(pos);
+                ImGui::SetNextWindowBgAlpha(0.0f);
+                ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
+                                       | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs
+                                       | ImGuiWindowFlags_NoFocusOnAppearing
+                                       | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
+                if (ImGui::Begin("##splash", nullptr, flags)) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 200));
+                    ImGui::TextUnformatted(msg);
+                    ImGui::PopStyleColor();
+                }
+                ImGui::End();
+            }
+
             // Toasts render on top of everything.
             if (state.toasts) {
                 auto snap = state.toasts->snapshot(nowMonotonicMs());

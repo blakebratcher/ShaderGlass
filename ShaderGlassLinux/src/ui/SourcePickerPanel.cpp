@@ -27,6 +27,13 @@ void SourcePickerPanel::draw(AppState& state) {
     }
 
     // x11-screen: in-app table.
+    if (!state.capture || state.activeSourceId.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 220, 100, 255));
+        ImGui::TextWrapped("\xe2\x86\x90 Pick a source to begin");
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    }
+
     if (ImGui::Button("Refresh")) {
         state.refreshSources();
     }
