@@ -51,6 +51,7 @@ int64_t nowMonotonicMs() {
 struct Args {
     bool headless = false;
     bool resetConfig = false;
+    bool listSources = false;
     std::string input, output;
     std::string compilePreset;
     std::string preset;
@@ -132,12 +133,16 @@ static void printUsage(FILE* f) {
         "  shaderglass -V | --version\n"
         "      Print version info (commit hash + build date) and exit.\n"
         "\n"
+        "  shaderglass --list-sources [--capture <kind>]\n"
+        "      List sources for the current (or specified) capture backend and exit.\n"
+        "\n"
         "OPTIONS\n"
         "  --preset PATH         Apply a .slangp shader preset.\n"
         "  --width N, --height N Output dimensions in pixels (%u..%u, default 1280x720).\n"
         "  --reset-config        Delete ~/.config/shaderglass/config.json "
                                   "and exit (escape hatch when the saved\n"
         "                        session is bad).\n"
+        "  --list-sources        List sources for the current/--capture backend and exit.\n"
         "\n"
         "ENVIRONMENT\n"
         "  SHADERGLASS_LOG=debug|info|warn|error|off   Runtime log verbosity (default: info).\n",
@@ -169,6 +174,8 @@ static ParseResult parseArgs(int argc, char** argv) {
             a.debugPortal = true;
         } else if (s == "--reset-config") {
             a.resetConfig = true;
+        } else if (s == "--list-sources") {
+            a.listSources = true;
         } else if (s == "--input")        {
             const char* v = needValue(s, i); if (!v) return r;
             a.input = v;
@@ -292,25 +299,23 @@ static int runHeadless(const Args& a) {
 }
 
 static int runWindowed(Args& a) {
+    // Infer capture kind from saved session or environment when neither
+    // --capture nor a positional image path was given. Unlike the old code,
+    // failing to infer is no longer fatal: we fall through to a null-capture
+    // (splash) mode and let the user pick a source from the GUI.
     if (a.input.empty() && a.captureKind.empty()) {
-        // GUI-first no-args launch: infer capture kind from env, or from
-        // a previously persisted lastSource if available.
         ConfigStore probe;
         probe.load();
-        if (probe.lastSource().has_value() &&
-            !probe.lastSource()->kind.empty()) {
+        if (probe.lastSource().has_value() && !probe.lastSource()->kind.empty()) {
             a.captureKind = probe.lastSource()->kind;
         } else if (std::getenv("WAYLAND_DISPLAY")) {
             a.captureKind = "wayland-screen";
         } else if (std::getenv("DISPLAY")) {
             a.captureKind = "x11-screen";
-        } else {
-            std::fprintf(stderr, "shaderglass: no DISPLAY/WAYLAND_DISPLAY "
-                         "and no saved session — can't infer a backend.\n\n");
-            printUsage(stderr);
-            return 2;
         }
+        // else: no env vars, no saved session → bare-launch / null-capture
     }
+
     SdlWindow window("ShaderGlass", 1280, 720);
 
     VulkanContextOptions opts;
@@ -328,7 +333,6 @@ static int runWindowed(Args& a) {
 
     AppState state;
     state.toasts = std::make_unique<ToastQueue>();
-    SourcePickerPanel sourcePanel{a.captureKind};
     PresetLibrary library;
     PresetBrowserPanel presetPanel;
     ParamsPanel paramsPanel;
@@ -352,109 +356,81 @@ static int runWindowed(Args& a) {
         return 2;
     }
 
+    // Build the capture backend (if we have enough info). Failures here are
+    // soft: we fall back to null-capture and tell the user via a toast.
     if (a.captureKind == "wayland-screen") {
-        state.capture = std::make_unique<WaylandCapture>(std::make_unique<PortalCaptureSession>(&ctx));
+        state.capture = std::make_unique<WaylandCapture>(
+            std::make_unique<PortalCaptureSession>(&ctx));
         state.capture->selectSource(state.capture->enumerateSources()[0]);
     } else if (a.captureKind == "x11-screen") {
-        state.capture = std::make_unique<X11Capture>(std::make_unique<RealX11CaptureSession>());
+        state.capture = std::make_unique<X11Capture>(
+            std::make_unique<RealX11CaptureSession>());
         auto sources = state.capture->enumerateSources();
 
-        if (a.source.empty()) {
-            std::fprintf(stderr,
-                "no --source given; pick one with --source <id-or-name>:\n");
-            for (const auto& s : sources) {
-                std::fprintf(stderr, "  %-32s  %s\n",
-                             s.id.c_str(), s.displayName.c_str());
+        if (!a.source.empty()) {
+            // --source was given: try to match it.
+            SourceInfo picked;
+            auto result = matchSource(sources, a.source, picked);
+            if (result == SourceMatchResult::NoMatch) {
+                std::fprintf(stderr,
+                    "no source matched '%s'; available:\n", a.source.c_str());
+                for (const auto& s : sources) {
+                    std::fprintf(stderr, "  %-32s  %s\n",
+                                 s.id.c_str(), s.displayName.c_str());
+                }
+                return 4;
             }
-            return 2;
-        }
-
-        SourceInfo picked;
-        auto result = matchSource(sources, a.source, picked);
-        if (result == SourceMatchResult::NoMatch) {
-            std::fprintf(stderr,
-                "no source matched '%s'; available:\n", a.source.c_str());
-            for (const auto& s : sources) {
-                std::fprintf(stderr, "  %-32s  %s\n",
-                             s.id.c_str(), s.displayName.c_str());
+            if (result == SourceMatchResult::Ambiguous) {
+                std::fprintf(stderr,
+                    "'%s' matched more than one source:\n", a.source.c_str());
+                for (const auto& s : collectSubstringMatches(sources, a.source)) {
+                    std::fprintf(stderr, "  %-32s  %s\n",
+                                 s.id.c_str(), s.displayName.c_str());
+                }
+                return 3;
             }
-            return 4;
-        }
-        if (result == SourceMatchResult::Ambiguous) {
-            std::fprintf(stderr,
-                "'%s' matched more than one source:\n", a.source.c_str());
-            for (const auto& s : collectSubstringMatches(sources, a.source)) {
-                std::fprintf(stderr, "  %-32s  %s\n",
-                             s.id.c_str(), s.displayName.c_str());
+            state.capture->selectSource(picked);
+            state.activeSourceId = picked.id;
+        } else {
+            // No --source on CLI. Try to restore from config; if no saved
+            // source either, leave capture with no selected source — the
+            // SourcePickerPanel will let the user choose from the GUI.
+            auto lastSrc = config.lastSource();
+            if (lastSrc && lastSrc->kind == "x11-screen" && !lastSrc->id.empty()) {
+                SourceInfo picked;
+                auto result = matchSource(sources, lastSrc->id, picked);
+                if (result == SourceMatchResult::Picked) {
+                    state.capture->selectSource(picked);
+                    state.activeSourceId = picked.id;
+                } else {
+                    Logging::infoToast(state,
+                        "Saved source '" + lastSrc->id + "' not found");
+                }
             }
-            return 3;
+            // else: null active source, GUI picker will handle it
         }
-        state.capture->selectSource(picked);
-        state.activeSourceId = picked.id;
-    } else {
+    } else if (!a.input.empty()) {
         state.capture = std::make_unique<StaticImageCapture>(a.input);
         state.capture->selectSource(state.capture->enumerateSources()[0]);
     }
+    // else: bare launch with no --capture and no input file → null capture
 
-    // Populate the source list so the picker has data to display from frame 1.
+    // Populate source list so the picker has data to show from frame 1.
     state.refreshSources();
 
-    // Seed from config when the matching CLI flag is absent — CLI always wins.
-    // Source: --source on cmdline wins; else fall back to config.lastSource.
-    if (a.source.empty() && config.lastSource().has_value() &&
+    // Seed preset intent: --preset wins over config.
+    if (!a.preset.empty()) {
+        state.pendingPresetPath = a.preset;
+    } else if (!config.lastPreset().empty()) {
+        state.pendingPresetPath = config.lastPreset();
+    }
+
+    // Seed pending source from config when not already set by CLI matching above.
+    if (state.activeSourceId.empty() && config.lastSource().has_value() &&
         config.lastSource()->kind == a.captureKind) {
         state.pendingSourceId = config.lastSource()->id;
     }
 
-    // Preset: --preset on cmdline wins; else fall back to config.lastPreset.
-    if (a.preset.empty() && !config.lastPreset().empty()) {
-        state.pendingPresetPath = config.lastPreset();
-    }
-
-    // Seed preset intent from --preset flag (takes precedence over config).
-    if (!a.preset.empty()) {
-        state.pendingPresetPath = a.preset;
-    }
-
-    std::optional<CapturedFrame> frame;
-    {
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (std::chrono::steady_clock::now() < deadline) {
-            frame = state.capture->acquireFrame();
-            if (frame) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(33));
-        }
-    }
-    if (!frame) {
-        if (a.captureKind == "wayland-screen") {
-            LOG_ERROR("no frame within 5s — did you grant the screencast prompt in xdg-desktop-portal?");
-        } else if (a.captureKind == "x11-screen") {
-            LOG_ERROR("no frame within 5s — is source '%s' still alive and visible?",
-                      a.source.c_str());
-        } else {
-            LOG_ERROR("no frame within 5s from '%s'", a.input.c_str());
-        }
-        return 3;
-    }
-
-    VkFormat srcFormat = fourcc_to_vk(frame->fourcc);
-    if (srcFormat == VK_FORMAT_UNDEFINED) {
-        char b[5] = { char(frame->fourcc & 0xff),
-                      char((frame->fourcc >> 8) & 0xff),
-                      char((frame->fourcc >> 16) & 0xff),
-                      char((frame->fourcc >> 24) & 0xff), 0 };
-        // Supported list mirrors src/util/FourccToVk.cpp — keep in sync.
-        LOG_ERROR("unsupported source pixel format: fourcc 0x%08x ('%s'). "
-                  "Supported: ARGB8888, ABGR8888, XRGB8888, XBGR8888.",
-                  frame->fourcc, b);
-        return 6;
-    }
-    Texture sourceTex(ctx, frame->width, frame->height, srcFormat);
-    if (frame->kind == CapturedFrame::Kind::CpuBuffer) {
-        sourceTex.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
-    }
-    // For DMA-BUF first frames, sourceTex stays uninitialized for one iteration;
-    // the inner loop branches on f->kind so this is fine.
     // Local 'pipeline' is always the passthrough fallback used when
     // state.preset is null. The active-preset path is owned by state.preset.
     Args passthroughArgs{};  // empty preset → buildPipelineSource uses builtin passthrough
@@ -464,23 +440,31 @@ static int runWindowed(Args& a) {
                                 swapchain.format());
 
         RenderEngine engine(ctx, swapchain);
-        LOG_INFO("Rendering %s (%ux%u). Close window or Esc to exit.",
-                 a.captureKind.empty() ? a.input.c_str() : a.captureKind.c_str(),
-                 frame->width, frame->height);
 
-        state.capture->release(*frame);  // first frame already uploaded
+        // sourceTex is lazily created on the first captured frame; null means
+        // no frame has been received yet (null-capture or waiting for first frame).
+        std::unique_ptr<Texture> sourceTex;
+
+        // captureKind for the SourcePickerPanel; may be empty on bare launch.
+        SourcePickerPanel sourcePanel{a.captureKind};
+
+        if (state.capture) {
+            LOG_INFO("Rendering %s. Close window or Esc to exit.",
+                     a.captureKind.empty() ? a.input.c_str() : a.captureKind.c_str());
+        } else {
+            LOG_INFO("No capture active. Use the source picker to select a source.");
+        }
 
         while (window.pollEvents()) {
             imgui.beginFrame();
 
-            // Dock space + menu — kept tiny in Phase A; Phase B/C add panels.
+            // Dock space + panels.
             ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
             sourcePanel.draw(state);
             presetPanel.draw(state);
             paramsPanel.draw(state);
 
-            // Toasts render on top of everything. AppState owns the queue; the
-            // panel just renders the snapshot. Dismiss-clicks propagate back.
+            // Toasts render on top of everything.
             if (state.toasts) {
                 auto snap = state.toasts->snapshot(nowMonotonicMs());
                 auto dismissed = toastPanel.draw(snap);
@@ -494,20 +478,56 @@ static int runWindowed(Args& a) {
             ShaderPipeline& activePipeline =
                 state.preset ? state.preset->pipeline() : pipeline;
 
-            auto f = state.capture->acquireFrame();
-            if (f) {
-                if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
-                    auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
-                    engine.renderImageViewWithOverlay(imp->view, activePipeline,
-                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+            if (state.capture) {
+                auto f = state.capture->acquireFrame();
+                if (f) {
+                    if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
+                        auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
+                        engine.renderImageViewWithOverlay(imp->view, activePipeline,
+                            [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                        state.capture->release(*f);
+                        continue;
+                    }
+
+                    // Lazy-init sourceTex on first CPU frame or when dimensions change.
+                    if (!sourceTex
+                        || sourceTex->width()  != f->width
+                        || sourceTex->height() != f->height) {
+                        VkFormat fmt = fourcc_to_vk(f->fourcc);
+                        if (fmt == VK_FORMAT_UNDEFINED) {
+                            char b[5] = { char(f->fourcc & 0xff),
+                                          char((f->fourcc >> 8)  & 0xff),
+                                          char((f->fourcc >> 16) & 0xff),
+                                          char((f->fourcc >> 24) & 0xff), 0 };
+                            LOG_ERROR("unsupported source pixel format: fourcc 0x%08x ('%s'). "
+                                      "Supported: ARGB8888, ABGR8888, XRGB8888, XBGR8888.",
+                                      f->fourcc, b);
+                            state.capture->release(*f);
+                            // Fall through to renderEmpty this frame.
+                        } else {
+                            sourceTex = std::make_unique<Texture>(ctx, f->width, f->height, fmt);
+                        }
+                    }
+
+                    if (sourceTex) {
+                        sourceTex->uploadFromCpu(f->data, f->stride * f->height, f->stride);
+                    }
                     state.capture->release(*f);
-                    continue;
                 }
-                sourceTex.uploadFromCpu(f->data, f->stride * f->height, f->stride);
-                state.capture->release(*f);
+
+                if (sourceTex) {
+                    engine.renderTextureWithOverlay(*sourceTex, activePipeline,
+                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                } else {
+                    // Capture present but no valid frame yet — show splash.
+                    engine.renderEmpty(
+                        [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
+                }
+            } else {
+                // No active capture: render a splash (dark clear + ImGui).
+                engine.renderEmpty(
+                    [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
             }
-            engine.renderTextureWithOverlay(sourceTex, activePipeline,
-                [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); });
         }
     }
     config.saveSync();
@@ -571,6 +591,44 @@ int main(int argc, char** argv) {
         cfg.resetAndDelete();
         std::fprintf(stdout, "shaderglass: removed %s\n",
                      ConfigStore::defaultPath().string().c_str());
+        return 0;
+    }
+    if (a.listSources) {
+        // Infer backend kind when --capture was not given.
+        std::string kind = a.captureKind;
+        if (kind.empty()) {
+            if (std::getenv("WAYLAND_DISPLAY"))      kind = "wayland-screen";
+            else if (std::getenv("DISPLAY"))          kind = "x11-screen";
+        }
+        std::unique_ptr<CaptureBackend> backend;
+        if (kind == "wayland-screen") {
+            // WaylandCapture requires a Vulkan context for DMA-BUF import;
+            // for enumeration only, use X11 if DISPLAY is also set, otherwise
+            // note that wayland-screen source listing requires a running portal.
+            // We construct with a null VulkanContext pointer; enumerateSources
+            // for the portal path does not touch the GPU.
+            backend = std::make_unique<WaylandCapture>(
+                std::make_unique<PortalCaptureSession>(nullptr));
+        } else if (kind == "x11-screen") {
+            backend = std::make_unique<X11Capture>(
+                std::make_unique<RealX11CaptureSession>());
+        } else {
+            std::fprintf(stderr,
+                "shaderglass --list-sources: cannot enumerate — no backend "
+                "available (set DISPLAY or WAYLAND_DISPLAY, or pass --capture).\n");
+            return 2;
+        }
+        try {
+            auto sources = backend->enumerateSources();
+            for (const auto& s : sources) {
+                std::printf("%s\t%s\n", s.id.c_str(), s.displayName.c_str());
+            }
+        } catch (const std::exception& e) {
+            std::fprintf(stderr,
+                "shaderglass --list-sources: backend '%s' unavailable: %s\n",
+                kind.c_str(), e.what());
+            return 2;
+        }
         return 0;
     }
     try {
