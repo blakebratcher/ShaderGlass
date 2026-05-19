@@ -70,6 +70,7 @@ add_library(shaderglass_core STATIC
     src/capture/WaylandCapture.cpp
     src/capture/X11Capture.cpp
     src/ui/AppState.cpp
+    src/ui/CropOverlay.cpp
     src/ui/ImGuiLayer.cpp
     src/ui/ParamsPanel.cpp
     src/ui/PresetBrowserPanel.cpp

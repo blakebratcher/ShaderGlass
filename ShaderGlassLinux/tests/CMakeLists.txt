@@ -125,3 +125,7 @@ gtest_discover_tests(toast_queue_tests)
 add_executable(app_state_crop_tests test_app_state_crop.cpp)
 target_link_libraries(app_state_crop_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(app_state_crop_tests)
+
+add_executable(crop_overlay_tests test_crop_overlay.cpp)
+target_link_libraries(crop_overlay_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(crop_overlay_tests)
