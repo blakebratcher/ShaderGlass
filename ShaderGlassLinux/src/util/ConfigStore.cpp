@@ -30,6 +30,7 @@ void ConfigStore::load() {
     m_lastSource.reset();
     m_lastPreset.clear();
     m_presetParams.clear();
+    m_crops.clear();
 
     if (!fs::exists(m_path)) {
         LOG_INFO("ConfigStore: no file at %s; starting with defaults",
@@ -65,6 +66,19 @@ void ConfigStore::load() {
                 m_presetParams[k] = std::move(entry);
             }
         }
+        if (j.contains("crops") && j["crops"].is_object()) {
+            for (auto& [key, v] : j["crops"].items()) {
+                if (v.is_object() && v.contains("x") && v.contains("y")
+                    && v.contains("w") && v.contains("h")) {
+                    m_crops[key] = CropRect{
+                        v["x"].get<int>(),
+                        v["y"].get<int>(),
+                        v["w"].get<int>(),
+                        v["h"].get<int>(),
+                    };
+                }
+            }
+        }
     } catch (const std::exception& e) {
         LOG_WARN("ConfigStore: shape mismatch in %s: %s; partial load",
                  m_path.string().c_str(), e.what());
@@ -88,6 +102,11 @@ void ConfigStore::saveSync() {
         params[presetPath] = std::move(entry);
     }
     j["presetParams"] = std::move(params);
+    json crops = json::object();
+    for (const auto& [key, r] : m_crops) {
+        crops[key] = {{"x", r.x}, {"y", r.y}, {"w", r.w}, {"h", r.h}};
+    }
+    j["crops"] = std::move(crops);
 
     fs::path tmp = m_path;
     tmp += ".tmp";
@@ -143,4 +162,23 @@ void ConfigStore::setPresetParams(const std::string& presetPath,
                                   std::unordered_map<std::string, float> values) {
     m_presetParams[presetPath] = std::move(values);
     saveAsync();
+}
+
+std::optional<CropRect> ConfigStore::cropFor(const std::string& kind,
+                                             const std::string& id) const {
+    auto it = m_crops.find(kind + "|" + id);
+    if (it == m_crops.end()) return std::nullopt;
+    return it->second;
+}
+
+void ConfigStore::setCropFor(const std::string& kind,
+                             const std::string& id,
+                             CropRect rect) {
+    m_crops[kind + "|" + id] = rect;
+    saveAsync();
+}
+
+void ConfigStore::clearCropFor(const std::string& kind,
+                               const std::string& id) {
+    if (m_crops.erase(kind + "|" + id) > 0) saveAsync();
 }

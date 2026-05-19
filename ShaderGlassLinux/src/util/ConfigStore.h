@@ -9,6 +9,10 @@ struct LastSource {
     std::string id;     // capture-backend-specific source id
 };
 
+struct CropRect {
+    int x, y, w, h;
+};
+
 class ConfigStore {
 public:
     // Default path: $XDG_CONFIG_HOME/shaderglass/config.json
@@ -46,12 +50,22 @@ public:
     void setPresetParams(const std::string& presetPath,
                          std::unordered_map<std::string, float> values);
 
+    // Per-source crop rectangles. Key = kind + "|" + id.
+    std::optional<CropRect> cropFor(const std::string& kind,
+                                    const std::string& id) const;
+    void setCropFor(const std::string& kind,
+                    const std::string& id,
+                    CropRect rect);
+    void clearCropFor(const std::string& kind,
+                      const std::string& id);
+
 private:
     std::filesystem::path                                m_path;
     std::optional<LastSource>                            m_lastSource;
     std::string                                          m_lastPreset;
     std::unordered_map<std::string,
         std::unordered_map<std::string, float>>          m_presetParams;
+    std::unordered_map<std::string, CropRect>            m_crops;   // key = kind + "|" + id
 
     // Debounce
     bool                                                 m_savePending = false;

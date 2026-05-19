@@ -98,6 +98,10 @@ add_executable(log_level_tests test_log_level.cpp)
 target_link_libraries(log_level_tests PRIVATE shaderglass_core gtest_main)
 gtest_discover_tests(log_level_tests)
 
+add_executable(config_store_crop_tests test_config_store_crop.cpp)
+target_link_libraries(config_store_crop_tests PRIVATE shaderglass_core gtest_main)
+gtest_discover_tests(config_store_crop_tests)
+
 add_executable(preset_library_tests test_preset_library.cpp)
 target_link_libraries(preset_library_tests PRIVATE shaderglass_core gtest_main)
 target_compile_definitions(preset_library_tests PRIVATE
