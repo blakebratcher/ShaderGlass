@@ -1,113 +1,88 @@
 <div align="center">
 
-<img src="images/shaderglass.png" alt="ShaderGlass" width="128"/>
+# ShaderGlass for Linux
 
-# ShaderGlass
-
-### *Optimized Fork*
-
-**GPU shader overlay for Windows desktop** | 1200+ RetroArch shaders | DirectX 11
+**GPU shader overlay using Vulkan + SDL3** | RetroArch slang shaders | X11 + Wayland capture
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
-[![DirectX 11](https://img.shields.io/badge/DirectX-11-green.svg)](https://learn.microsoft.com/en-us/windows/win32/direct3d11/atoc-dx-graphics-direct3d-11)
-[![VS 2026](https://img.shields.io/badge/Visual%20Studio-2026-5C2D91?logo=visualstudio)](https://visualstudio.microsoft.com/)
-[![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](https://www.microsoft.com/windows)
+[![Vulkan](https://img.shields.io/badge/Vulkan-1.3-A41E22?logo=vulkan)](https://www.vulkan.org/)
+[![SDL3](https://img.shields.io/badge/SDL-3.x-orange.svg)](https://www.libsdl.org/)
+[![Dear ImGui](https://img.shields.io/badge/Dear%20ImGui-1.92.8-1F2A3C.svg)](https://github.com/ocornut/imgui)
+[![Linux](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-FCC624?logo=linux&logoColor=black)](https://www.kernel.org/)
 
-Forked from [mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass) with performance optimizations, critical bug fixes, and modernized build tooling.
-
----
+Linux port of [mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass) — applies RetroArch
+slang shaders as a desktop overlay using Vulkan and SDL3, with capture backends for
+both X11 (XComposite + XShm) and Wayland (xdg-desktop-portal + PipeWire).
 
 </div>
 
-<br/>
-
-<img src="images/screen7.png" alt="ShaderGlass running on Windows 11 desktop" width="100%"/>
-
-<br/>
-
-## What's Changed
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-### Performance
-
-- **Ping-pong feedback buffers** -- Eliminates `CopyResource` per frame by alternating texture read/write roles between passes
-- **Batched GPU bindings** -- Single `PSSetSamplers` / `PSSetShaderResources` call per pass instead of per-texture
-- **Direct texture pointers** -- Cached raw `ID3D11Texture2D*` alongside owning `com_ptr`s for zero-overhead access in the render loop
-- **O(1) parameter lookup** -- `unordered_map` replaces linear search in `SetParam`
-- **Unconditional CB uploads** -- Removed broken dirty tracking that never saved work
-
-</td>
-<td width="50%" valign="top">
-
-### Bug Fixes
-
-- **CopyAttribute stale-HRESULT** -- Was checking a global static from a previous call instead of the actual return value
-- **Release build crash** -- `assert(false)` compiled out, causing null deref on shader compile failure
-- **GrabOutput crash** -- Missing null check on captured frame
-- **Resource leaks** -- COM pointers not released in cleanup paths
-- **NULL deref in catch** -- Dead catch block iterated a NULL array
-- **Save dialog** -- Wrong flag (`OFN_FILEMUSTEXIST` on a save dialog)
-- **Uninitialized members** -- Garbage preset index on first hotkey use
-
-</td>
-</tr>
-</table>
-
-### Code Quality
-
-| Area | Improvement |
-|------|-------------|
-| **Error handling** | `THROW_IF_FAILED(hr)` macro with file, line, and expression context -- added across the entire codebase |
-| **Thread safety** | RAII `ThreadHandle` wrapper replaces raw `CreateThread` / `CloseHandle` |
-| **Input validation** | Bounds-checked parsing for all shader config values with overflow protection |
-| **Build warnings** | Fixed wchar_t narrowing conversion (5x per build); total warnings reduced from 7 to 2 |
-| **Repo size** | Removed ~186 MB of pre-built binaries from version control |
-
 ---
 
-## Building
+## Status
 
-```
-Visual Studio 2026  |  C++20  |  Windows SDK 10.0.26100  |  Release | x64
-```
+| Milestone | Scope | State |
+|---|---|---|
+| M1 | Vulkan/SDL3 foundation, passthrough render, headless mode | shipped |
+| M2 | Wayland capture (xdg-desktop-portal + PipeWire + DMA-BUF) | shipped |
+| M3 | X11 capture (XComposite + XShm, CPU upload) | shipped |
+| M3.5 | X11 DMA-BUF fast path (EGL + DRI3) | pending |
+| M4 | Dear ImGui UI (source picker, preset browser, params, session restore) | shipped |
+| M5 UX-polish | Toast UI, first-run UX, region/crop, screenshot capture | shipped |
+| M5 remaining | Transparent X11 overlay, hotkeys, multi-pass shaders, runtime `.slangp` import | pending |
+
+`master` hosts the original Windows app (DirectX 11, Visual Studio); this branch
+(`linux/main`) is a separate trunk that never merges back.
+
+## Quick start
 
 ```bash
-# Open and build
-ShaderGlass.sln  -->  Release | x64
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+
+# GUI (auto-resumes last session, or shows source picker)
+./build/ShaderGlassLinux/shaderglass
+
+# Capture the X11 root window
+./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root
+
+# Capture a Wayland source via xdg-desktop-portal
+./build/ShaderGlassLinux/shaderglass --capture wayland-screen
 ```
 
-> See [CLAUDE.md](CLAUDE.md) for full architecture docs, threading model, shader pipeline details, and development notes.
+Full dependency list, distro-specific install commands, and run examples:
+[docs/build-linux.md](docs/build-linux.md).
 
----
+## Architecture
 
-## Screenshots
+| Layer | Files | Notes |
+|---|---|---|
+| Capture | `src/capture/` | `X11Capture` + `RealX11CaptureSession` (XShm), `WaylandCapture` + `PortalCaptureSession` (PipeWire), `StaticImageCapture` (PNG via stb). Common `CaptureBackend` interface. |
+| Render | `src/render/` | `VulkanContext` + `Swapchain` + `RenderEngine`. `ShaderPipeline` runs the passthrough or a slang-compiled fragment shader. `Preset` wraps a `.slangp` preset (single-pass for now). |
+| UI | `src/ui/` | `ImGuiLayer` + panels (`SourcePickerPanel`, `PresetBrowserPanel`, `ParamsPanel`, `CropOverlay`, `ToastPanel`). `AppState` carries shared mutable state; `applyPending()` is the sole capture/preset rebuild point. |
+| Util | `src/util/` | `ConfigStore` (JSON via nlohmann), `PresetLibrary`, `Logging`, `ToastQueue`, `ScreenshotWriter`, `Time`, `XdgConfig`. |
+| Shader compiler | `ShaderGC/` | Shared with the Windows trunk (HLSL/SPIRV files stubbed out on Linux — Vulkan consumes SPIR-V directly). |
 
-<details>
-<summary><b>Desktop Glass Mode</b> -- transparent overlay applies shaders to anything behind it</summary>
-<br/>
-<img src="images/screen1.png" alt="Desktop Glass mode - CRT shader on Chrome" width="100%"/>
-</details>
+Detailed conventions, gotchas, and design specs:
+- [CLAUDE.md](CLAUDE.md) — architecture overview, build commands, code gotchas
+- [docs/superpowers/specs/](docs/superpowers/specs/) — per-milestone design specs
+- [docs/superpowers/plans/](docs/superpowers/plans/) — per-milestone TDD task plans
+- [docs/manual-tests-m{1..5}*.md](docs/) — per-milestone manual smoke checklists
 
-<details>
-<summary><b>Window Clone Mode</b> -- capture a specific window with pixel-perfect scaling</summary>
-<br/>
-<img src="images/screen4.png" alt="FS-UAE with CRT shader" width="100%"/>
-<br/><br/>
-<img src="images/screen5.png" alt="Altirra with TV-OUT shader" width="100%"/>
-<br/><br/>
-<img src="images/screen3.png" alt="Adventure Game Studio with MegaBezel shader" width="100%"/>
-<br/><br/>
-<img src="images/screen2.png" alt="DOSBox with newpixie-crt shader" width="100%"/>
-</details>
+## Tests
 
----
+```bash
+ctest --test-dir build --output-on-failure
+```
 
-<div align="center">
+~76 gtest binaries: unit tests for ShaderGC, render pipeline, capture sessions
+(real + fake), config persistence, source matching, toast queue, crop overlay,
+screenshot path/encode. One test (`DmaBufImport.ImportsGbmAllocatedBuffer`)
+skips on systems without a GBM-capable iGPU.
 
-**Original project by [mausimus](https://github.com/mausimus)** | [Upstream Repo](https://github.com/mausimus/ShaderGlass) | [GPLv3](LICENSE) | Shaders from [libretro/slang-shaders](https://github.com/libretro/slang-shaders)
+## Credits
 
-</div>
+- Original Windows project: [mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass) — GPL v3
+- Shaders: [libretro/slang-shaders](https://github.com/libretro/slang-shaders)
+- License: [GPL v3](LICENSE)

@@ -2,281 +2,223 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Project overview
 
-ShaderGlass is a Windows desktop overlay application that applies GPU shader effects on top of the desktop using DirectX 11 and Windows Capture API. It includes a precompiled library of 1200+ RetroArch shaders for CRT simulation, upscaling, and various visual effects.
+ShaderGlass is a Linux desktop overlay that applies RetroArch slang shaders
+to captured desktop content using Vulkan and SDL3. Capture backends cover
+both X11 (XComposite + XShm) and Wayland (xdg-desktop-portal + PipeWire +
+DMA-BUF). The UI is Dear ImGui — source picker, preset browser, per-shader
+parameter editor, toast notifications, crop overlay, screenshot capture.
 
-**Tech Stack:**
+This branch (`linux/main`) is a Linux-only fork of the upstream Windows
+[mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass). The Windows
+app lives on `master`; the two trunks never merge.
+
+**Tech stack:**
 - C++20
-- DirectX 11
-- Windows SDK 10.0.26100
-- Windows Graphics Capture API
-- Visual Studio 2026 (Platform Toolset v145)
+- Vulkan 1.3 (dynamic rendering, no render passes)
+- SDL3
+- Dear ImGui v1.92.8-docking (FetchContent)
+- nlohmann/json v3.11.3 (FetchContent)
+- stb (FetchContent — image load + PNG write)
+- PipeWire + xdg-desktop-portal (Wayland capture)
+- Xlib + XComposite + XShm + Xrandr (X11 capture)
+- glslang (system) for runtime slang→SPIR-V compile via `ShaderGC/`
 
-## Build Commands
-
-### Building the Application
-
-```bash
-# Open solution in Visual Studio
-ShaderGlass.sln
-
-# Build all projects (ShaderGC, ShaderGen, ShaderGlass)
-# Use Release|x64 configuration for production builds
-```
-
-The solution contains three projects:
-1. **ShaderGC** - Shader compiler library (builds first, used by both ShaderGen and ShaderGlass)
-2. **ShaderGen** - Build-time tool for converting .slangp shaders to C++ headers
-3. **ShaderGlass** - Main application
-
-### Shader Compilation Workflow
-
-ShaderGlass embeds precompiled shaders. To rebuild the shader library:
+## Build & test
 
 ```bash
-# 1. Build ShaderGen in Release configuration first
-# 2. Download RetroArch shaders
-cd Scripts
-DownloadShaders.bat
-
-# 3. Rebuild all shaders (~10 minutes)
-RebuildAllShaders.bat
-
-# 4. Rebuild ShaderGlass to include new shader headers
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j
+ctest --test-dir build --output-on-failure
 ```
 
-To rebuild a single shader:
+- The build dir lives at the repo root (`build/`), not under `ShaderGlassLinux/`.
+- `ctest --test-dir build` runs ~76 gtest binaries. One test
+  (`DmaBufImport.ImportsGbmAllocatedBuffer`) skips on systems without
+  a GBM-capable iGPU; that's environmental, not a failure.
+- See [docs/build-linux.md](docs/build-linux.md) for distro-specific
+  dependency lists.
+
+## CLI surface
+
 ```bash
-cd Scripts
-RebuildShader.bat [path-to-shader.slangp]
+./build/ShaderGlassLinux/shaderglass --help
 ```
 
-Shader compilation artifacts and logs are in `Scripts\temp\`.
+Useful flags:
+- `--capture <kind>` — `x11-screen` or `wayland-screen`
+- `--source <id-or-substring>` — pick a specific monitor/window
+- `--list-sources` — enumerate sources for the current backend and exit
+- `--preset <path.slangp>` — start with a preset loaded
+- `--headless --input X --output Y [--width N] [--height N]` — render an image and exit
+- `--compile-preset <path>` — compile a `.slangp` and print pass info
+- `--debug-portal` — probe xdg-desktop-portal screencast
+- `--reset-config` — wipe `~/.config/shaderglass/config.json` before launching
+- `-h` / `-V` — help / version
 
-## Architecture Overview
+Env:
+- `SHADERGLASS_LOG=debug|info|warn|error|off` (default `info`)
 
-### Core Components
-
-**CaptureManager** (`ShaderGlass/CaptureManager.h/.cpp`)
-- Central orchestrator for the entire rendering pipeline
-- Manages DirectX 11 device, capture sessions, and shader rendering
-- Runs the main render thread (`ThreadFunc()`)
-- Handles preset loading and parameter management
-
-**ShaderGlass** (`ShaderGlass/ShaderGlass.h/.cpp`)
-- Core shader rendering engine
-- Processes frames through multi-pass shader pipeline
-- Manages swap chain and render targets
-- Handles preset switching and parameter updates
-
-**CaptureSession** (`ShaderGlass/CaptureSession.h/.cpp`)
-- Wraps Windows Graphics Capture API
-- Captures frames from desktop/windows/monitors
-- Handles cursor capture
-
-**DeviceCapture** (`ShaderGlass/DeviceCapture.h/.cpp`)
-- USB device capture (webcams, capture cards)
-- Uses Windows Media Foundation
-
-### Window System
-
-Four independent windows managed by WinMain.cpp:
-- **ShaderWindow** - Main rendering window with capture and hotkey management
-- **ParamsWindow** - Real-time shader parameter editor UI
-- **BrowserWindow** - Tree view of shader presets
-- **CompileWindow** - Runtime shader compilation UI
-
-### Shader System Architecture
-
-**Static Shader Pipeline (Build-time):**
-```
-.slangp files
-  ↓ ShaderGen.exe
-.h files (PresetDef + ShaderDef with bytecode)
-  ↓ Compiled into ShaderGlass.exe
-Shaders/RetroArch.h (master list of 1200+ presets)
-```
-
-**Runtime Shader Pipeline:**
-```
-PresetDef → Preset → Shader[] → ShaderPass[]
-```
-
-**Key Classes:**
-- **PresetDef** (`ShaderGC/PresetDef.h`) - Container for shader preset configuration, parameters, textures
-- **ShaderDef** (`ShaderGC/ShaderDef.h`) - Single shader stage with precompiled HLSL bytecode
-- **Preset** (`ShaderGlass/Preset.h`) - Runtime instance creating Shader[] from ShaderDef[]
-- **Shader** (`ShaderGlass/Shader.h`) - DirectX vertex/pixel shader instance with parameter management
-- **ShaderPass** (`ShaderGlass/ShaderPass.h`) - Single rendering pass with render target setup and draw calls
-
-### Rendering Pipeline Flow
-
-```
-Input Sources:
-├─ CaptureSession (Windows Capture API: Desktop/Window/Monitor)
-├─ DeviceCapture (USB webcams/capture cards via Media Foundation)
-└─ Static Images (WIC loader)
-         ↓
-    ID3D11Texture2D
-         ↓
-ShaderGlass Multi-Pass Rendering:
-├─ Preprocessing (crop, scale, rotate)
-├─ Pass 1 → Texture
-├─ Pass 2 → Texture (uses Pass 1 output)
-└─ Pass N → Swap Chain (final output)
-         ↓
-    CursorEmulator (overlay cursor if enabled)
-         ↓
-    Window Display
-```
-
-### ShaderGen Conversion Process
-
-ShaderGen converts Slang/GLSL shaders to DirectX 11:
-
-```
-.slang (GLSL)
-  ↓ glslangValidator.exe
-SPIR-V
-  ↓ spirv-cross.exe
-HLSL
-  ↓ fxc.exe (Direct3D Shader Compiler)
-Bytecode
-  ↓ ShaderGen code templates
-.h file (ShaderDef with embedded bytecode)
-```
-
-External dependencies in `Tools/`:
-- `glslangValidator.exe` - Converts GLSL/Slang to SPIR-V
-- `spirv-cross.exe` - Converts SPIR-V to HLSL
-- `fxc.exe` - Microsoft HLSL compiler (from Windows SDK)
-
-## Threading Model
-
-- **Main thread** - UI and window message processing
-- **Render thread** - `CaptureManager::ThreadFunc()` drives shader pipeline at target FPS
-- **Compile thread** - `ShaderWindow::CompileThreadFunc()` for runtime shader compilation
-
-## Key Entry Points
-
-**Application Startup:**
-1. `ShaderGlass/WinMain.cpp` - Entry point, creates all windows
-2. `ShaderWindow::Start()` - Initializes CaptureManager
-3. `CaptureManager::StartSession()` - Creates DirectX device and capture
-4. `CaptureManager::ThreadFunc()` - Main render loop
-
-**Shader System:**
-1. `ShaderGlass/ShaderList.h` - Generated list of all presets
-2. `ShaderGlass::SetShaderPreset()` - Switches active shader
-3. `ShaderGlass::Process()` - Renders frame through pipeline
-
-**Runtime Import:**
-1. `ShaderWindow::ImportShader()` - User imports .slangp file
-2. `ShaderGC::CompilePreset()` - Parses and compiles on-the-fly
-3. `CaptureManager::AddPreset()` - Adds to preset list
-
-## Important File Locations
-
-**Configuration:**
-- `ShaderGlass/Options.h` - Application configuration structures (pixel sizes, aspect ratios, capture options)
-
-**Shader Definitions:**
-- `ShaderGC/ShaderDef.h` - Shader parameter and sampler definitions
-- `ShaderGC/PresetDef.h` - Shader preset container
-- `ShaderGC/SourceDefs.h` - Source shader parsing (used by ShaderGC)
-
-**Generated Shaders:**
-- `ShaderGlass/Shaders/RetroArch/` - 1200+ generated shader .h files
-- `ShaderGlass/Shaders/RetroArch.h` - Master include file
-- `ShaderGlass/ShaderList.h` - Preset list for UI
-
-**Utilities:**
-- `ShaderGlass/Util/d3dHelpers.h` - DirectX helper functions
-- `ShaderGlass/Util/ErrorHandling.h` - HRESULT error handling (`THROW_IF_FAILED`, `LOG_IF_FAILED`)
-- `ShaderGlass/Util/ThreadHandle.h` - RAII wrapper for Windows threads
-- `ShaderGlass/Util/capture.desktop.interop.h` - Windows Capture API interop
-- `ShaderGlass/WIC/` - Texture loading and screenshot utilities
-- `ShaderGC/SafeParsing.h` - Bounds-checked parsing for shader config values
-- `ShaderGC/SecurityLimits.h` - Compile-time constants for max passes, textures, parameters
-
-## Development Notes
-
-### When Modifying Shaders
-
-1. For quick testing, use "Import custom..." in the UI to load external .slangp files without rebuilding
-2. To embed a shader permanently, add it to the RetroArch shader library and run `RebuildAllShaders.bat`
-3. Check `Scripts/temp/` for compilation logs and intermediate files when debugging shader compilation issues
-
-### DirectX 11 Resources
-
-The application uses DirectX 11 for all rendering. Key resources are managed by:
-- **ID3D11Device** - Device creation and resource allocation
-- **ID3D11DeviceContext** - Rendering commands
-- **IDXGISwapChain** - Presentation to window
-- Constant buffers for shader parameters (MVP matrices, frame counters, custom parameters)
-
-### Windows Capture API
-
-Uses WinRT/C++ for capture (`winrt/Windows.Graphics.Capture.h`):
-- Requires Windows 10 2004+ for Desktop Glass mode (transparent overlay)
-- Limited to Windows 10 1903 for opaque window capture
-- Captures are asynchronous via frame pool
-
-### Adding New Shader Parameters
-
-Shader parameters are defined in `ShaderDef::ParamDef`:
-- Name, description, min/max values, default, step size
-- Automatically exposed in ParamsWindow UI
-- Stored in constant buffers passed to shaders
-
-### External Dependencies
-
-Located in `External/`:
-- glslang - GLSL/Slang compiler (headers)
-- SPIRV-Cross - SPIR-V to HLSL converter (headers)
-
-Pre-built binaries in `lib/` and `Tools/` are gitignored. To build:
-- Place glslang and spirv-cross static libraries in `lib/`
-- Place `glslangValidator.exe` and `spirv-cross.exe` in `Tools/`
-- These can be built from sources in `External/` or obtained from upstream releases
-
-## Requirements
-
-- Windows 10 2004 (build 19041) or Windows 11
-- DirectX 11-capable GPU
-- Visual Studio 2026 (Platform Toolset v145) with C++20 support
-- Windows SDK 10.0.26100
-
-## Linux Port (`linux/main` branch)
-
-The repository hosts both the Windows app (`master`, `ShaderGlass/`) and a separate Linux port (`linux/main`, `ShaderGlassLinux/`). The two trunks do not merge across.
-
-**Tech stack (Linux):** C++20, Vulkan, SDL3, Dear ImGui v1.92.8-docking (FetchContent), nlohmann/json (FetchContent), PipeWire + xdg-desktop-portal (Wayland), Xlib + XComposite + XShm (X11). Shared `ShaderGC/` slang→SPIR-V compiler links into both ports.
-
-### Build & test
-
-- `cmake -S . -B build && cmake --build build` — build dir lives at repo root, not under `ShaderGlassLinux/`.
-- `ctest --test-dir build` — runs ~50 gtest binaries (1 pre-existing env skip on systems without GBM iGPU support).
-- `./build/ShaderGlassLinux/shaderglass --help` — CLI surface. Useful flags: `--capture x11-screen|wayland-screen`, `--source <id>`, `--preset <path.slangp>`, `--headless --input X --output Y`, `--reset-config`, `-h`, `-V`. Env: `SHADERGLASS_LOG=debug|info|warn|error|off` (default info).
+## Architecture
 
 ### Where things live
 
-- `ShaderGlassLinux/src/{capture,render,ui,util,output}/` — source layout. `capture/` = X11/Wayland/static; `render/` = Vulkan + ShaderPipeline + Preset; `ui/` = AppState + ImGuiLayer + panels; `util/` = ConfigStore, PresetLibrary, SourceMatcher, Logging.
-- `docs/build-linux.md` — build deps + run examples + milestone status.
-- `docs/superpowers/specs/` + `docs/superpowers/plans/` — per-milestone design specs and TDD task plans.
-- `docs/manual-tests-m{1..4}.md` — manual smoke checklists per milestone.
-- `ShaderGlassLinux/shaders/starter/` — curated single-pass `.slangp` starter set; CMake `install()` copies to `${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/` and stages into `build/ShaderGlassLinux/shaders-staging/` for dev runs.
-- Runtime config: `~/.config/shaderglass/{config.json,imgui.ini}` (XDG-aware).
+| Layer | Path | Notes |
+|---|---|---|
+| Capture | `ShaderGlassLinux/src/capture/` | `X11Capture` + `RealX11CaptureSession` / `FakeX11CaptureSession` (XShm), `WaylandCapture` + `PortalCaptureSession` / `FakeWaylandCaptureSession` (PipeWire), `StaticImageCapture` (PNG via stb). Common `CaptureBackend` interface (`kindName()`, `size()`, `acquireFrame()`, `release()`). `BadWindowRegistry` filters bad windows. |
+| Render | `ShaderGlassLinux/src/render/` | `VulkanContext` + `Swapchain` + `RenderEngine` (dynamic-rendering swapchain frame loop). `ShaderPipeline` runs either the builtin passthrough shader or a slang-compiled fragment shader, with a UV-transform push constant for crop. `Preset` owns one ShaderPipeline per `.slangp`. `Texture` + `DmaBufImport` + `HeadlessOutput` round out the render side. |
+| UI | `ShaderGlassLinux/src/ui/` | `ImGuiLayer` initialises the Vulkan ImGui backend. `AppState` is the single shared state object. Panels: `SourcePickerPanel`, `PresetBrowserPanel`, `ParamsPanel`, `CropOverlay`, `ToastPanel`. |
+| Util | `ShaderGlassLinux/src/util/` | `ConfigStore` (JSON config + per-source crops), `PresetLibrary`, `Logging` (+ toast variants), `ToastQueue`, `ScreenshotPath` + `ScreenshotWriter`, `Time`, `XdgConfig`, `SourceMatcher`, `FourccToVk`. |
+| Output | `ShaderGlassLinux/src/output/` | `SdlWindow` thin wrapper around SDL3 window + event loop. |
+| Shader compiler | `ShaderGC/` | Shared library (also linked into the Windows trunk on `master`). On Linux, `HLSL_stub.cpp` and `SPIRV_stub.cpp` replace the DirectX-bound originals — Vulkan consumes SPIR-V directly so HLSL emission is dead code. |
 
-### Milestone status
+### Built-in shaders
 
-M1, M2, M3, M4 shipped on `linux/main`. M5 UX-polish sub-milestone (toast UI, first-run UX, region/crop, screenshot) shipped (this milestone). Remaining M5 work: overlay + hotkeys, multi-pass + runtime import, M3.5 DMA-BUF fast path.
+`ShaderGlassLinux/shaders/` holds the GLSL source for the fullscreen
+passthrough vert/frag (compiled to SPV at configure time, embedded into
+`builtin_shaders.h` via `cmake/EmbedShaders.cmake`).
 
-### Code gotchas (Linux)
+`ShaderGlassLinux/shaders/starter/` is a curated single-pass `.slangp`
+set. CMake `install()` copies them to
+`${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/`, and they're staged into
+`build/ShaderGlassLinux/shaders-staging/` at configure time so dev runs
+find them without `make install`. `PresetLibrary` probes
+`SHADERGLASS_DEV_SHADERS_DIR` first, then the install path, then XDG dirs.
 
-- **Include order around `ShaderGC/ShaderDef.h`**: it's a Windows-style header that relies on a precompiled `framework.h`. On Linux, include `<filesystem>`, `<map>`, `<string>`, `<vector>` BEFORE it or it won't compile.
-- **LSP false positives**: clangd in this workspace runs without CMake-aware include paths. "file not found" / "unknown identifier" errors on otherwise-compiling Linux source are usually false positives — trust `cmake --build`, not the LSP.
-- **`buildPipelineSource(Args{})` idiom** (`src/main.cpp`): passing a default-constructed `Args` returns the builtin passthrough SPIR-V without invoking ShaderGC. Use this to get a no-op pipeline when the active preset is owned elsewhere (e.g. `state.preset`).
-- **Preset multi-pass guard**: `Preset` (Linux) throws on `ShaderDefs.size() > 1`. Curated starter set is hand-vetted to be single-pass; multi-pass support is M5.
-- **`AppState::applyPending()` is the sole capture/preset rebuild point**, called between `ImGui::Render()` and the next `capture->acquireFrame()`. Panels write into `pending*` intent fields; never touch GPU state from a panel.
+### Runtime config
+
+- `~/.config/shaderglass/config.json` — `ConfigStore` JSON. Tokens, last
+  source ID, last preset path, per-source crop rectangles, param overrides.
+- `~/.config/shaderglass/imgui.ini` — Dear ImGui's window-layout file.
+
+### Frame loop
+
+```
+window.pollEvents()
+  → imgui.beginFrame()
+    → panels draw (SourcePicker, PresetBrowser, Params, Crop)
+    → ImGui::Render()
+  → state.applyPending()          # sole capture/preset rebuild point
+  → config.tick()
+  → state.preset?.updateUbo()
+  → activePipeline.setUvTransform(...)  # crop UV every frame
+  → if state.capture: state.capture->acquireFrame()
+       → engine.renderTextureWithOverlay(...) or renderImageViewWithOverlay(...)
+                                              + ScreenshotWriter + AppState
+       → screenshotWriter.tick()
+     else: engine.renderEmpty(imguiBody)
+```
+
+### Screenshot path (M5 UX-polish)
+
+`SourcePickerPanel`'s **Screenshot** button sets `state.screenshotPending`.
+On the next frame, `RenderEngine::renderFrame` splits the swapchain
+write into two dynamic-rendering scopes when a screenshot is pending:
+
+1. **Shader pass** (LOAD_OP_CLEAR) — shader writes the post-pipeline image.
+2. **Readback** — `vkCmdCopyImageToBuffer` into a host-visible staging buffer
+   (transition COLOR_ATTACHMENT → TRANSFER_SRC → COLOR_ATTACHMENT around it).
+3. **ImGui pass** (LOAD_OP_LOAD, preserves shader output) — chrome renders on top.
+
+The empty submit after the main submit signals the ScreenshotWriter's fence
+on the same queue (FIFO ordering); the worker thread then maps memory,
+encodes PNG via stb, and posts a success/error toast. When no screenshot is
+pending, the renderer collapses back to a single in-pass shader + ImGui draw.
+
+## Threading model
+
+- **Main thread** — SDL3 event poll, ImGui, AppState, render submission.
+- **Capture sessions** — backend-specific worker threads (PipeWire stream
+  callbacks for Wayland; X11Capture has its own XShm worker).
+- **ScreenshotWriter worker** — picks up signalled fences off a queue,
+  maps memory, encodes PNG.
+
+`AppState::applyPending()` is the **single point** where capture/preset
+get rebuilt. It runs between `ImGui::Render()` and the next
+`capture->acquireFrame()`. Panels write into `pending*` intent fields;
+never touch GPU state from a panel.
+
+## Key entry points
+
+- `ShaderGlassLinux/src/main.cpp` — `runWindowed(Args&)` is the GUI loop;
+  `runHeadless`, `runListSources`, `runCompilePreset`, `runDebugPortal`
+  cover the non-GUI subcommands.
+- `RenderEngine::renderImageViewWithOverlay` / `renderTextureWithOverlay`
+  — the two GUI render entry points. Optional `ScreenshotWriter*` + `AppState*`
+  enable the screenshot readback.
+- `AppState::applyPending()` — capture/preset/crop intent consumer.
+- `PresetLibrary::scanDir(...)` — discovers `.slangp` files for the browser.
+- `ShaderGC::CompilePreset(...)` (in `ShaderGC/ShaderGC.cpp`) — parses a
+  `.slangp`, runs glslang to produce SPIR-V, returns a `PresetDef*`.
+
+## Milestone status
+
+| Milestone | Scope | State |
+|---|---|---|
+| M1 | Vulkan/SDL3 foundation, passthrough render, headless mode | shipped |
+| M2 | Wayland capture (portal + PipeWire + DMA-BUF) | shipped |
+| M3 | X11 capture (XComposite + XShm) | shipped |
+| M3.5 | X11 DMA-BUF fast path (EGL + DRI3) | pending |
+| M4 | Dear ImGui UI (source picker, preset browser, params, session restore) | shipped |
+| M5 UX-polish | Toast UI, first-run UX, region/crop, screenshot capture | shipped |
+| M5 remaining | Transparent X11 overlay, hotkeys, multi-pass shaders, runtime `.slangp` import | pending |
+
+Per-milestone specs and plans live under `docs/superpowers/specs/` and
+`docs/superpowers/plans/`. Per-milestone manual smoke checklists live at
+`docs/manual-tests-m{1..5}*.md`.
+
+## Code gotchas
+
+- **Include order around `ShaderGC/ShaderDef.h`** — it's a Windows-style
+  header that force-includes `Portability.h` (also via the ShaderGC CMake
+  `-include` flag) and expects `<filesystem>`, `<map>`, `<string>`,
+  `<vector>` to be visible. Include those first in any Linux TU that
+  pulls in `ShaderDef.h` directly.
+- **LSP false positives** — clangd in this workspace runs without
+  CMake-aware include paths. `"file not found"` / "unknown identifier"
+  errors on otherwise-compiling Linux source are almost always false
+  positives. Trust `cmake --build`, not the LSP.
+- **`buildPipelineSource(Args{})` idiom** (in `src/main.cpp`) — passing a
+  default-constructed `Args` returns the builtin passthrough SPIR-V
+  without invoking ShaderGC. Use this when the active preset is owned
+  elsewhere (e.g. `state.preset`) and you just need a no-op fallback.
+- **`Preset` multi-pass guard** — throws on `ShaderDefs.size() > 1`.
+  The curated starter set is hand-vetted to be single-pass; multi-pass
+  is part of the remaining M5 work.
+- **`AppState::applyPending()` is the sole capture/preset rebuild point**
+  — called between `ImGui::Render()` and the next `capture->acquireFrame()`.
+  Panels write into `pending*` intent fields; never touch GPU state from a panel.
+- **X11 typedef `Time`** — Xlib ships `typedef unsigned long Time` from
+  `<X11/X.h>`, so the project's helper namespace is `TimeUtil`
+  (`util/Time.h`), not `Time`. `main.cpp` includes
+  `RealX11CaptureSession.h` which transitively pulls in Xlib.
+- **ShaderGC HLSL/SPIRV stubs** — `HLSL.cpp` and `SPIRV.cpp` from the
+  Windows trunk are replaced on Linux by `HLSL_stub.cpp` and
+  `SPIRV_stub.cpp`. The stubs return empty and warn; nothing in the
+  Linux render path calls into them (Vulkan consumes SPIR-V directly).
+  If you see one of those stub warnings at runtime, that's a bug —
+  some code path called into HLSL/SPIRV emission by mistake.
+- **`screenshotPending` is consumed exactly once** — set by the UI
+  button, cleared by `RenderEngine::renderFrame` on the frame it
+  records the readback. If the writer is already in-flight the request
+  is silently dropped (rather than queued).
+
+## Conventions
+
+- Naming: camelCase for functions and members, PascalCase for types,
+  `m_*` prefix for non-public class members, `kFoo` for static constants.
+  clang-tidy `readability-identifier-naming` warnings to the contrary
+  are noise on this codebase.
+- New tests: drop into `ShaderGlassLinux/tests/test_<thing>.cpp`,
+  register in `ShaderGlassLinux/tests/CMakeLists.txt` with
+  `gtest_discover_tests(...)`. Use `TEST_DATA_DIR` macro for fixtures
+  under `ShaderGlassLinux/tests/data/`.
+- Logging: `LOG_INFO`, `LOG_WARN`, `LOG_ERROR`, `LOG_DEBUG` macros
+  (filtered by `SHADERGLASS_LOG`). For user-visible messages, prefer
+  the toast variants in `util/Logging.h`: `Logging::infoToast(state, msg)`,
+  `okToast`, `warnToast`, `errorToast` — these log AND post to the toast
+  queue.
+- Don't add files to `shaderglass_core` in the top-level `CMakeLists.txt`
+  unless they need to be in the static lib. Most new source belongs in
+  `ShaderGlassLinux/CMakeLists.txt`.
