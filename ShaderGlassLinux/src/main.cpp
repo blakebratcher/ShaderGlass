@@ -20,6 +20,7 @@
 #include "ui/ParamsPanel.h"
 #include "ui/ToastQueue.h"
 #include "ui/ToastPanel.h"
+#include "ui/CropOverlay.h"
 #include "util/FourccToVk.h"
 #include "util/SourceMatcher.h"
 #include "util/Logging.h"
@@ -336,6 +337,7 @@ static int runWindowed(Args& a) {
     PresetLibrary library;
     PresetBrowserPanel presetPanel;
     ParamsPanel paramsPanel;
+    CropOverlay cropOverlay;
     ToastPanel toastPanel;
     state.ctx       = &ctx;
     state.swapchain = &swapchain;
@@ -463,6 +465,7 @@ static int runWindowed(Args& a) {
             sourcePanel.draw(state);
             presetPanel.draw(state);
             paramsPanel.draw(state);
+            cropOverlay.draw(state);
 
             // Centered splash text in the viewport when no capture is active.
             if (!state.capture || state.activeSourceId.empty()) {
@@ -499,6 +502,23 @@ static int runWindowed(Args& a) {
 
             ShaderPipeline& activePipeline =
                 state.preset ? state.preset->pipeline() : pipeline;
+
+            // Feed crop UV transform every frame so the pipeline stays in sync.
+            if (state.capture) {
+                auto sz = state.capture->size();
+                if (sz.width > 0 && sz.height > 0) {
+                    if (state.currentCrop) {
+                        const auto& c = *state.currentCrop;
+                        activePipeline.setUvTransform(
+                            float(c.x) / sz.width,
+                            float(c.y) / sz.height,
+                            float(c.x + c.w) / sz.width,
+                            float(c.y + c.h) / sz.height);
+                    } else {
+                        activePipeline.setUvTransform(0.0f, 0.0f, 1.0f, 1.0f);
+                    }
+                }
+            }
 
             if (state.capture) {
                 auto f = state.capture->acquireFrame();
