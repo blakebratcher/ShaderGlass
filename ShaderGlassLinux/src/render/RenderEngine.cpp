@@ -178,3 +178,11 @@ void RenderEngine::renderImageViewWithOverlay(VkImageView view,
         if (imguiBody) imguiBody(cb);
     });
 }
+
+void RenderEngine::renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody) {
+    VkClearValue cv{};
+    cv.color = {{ 0.063f, 0.063f, 0.063f, 1.0f }};
+    renderFrame(cv, [&](VkCommandBuffer cb, VkExtent2D) {
+        if (imguiBody) imguiBody(cb);
+    });
+}

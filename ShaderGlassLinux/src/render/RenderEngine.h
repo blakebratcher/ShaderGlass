@@ -31,6 +31,12 @@ public:
     void renderImageViewWithOverlay(VkImageView view, ShaderPipeline& pipeline,
                                     const std::function<void(VkCommandBuffer)>& imguiBody);
 
+    // Renders an ImGui-only frame with a dark background. Used when there
+    // is no active capture (cold launch, no saved session). The clear colour
+    // matches (16,16,16,255). `imguiBody(cb)` is called inside the
+    // dynamic-rendering scope so panels render normally.
+    void renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody);
+
 private:
     void renderFrame(VkClearValue clearColor,
                      const std::function<void(VkCommandBuffer, VkExtent2D)>& body);
