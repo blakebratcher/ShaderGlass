@@ -78,3 +78,22 @@ TEST(ToastQueue, SeverityDeterminesDuration) {
     EXPECT_EQ(snap[1].expiresAtMs, ToastQueue::DurationMsInf);
     EXPECT_EQ(snap[0].expiresAtMs, ToastQueue::DurationMsOk);
 }
+
+TEST(ToastQueue, SnapshotHonoursNowMsRelativeToPostTime) {
+    ToastQueue q;
+    q.post(ToastSeverity::Success, "fast", /*nowMs=*/1'000'000);  // TTL 3000 → expires at 1'003'000
+    q.post(ToastSeverity::Error,   "slow", /*nowMs=*/1'000'000);  // TTL 6000 → expires at 1'006'000
+
+    // Just before fast expires
+    auto a = q.snapshot(/*nowMs=*/1'002'999);
+    EXPECT_EQ(a.size(), 2u);
+
+    // Past fast's expiry but before slow's
+    auto b = q.snapshot(/*nowMs=*/1'003'500);
+    ASSERT_EQ(b.size(), 1u);
+    EXPECT_EQ(b[0].message, "slow");
+
+    // Past both
+    auto c = q.snapshot(/*nowMs=*/1'010'000);
+    EXPECT_EQ(c.size(), 0u);
+}

@@ -18,7 +18,9 @@ struct Toast {
 class ToastQueue {
 public:
     // Thread-safe. Returns the new toast id.
-    uint32_t post(ToastSeverity sev, std::string msg);
+    // nowMs: current time in ms (e.g. steady_clock ms since boot). Defaults to 0
+    // for tests that use a synthetic clock anchored at zero.
+    uint32_t post(ToastSeverity sev, std::string msg, int64_t nowMs = 0);
 
     // UI-thread only. Newest-first snapshot, expired entries dropped,
     // capped at MaxVisible. Mutates internal state (evicts beyond cap and

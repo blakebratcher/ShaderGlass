@@ -10,12 +10,12 @@ int64_t ToastQueue::severityDurationMs(ToastSeverity s) {
     return DurationMsInf;
 }
 
-uint32_t ToastQueue::post(ToastSeverity sev, std::string msg) {
+uint32_t ToastQueue::post(ToastSeverity sev, std::string msg, int64_t nowMs) {
     std::lock_guard<std::mutex> lock(m_mutex);
     Toast t{
         .severity    = sev,
         .message     = std::move(msg),
-        .postedAtMs  = 0,
+        .postedAtMs  = nowMs,
         .expiresAtMs = severityDurationMs(sev),
         .id          = m_nextId++,
     };
