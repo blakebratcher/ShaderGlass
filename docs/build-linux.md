@@ -1,4 +1,4 @@
-# Building ShaderGlass on Linux (M4 status)
+# Building ShaderGlass on Linux (M5 UX-polish status)
 
 ## Dependencies (Arch / CachyOS)
 ```
@@ -66,17 +66,22 @@ SHADERGLASS_LOG=debug ./build/ShaderGlassLinux/shaderglass
 
 # Capture a window by name substring (M3):
 ./build/ShaderGlassLinux/shaderglass --capture x11-screen --source <substring>
+
+# List sources for the current backend and exit (M5 — scripted use):
+./build/ShaderGlassLinux/shaderglass --list-sources
+./build/ShaderGlassLinux/shaderglass --capture x11-screen --list-sources
 ```
 
 ## Status
 
-**Status:** M4 complete (ImGui UI: source picker, preset browser, parameter
-editor, session restore). M5 (transparent overlay, hotkeys, multi-pass
-shaders, runtime import) not yet started.
+**Status:** M5 UX-polish sub-milestone complete (toast UI, first-run UX,
+region/crop, screenshot). Remaining M5 work: transparent X11 overlay,
+hotkeys, multi-pass shaders, runtime `.slangp` import.
 
 - M1: ✅ shipped
 - M2: ✅ shipped
 - M3: X11 capture (CPU-only XShm) — ✅ shipped
 - M3.5: X11 DMA-BUF fast path (via EGL + DRI3) — pending
-- M4: ImGui UI + config persistence — ✅ shipped (this milestone)
-- M5+: see `docs/superpowers/specs/2026-05-06-shaderglass-linux-port-design.md`
+- M4: ImGui UI + config persistence — ✅ shipped
+- M5 (UX polish: toast, first-run, crop, screenshot) — ✅ shipped (this milestone)
+- M5+ remaining: overlay + hotkeys, multi-pass + runtime import, M3.5 DMA-BUF

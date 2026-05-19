@@ -271,7 +271,7 @@ The repository hosts both the Windows app (`master`, `ShaderGlass/`) and a separ
 
 ### Milestone status
 
-M1 (foundation), M2 (Wayland capture), M3 (X11 capture), M4 (ImGui UI + session restore) all shipped on `linux/main`. M5 = transparent X11 overlay, hotkeys, multi-pass shaders, runtime `.slangp` import, toast UI.
+M1, M2, M3, M4 shipped on `linux/main`. M5 UX-polish sub-milestone (toast UI, first-run UX, region/crop, screenshot) shipped (this milestone). Remaining M5 work: overlay + hotkeys, multi-pass + runtime import, M3.5 DMA-BUF fast path.
 
 ### Code gotchas (Linux)
 
