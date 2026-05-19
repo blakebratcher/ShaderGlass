@@ -74,14 +74,17 @@ SHADERGLASS_LOG=debug ./build/ShaderGlassLinux/shaderglass
 
 ## Status
 
-**Status:** M5 UX-polish sub-milestone complete (toast UI, first-run UX,
-region/crop, screenshot). Remaining M5 work: transparent X11 overlay,
-hotkeys, multi-pass shaders, runtime `.slangp` import.
+**Status:** M5 feature-complete — multi-pass shaders, runtime `.slangp`
+import (drag-and-drop + path input), in-window hotkeys, and overlay-style
+toggles (chrome/always-on-top/borderless) all shipped. The Linux port now
+covers the full RetroArch-shader workflow.
 
 - M1: ✅ shipped
 - M2: ✅ shipped
 - M3: X11 capture (CPU-only XShm) — ✅ shipped
 - M3.5: X11 DMA-BUF fast path (via EGL + DRI3) — pending
 - M4: ImGui UI + config persistence — ✅ shipped
-- M5 (UX polish: toast, first-run, crop, screenshot) — ✅ shipped (this milestone)
-- M5+ remaining: overlay + hotkeys, multi-pass + runtime import, M3.5 DMA-BUF
+- M5 UX polish (toast, first-run, crop, screenshot) — ✅ shipped
+- M5 feature-complete (multi-pass, runtime import, hotkeys) — ✅ shipped
+- Future: true click-through X11 overlay (XShape + 32-bit visual),
+  LUT (lookup-texture) support, per-pass scale factors, M3.5 DMA-BUF

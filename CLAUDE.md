@@ -60,6 +60,20 @@ Useful flags:
 Env:
 - `SHADERGLASS_LOG=debug|info|warn|error|off` (default `info`)
 
+In-window hotkeys (active only when ImGui doesn't have keyboard focus):
+- `F11` — screenshot to `$XDG_PICTURES_DIR/shaderglass-*.png`
+- `B` — bypass toggle (current preset ⇄ passthrough; remembers prior preset)
+- `]` / PageDown — cycle to next preset (PresetLibrary scan order)
+- `[` / PageUp — cycle to previous preset
+- `F1` — show hotkey help toast
+- `F2` — hide / show ImGui chrome (overlay-style)
+- `F3` — toggle always-on-top
+- `F4` — toggle borderless (no window decorations)
+- `Esc` — close the window
+
+Drag-and-drop: drop a `.slangp` file onto the window to import it
+(case-insensitive). Other extensions trigger a 'drop ignored' toast.
+
 ## Architecture
 
 ### Where things live
@@ -162,7 +176,8 @@ never touch GPU state from a panel.
 | M3.5 | X11 DMA-BUF fast path (EGL + DRI3) | pending |
 | M4 | Dear ImGui UI (source picker, preset browser, params, session restore) | shipped |
 | M5 UX-polish | Toast UI, first-run UX, region/crop, screenshot capture | shipped |
-| M5 remaining | Transparent X11 overlay, hotkeys, multi-pass shaders, runtime `.slangp` import | pending |
+| M5 feature-complete | Multi-pass shaders, runtime `.slangp` import (DnD + path input), hotkeys (F11/B/[/]/F1/F2/F3/F4) | shipped |
+| Future | True click-through X11 overlay (XShape + 32-bit visual), LUT (lookup texture) support, per-pass scale factors, multi-buffer UBOs, M3.5 DMA-BUF fast path | pending |
 
 Per-milestone specs and plans live under `docs/superpowers/specs/` and
 `docs/superpowers/plans/`. Per-milestone manual smoke checklists live at
@@ -203,6 +218,22 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
   button, cleared by `RenderEngine::renderFrame` on the frame it
   records the readback. If the writer is already in-flight the request
   is silently dropped (rather than queued).
+- **Multi-pass intermediates live on `Preset`** — `Preset` owns
+  `vector<ShaderPipeline>` (size N) plus `vector<OffscreenTarget>`
+  (size N-1). `recordIntermediatePasses(cb, srcView, srcExt)` must
+  run BEFORE the swapchain rendering scope opens; the new
+  `RenderEngine` `prePassBody` hook is where that happens. The final
+  pass binds inside the swapchain scope using `Preset::finalInputView()`.
+  Single-pass uses the existing direct route — `Preset` short-circuits
+  the intermediate path when `passCount() == 1`.
+- **Hotkeys honour `ImGui::GetIO().WantCaptureKeyboard`** — gated in
+  `SdlWindow::setKeyDownHandler`'s callback in `main.cpp` so text
+  fields don't lose keystrokes to a preset-cycle. Escape is consumed
+  by `SdlWindow` itself before the handler.
+- **F2 chrome toggle** — `state.hideChrome` gates panel draws in
+  `main.cpp` but `CropOverlay::draw` is intentionally always called.
+  When you add a new panel, place it inside the same `if
+  (!state.hideChrome)` block.
 
 ## Conventions
 

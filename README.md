@@ -29,7 +29,8 @@ both X11 (XComposite + XShm) and Wayland (xdg-desktop-portal + PipeWire).
 | M3.5 | X11 DMA-BUF fast path (EGL + DRI3) | pending |
 | M4 | Dear ImGui UI (source picker, preset browser, params, session restore) | shipped |
 | M5 UX-polish | Toast UI, first-run UX, region/crop, screenshot capture | shipped |
-| M5 remaining | Transparent X11 overlay, hotkeys, multi-pass shaders, runtime `.slangp` import | pending |
+| M5 feature-complete | Multi-pass shaders, runtime `.slangp` import (DnD + path input), hotkeys (F1-F4/F11/B/[/]) | shipped |
+| Future | True click-through X11 overlay, LUT support, per-pass scale factors, M3.5 DMA-BUF | pending |
 
 `master` hosts the original Windows app (DirectX 11, Visual Studio); this branch
 (`linux/main`) is a separate trunk that never merges back.
@@ -53,6 +54,22 @@ ctest --test-dir build --output-on-failure
 
 Full dependency list, distro-specific install commands, and run examples:
 [docs/build-linux.md](docs/build-linux.md).
+
+## Hotkeys
+
+| Key | Action |
+|---|---|
+| `F11` | Screenshot |
+| `B` | Bypass toggle (active preset ⇄ passthrough) |
+| `[` / `]` (or PageUp/PageDown) | Cycle previous/next preset |
+| `F1` | Hotkey help toast |
+| `F2` | Hide/show ImGui chrome |
+| `F3` | Toggle always-on-top |
+| `F4` | Toggle borderless |
+| `Esc` | Close |
+
+Drag a `.slangp` file onto the window to import it, or use the **Import…**
+section in the preset browser to type a path.
 
 ## Architecture
 
