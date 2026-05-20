@@ -1,0 +1,97 @@
+name: build
+
+on:
+  push:
+    branches: [ linux/main ]
+    tags:     [ 'v*' ]
+  pull_request:
+    branches: [ linux/main ]
+
+jobs:
+  ubuntu-build:
+    name: ubuntu-${{ matrix.ubuntu }} build + ctest
+    runs-on: ubuntu-${{ matrix.ubuntu }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ['24.04']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              build-essential cmake ninja-build pkg-config \
+              libvulkan-dev vulkan-tools \
+              mesa-vulkan-drivers libvulkan1 \
+              glslang-tools glslang-dev \
+              libdbus-1-dev libpipewire-0.3-dev libdrm-dev libgbm-dev \
+              libx11-dev libxcomposite-dev libxext-dev libxrandr-dev \
+              xvfb librsvg2-bin
+
+      - name: Build SDL3 from source
+        # Ubuntu 24.04 ships SDL 2.x; SDL3 isn't in the standard repos yet.
+        # The build is small and cached between runs.
+        run: |
+          if ! pkg-config --exists sdl3; then
+            git clone --depth=1 --branch release-3.2.16 https://github.com/libsdl-org/SDL /tmp/sdl3
+            cmake -S /tmp/sdl3 -B /tmp/sdl3/build -DCMAKE_BUILD_TYPE=Release -DSDL_TESTS=OFF
+            cmake --build /tmp/sdl3/build -j"$(nproc)"
+            sudo cmake --install /tmp/sdl3/build
+            sudo ldconfig
+          fi
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run headless tests
+        # Tests that don't need a GPU or display: cover ShaderGC, util, UI
+        # math, capture (fake sessions), config persistence. The full suite
+        # also runs Vulkan-touching tests — those can be added once a CI
+        # Vulkan loader (lavapipe) is wired up.
+        env:
+          XDG_RUNTIME_DIR: /tmp/runtime-runner
+        run: |
+          mkdir -p $XDG_RUNTIME_DIR
+          ctest --test-dir build \
+              --output-on-failure \
+              -E "VulkanContext|TextureUpload|HeadlessRender|EndToEnd|X11Capture|DmaBufImport"
+
+  appimage:
+    name: AppImage
+    needs: ubuntu-build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              build-essential cmake ninja-build pkg-config \
+              libvulkan-dev glslang-tools glslang-dev \
+              libdbus-1-dev libpipewire-0.3-dev libdrm-dev libgbm-dev \
+              libx11-dev libxcomposite-dev libxext-dev libxrandr-dev \
+              librsvg2-bin file wget
+
+      - name: Build SDL3
+        run: |
+          git clone --depth=1 --branch release-3.2.16 https://github.com/libsdl-org/SDL /tmp/sdl3
+          cmake -S /tmp/sdl3 -B /tmp/sdl3/build -DCMAKE_BUILD_TYPE=Release -DSDL_TESTS=OFF
+          cmake --build /tmp/sdl3/build -j"$(nproc)"
+          sudo cmake --install /tmp/sdl3/build
+          sudo ldconfig
+
+      - name: Build AppImage
+        run: ./packaging/build-appimage.sh
+
+      - name: Upload as release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ShaderScope-*.AppImage
+          fail_on_unmatched_files: false
