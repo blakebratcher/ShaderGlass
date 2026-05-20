@@ -1,15 +1,15 @@
-# ShaderGlass Linux M2 — Wayland Capture (Design)
+# ShaderScope Linux M2 — Wayland Capture (Design)
 
 **Date:** 2026-05-06
 **Status:** Design — pending implementation plan
-**Reference parent:** `docs/superpowers/specs/2026-05-06-shaderglass-linux-port-design.md` (M1 architecture)
+**Reference parent:** `docs/superpowers/specs/2026-05-06-shaderscope-linux-port-design.md` (M1 architecture)
 
 ## Goals
 
 Implement the Wayland capture path defined in the M1 architecture: connect to a user-selected screen / window source via `xdg-desktop-portal`'s `ScreenCast` interface, consume the resulting PipeWire stream, and expose captured frames via the existing `CaptureBackend` interface so the Vulkan render pipeline (already complete in M1) consumes them transparently.
 
 End state of M2:
-- `./shaderglass --capture wayland-screen` opens the portal source picker, you pick a source, the captured pixels render through the passthrough shader in the window in real time.
+- `./shaderscope --capture wayland-screen` opens the portal source picker, you pick a source, the captured pixels render through the passthrough shader in the window in real time.
 - Restore tokens persist across launches; a re-launch with the same source skips the picker on KDE.
 - DMA-BUF zero-copy frames import as `VkImage`s; CPU-mmap fallback works when DMA-BUF is unavailable.
 - Headless integration tests cover the import + render path against a synthetic frame producer.
@@ -49,17 +49,17 @@ End state of M2:
 ### Files
 
 ```
-ShaderGlassLinux/src/capture/
+ShaderScope/src/capture/
   WaylandCaptureSession.h           NEW — abstract interface
   PortalCaptureSession.{h,cpp}      NEW — D-Bus + PipeWire implementation
   FakeWaylandCaptureSession.{h,cpp} NEW — test-only synthetic producer
   WaylandCapture.{h,cpp}            NEW — CaptureBackend impl, owns a session
-ShaderGlassLinux/src/render/
+ShaderScope/src/render/
   DmaBufImport.{h,cpp}              NEW — imports a DRM fd as a sampled VkImage
-ShaderGlassLinux/tests/
+ShaderScope/tests/
   test_wayland_capture_with_fake_session.cpp  NEW
   test_dmabuf_import.cpp                       NEW (skips on drivers that don't support it)
-ShaderGlassLinux/CMakeLists.txt     MODIFY — add libdbus-1, libpipewire-0.3, libdrm deps
+ShaderScope/CMakeLists.txt     MODIFY — add libdbus-1, libpipewire-0.3, libdrm deps
 ```
 
 `main.cpp` gains a `--capture <kind>` flag with values `static-image` (current default), `wayland-screen` (the new path). Default unchanged for backward compatibility.
@@ -75,7 +75,7 @@ A single-slot, drop-old buffer policy fits the use case (we only ever want the f
 
 ### Restore-token persistence
 
-On first successful `Start`, the portal returns a `restore_token` string. We write it to `${XDG_CONFIG_HOME:-~/.config}/shaderglass/portal-token`. On subsequent launches, we pass it back via the `restore_token` option with `persist_mode = 2` ("persist until revoked"). If the compositor reports the token as invalid (token-mismatch reply, or the picker dialog shows up anyway), we silently overwrite the file with whatever new token comes back from the next `Start`.
+On first successful `Start`, the portal returns a `restore_token` string. We write it to `${XDG_CONFIG_HOME:-~/.config}/shaderscope/portal-token`. On subsequent launches, we pass it back via the `restore_token` option with `persist_mode = 2` ("persist until revoked"). If the compositor reports the token as invalid (token-mismatch reply, or the picker dialog shows up anyway), we silently overwrite the file with whatever new token comes back from the next `Start`.
 
 Permissions: `0600`. The token is a per-user authorization handle.
 
@@ -143,7 +143,7 @@ Run on Plasma 6 Wayland:
 1. `--capture wayland-screen` then pick a single window → captured + rendered correctly.
 2. Same, then pick a monitor → captured + rendered correctly.
 3. Re-launch with the same args → portal picker is skipped (restore token works).
-4. Force CPU path (env var `SHADERGLASS_DISABLE_DMABUF=1`) → frames still arrive correctly via the slower path.
+4. Force CPU path (env var `SHADERSCOPE_DISABLE_DMABUF=1`) → frames still arrive correctly via the slower path.
 5. Cancel the portal picker → app exits cleanly with a clear error message, not a crash.
 
 These are documented in a `docs/manual-tests-m2.md` checklist updated alongside the code.
@@ -169,7 +169,7 @@ All errors that propagate up to `main` are surfaced via `LOG_ERROR` and exit cod
 
 ## Build dependencies
 
-Added to `ShaderGlassLinux/CMakeLists.txt`:
+Added to `ShaderScope/CMakeLists.txt`:
 - `libdbus-1` via `pkg-config --cflags --libs dbus-1` (CMake `pkg_check_modules(DBUS REQUIRED dbus-1)`)
 - `libpipewire-0.3` via `pkg-config --cflags --libs libpipewire-0.3`
 - `libdrm` headers (`drm_fourcc.h` constants only — no link)
@@ -196,4 +196,4 @@ Each milestone breaks into ~2-3 implementation tasks in the plan, so M2 will be 
 - Format conversion for non-BGRA/RGBA streams (M3 or later).
 - Cursor compositing (Tier 2).
 - Multi-source capture (compose two windows side-by-side, etc.) — not in any planned tier yet.
-- A non-portal direct PipeWire path (KDE has `kdeplatform` and similar that allow privileged direct connection) — not needed for ShaderGlass's user model.
+- A non-portal direct PipeWire path (KDE has `kdeplatform` and similar that allow privileged direct connection) — not needed for ShaderScope's user model.

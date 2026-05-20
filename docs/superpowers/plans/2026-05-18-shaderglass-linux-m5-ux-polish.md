@@ -1,20 +1,20 @@
-# ShaderGlass Linux M5 — UX Polish Implementation Plan
+# ShaderScope Linux M5 — UX Polish Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the four M4 papercut follow-ups in one milestone: toast UI for errors and successes, first-run UX so bare `shaderglass` opens a usable GUI, region/crop via drag-to-select, and screenshot-to-PNG.
+**Goal:** Close the four M4 papercut follow-ups in one milestone: toast UI for errors and successes, first-run UX so bare `shaderscope` opens a usable GUI, region/crop via drag-to-select, and screenshot-to-PNG.
 
 **Architecture:** Toast UI is a thread-safe queue + bottom-right ImGui stack used by all four features for error/success surfacing. First-run UX makes `AppState::capture == nullptr` valid and adds a `renderEmpty()` path so the renderer no-ops when there's no capture. Crop is a UV transform uniform in the existing single-quad pipeline; selection is a viewport-overlay drag mode. Screenshot is a one-shot Vulkan readback into a host-visible staging image, encoded to PNG on a worker thread.
 
 **Tech Stack:** C++20, Vulkan, SDL3, Dear ImGui v1.92.8-docking, nlohmann/json, stb_image_write (already vendored), gtest. Builds via existing CMake + ctest pipeline at repo root.
 
-**Spec:** `docs/superpowers/specs/2026-05-18-shaderglass-linux-m5-ux-polish-design.md`
+**Spec:** `docs/superpowers/specs/2026-05-18-shaderscope-linux-m5-ux-polish-design.md`
 
 ---
 
 ## File structure
 
-**New files** (under `ShaderGlassLinux/src/`):
+**New files** (under `ShaderScope/src/`):
 
 | Path | Responsibility |
 |------|----------------|
@@ -25,7 +25,7 @@
 | `util/ScreenshotPath.{h,cpp}` | XDG_PICTURES_DIR resolution + unique-suffix filename |
 | `util/Time.{h,cpp}` | Monotonic ms helper + ISO-8601 timestamp formatter (small, scoped) |
 
-**New tests** (under `ShaderGlassLinux/tests/`):
+**New tests** (under `ShaderScope/tests/`):
 
 | Path | Coverage |
 |------|----------|
@@ -49,7 +49,7 @@
 | `util/Logging.{h,cpp}` | `*Toast()` variants (write-through to log + queue) |
 | `src/main.cpp` | Null-capture path, `--list-sources` flag, drop no-source-exit guard, splash render-loop branch, wire ToastQueue + ScreenshotWriter |
 | `tests/CMakeLists.txt` | Five new `add_executable` blocks |
-| `CMakeLists.txt` (ShaderGlassLinux) | Add new translation units to `shaderglass_core` |
+| `CMakeLists.txt` (ShaderScope) | Add new translation units to `shaderscope_core` |
 | `docs/build-linux.md` | M5 status, new CLI examples |
 | `docs/manual-tests-m5-ux-polish.md` | New checklist (created in final task) |
 
@@ -62,15 +62,15 @@ Foundation. Lands first because Phases B/C/D all surface errors/success via it.
 ### Task 1: `ToastQueue` — thread-safe queue + snapshot/dismiss/expiry
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/ToastQueue.h`
-- Create: `ShaderGlassLinux/src/ui/ToastQueue.cpp`
-- Create: `ShaderGlassLinux/tests/test_toast_queue.cpp`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt` (add gtest target)
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add ToastQueue.cpp to shaderglass_core)
+- Create: `ShaderScope/src/ui/ToastQueue.h`
+- Create: `ShaderScope/src/ui/ToastQueue.cpp`
+- Create: `ShaderScope/tests/test_toast_queue.cpp`
+- Modify: `ShaderScope/tests/CMakeLists.txt` (add gtest target)
+- Modify: `ShaderScope/CMakeLists.txt` (add ToastQueue.cpp to shaderscope_core)
 
 - [ ] **Step 1: Write the failing tests first**
 
-Create `ShaderGlassLinux/tests/test_toast_queue.cpp`:
+Create `ShaderScope/tests/test_toast_queue.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -157,7 +157,7 @@ TEST(ToastQueue, SeverityDeterminesDuration) {
 
 - [ ] **Step 2: Create the header**
 
-Create `ShaderGlassLinux/src/ui/ToastQueue.h`:
+Create `ShaderScope/src/ui/ToastQueue.h`:
 
 ```cpp
 #pragma once
@@ -206,7 +206,7 @@ private:
 
 - [ ] **Step 3: Implement**
 
-Create `ShaderGlassLinux/src/ui/ToastQueue.cpp`:
+Create `ShaderScope/src/ui/ToastQueue.cpp`:
 
 ```cpp
 #include "ui/ToastQueue.h"
@@ -274,13 +274,13 @@ Actually update the header comment to match:
 
 - [ ] **Step 4: Wire CMake targets**
 
-Modify `ShaderGlassLinux/CMakeLists.txt` — find the `shaderglass_core` `add_library(...)` line and add `src/ui/ToastQueue.cpp` to the source list. Use existing patterns. Verify ImGui isn't a dependency here (ToastQueue is pure stdlib).
+Modify `ShaderScope/CMakeLists.txt` — find the `shaderscope_core` `add_library(...)` line and add `src/ui/ToastQueue.cpp` to the source list. Use existing patterns. Verify ImGui isn't a dependency here (ToastQueue is pure stdlib).
 
-Modify `ShaderGlassLinux/tests/CMakeLists.txt` — append:
+Modify `ShaderScope/tests/CMakeLists.txt` — append:
 
 ```cmake
 add_executable(toast_queue_tests test_toast_queue.cpp)
-target_link_libraries(toast_queue_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(toast_queue_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(toast_queue_tests)
 ```
 
@@ -296,11 +296,11 @@ Expected: build green, all 6 ToastQueue tests pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/ToastQueue.h \
-        ShaderGlassLinux/src/ui/ToastQueue.cpp \
-        ShaderGlassLinux/tests/test_toast_queue.cpp \
-        ShaderGlassLinux/tests/CMakeLists.txt \
-        ShaderGlassLinux/CMakeLists.txt
+git add ShaderScope/src/ui/ToastQueue.h \
+        ShaderScope/src/ui/ToastQueue.cpp \
+        ShaderScope/tests/test_toast_queue.cpp \
+        ShaderScope/tests/CMakeLists.txt \
+        ShaderScope/CMakeLists.txt
 git commit -m "feat(ui): ToastQueue — thread-safe queue with severity-tuned TTL"
 ```
 
@@ -309,15 +309,15 @@ git commit -m "feat(ui): ToastQueue — thread-safe queue with severity-tuned TT
 ### Task 2: `ToastPanel` — bottom-right stack rendering
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/ToastPanel.h`
-- Create: `ShaderGlassLinux/src/ui/ToastPanel.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add ToastPanel.cpp)
+- Create: `ShaderScope/src/ui/ToastPanel.h`
+- Create: `ShaderScope/src/ui/ToastPanel.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add ToastPanel.cpp)
 
 ToastPanel has no logic worth a unit test (it's a thin ImGui draw routine); it's verified via the smoke test in Task 5 and via Phase A integration.
 
 - [ ] **Step 1: Create the header**
 
-Create `ShaderGlassLinux/src/ui/ToastPanel.h`:
+Create `ShaderScope/src/ui/ToastPanel.h`:
 
 ```cpp
 #pragma once
@@ -335,7 +335,7 @@ public:
 
 - [ ] **Step 2: Implement**
 
-Create `ShaderGlassLinux/src/ui/ToastPanel.cpp`:
+Create `ShaderScope/src/ui/ToastPanel.cpp`:
 
 ```cpp
 #include "ui/ToastPanel.h"
@@ -433,7 +433,7 @@ std::vector<uint32_t> ToastPanel::draw(const std::vector<Toast>& toasts) {
 
 - [ ] **Step 3: Wire CMake**
 
-Add `src/ui/ToastPanel.cpp` to `shaderglass_core` in `ShaderGlassLinux/CMakeLists.txt` (same pattern as Task 1's `ToastQueue.cpp`).
+Add `src/ui/ToastPanel.cpp` to `shaderscope_core` in `ShaderScope/CMakeLists.txt` (same pattern as Task 1's `ToastQueue.cpp`).
 
 - [ ] **Step 4: Build**
 
@@ -445,9 +445,9 @@ Expected: green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/ToastPanel.h \
-        ShaderGlassLinux/src/ui/ToastPanel.cpp \
-        ShaderGlassLinux/CMakeLists.txt
+git add ShaderScope/src/ui/ToastPanel.h \
+        ShaderScope/src/ui/ToastPanel.cpp \
+        ShaderScope/CMakeLists.txt
 git commit -m "feat(ui): ToastPanel — bottom-right stack with severity border + click-to-dismiss"
 ```
 
@@ -456,10 +456,10 @@ git commit -m "feat(ui): ToastPanel — bottom-right stack with severity border 
 ### Task 3: Wire ToastQueue into `AppState` + add `Logging::*Toast` variants
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/AppState.h`
-- Modify: `ShaderGlassLinux/src/ui/AppState.cpp`
-- Modify: `ShaderGlassLinux/src/util/Logging.h`
-- Modify: `ShaderGlassLinux/src/util/Logging.cpp`
+- Modify: `ShaderScope/src/ui/AppState.h`
+- Modify: `ShaderScope/src/ui/AppState.cpp`
+- Modify: `ShaderScope/src/util/Logging.h`
+- Modify: `ShaderScope/src/util/Logging.cpp`
 
 - [ ] **Step 1: Extend `AppState.h`**
 
@@ -554,9 +554,9 @@ Expected: build green, all existing tests still pass (toasts is a nullable uniqu
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/AppState.h \
-        ShaderGlassLinux/src/util/Logging.h \
-        ShaderGlassLinux/src/util/Logging.cpp
+git add ShaderScope/src/ui/AppState.h \
+        ShaderScope/src/util/Logging.h \
+        ShaderScope/src/util/Logging.cpp
 git commit -m "feat(ui): AppState gains ToastQueue; Logging adds *Toast variants"
 ```
 
@@ -565,9 +565,9 @@ git commit -m "feat(ui): AppState gains ToastQueue; Logging adds *Toast variants
 ### Task 4: Wire ToastQueue construction + ToastPanel into the render loop
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/ImGuiLayer.h`
-- Modify: `ShaderGlassLinux/src/ui/ImGuiLayer.cpp`
-- Modify: `ShaderGlassLinux/src/main.cpp`
+- Modify: `ShaderScope/src/ui/ImGuiLayer.h`
+- Modify: `ShaderScope/src/ui/ImGuiLayer.cpp`
+- Modify: `ShaderScope/src/main.cpp`
 
 - [ ] **Step 1: Add ToastPanel member to `ImGuiLayer`**
 
@@ -633,9 +633,9 @@ state.toasts->post(ToastSeverity::Success, "Test success toast");
 Build and run:
 ```bash
 cmake --build build -j 2>&1 | tail -5
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root &
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root &
 sleep 3
-xdotool windowclose $(xdotool search --name shaderglass | head -1) 2>/dev/null
+xdotool windowclose $(xdotool search --name shaderscope | head -1) 2>/dev/null
 wait
 ```
 
@@ -654,9 +654,9 @@ Expected: green.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/ImGuiLayer.h \
-        ShaderGlassLinux/src/ui/ImGuiLayer.cpp \
-        ShaderGlassLinux/src/main.cpp
+git add ShaderScope/src/ui/ImGuiLayer.h \
+        ShaderScope/src/ui/ImGuiLayer.cpp \
+        ShaderScope/src/main.cpp
 git commit -m "feat(ui): wire ToastQueue + ToastPanel into the render loop"
 ```
 
@@ -665,15 +665,15 @@ git commit -m "feat(ui): wire ToastQueue + ToastPanel into the render loop"
 ### Task 5: Hook the three known stderr-only error sites + Phase A manual smoke
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/AppState.cpp` (source-switch failure path)
-- Modify: `ShaderGlassLinux/src/ui/AppState.cpp` (preset-compile failure path)
+- Modify: `ShaderScope/src/ui/AppState.cpp` (source-switch failure path)
+- Modify: `ShaderScope/src/ui/AppState.cpp` (preset-compile failure path)
 - Modify: One of the capture backends (search for fourcc-unsupported log site)
 
 - [ ] **Step 1: Find the three sites**
 
 Run:
 ```bash
-rtk grep -rn "selectSource\|CompilePreset\|fourcc" ShaderGlassLinux/src/ | grep -iE "error|warn|throw|catch"
+rtk grep -rn "selectSource\|CompilePreset\|fourcc" ShaderScope/src/ | grep -iE "error|warn|throw|catch"
 ```
 
 Identify the lines that log on (a) source switch failure (probably `AppState::applyPending`), (b) preset compile failure (probably `AppState::applyPending` catch around `Preset` construction), (c) unsupported fourcc (probably one of `PortalCaptureSession.cpp` / `RealX11CaptureSession.cpp`).
@@ -721,7 +721,7 @@ Expected: green.
 
 Run:
 ```bash
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source nonexistent-source &
+./build/ShaderScope/shaderscope --capture x11-screen --source nonexistent-source &
 sleep 2
 ```
 Expected: window opens, a red error toast appears bottom-right saying "Failed to switch to source: nonexistent-source" (or whatever phrasing the existing error message uses), the message also appears in stderr.
@@ -731,10 +731,10 @@ Kill the process.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/AppState.cpp \
-        ShaderGlassLinux/src/capture/CaptureBackend.h \
-        ShaderGlassLinux/src/capture/PortalCaptureSession.cpp \
-        ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/ui/AppState.cpp \
+        ShaderScope/src/capture/CaptureBackend.h \
+        ShaderScope/src/capture/PortalCaptureSession.cpp \
+        ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(ui): surface source-switch, preset-compile, and fourcc errors as toasts"
 ```
 
@@ -744,13 +744,13 @@ End of Phase A. The renderer now has a working toast surface. Phases B/C/D will 
 
 ## Phase B — First-run UX (Tasks 6–8)
 
-Make bare `shaderglass` open a usable window even with no saved session, no `--source`, and no `--capture` flag.
+Make bare `shaderscope` open a usable window even with no saved session, no `--source`, and no `--capture` flag.
 
 ### Task 6: `RenderEngine::renderEmpty()` — splash render path
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/render/RenderEngine.h`
-- Modify: `ShaderGlassLinux/src/render/RenderEngine.cpp`
+- Modify: `ShaderScope/src/render/RenderEngine.h`
+- Modify: `ShaderScope/src/render/RenderEngine.cpp`
 
 - [ ] **Step 1: Add `renderEmpty()` to the header**
 
@@ -832,8 +832,8 @@ Expected: green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/render/RenderEngine.h \
-        ShaderGlassLinux/src/render/RenderEngine.cpp
+git add ShaderScope/src/render/RenderEngine.h \
+        ShaderScope/src/render/RenderEngine.cpp
 git commit -m "feat(render): RenderEngine::renderEmpty() — splash clear path"
 ```
 
@@ -842,7 +842,7 @@ git commit -m "feat(render): RenderEngine::renderEmpty() — splash clear path"
 ### Task 7: `main.cpp` — null-capture path + `--list-sources` flag + drop no-source-exit
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp`
+- Modify: `ShaderScope/src/main.cpp`
 
 - [ ] **Step 1: Add `--list-sources` to the CLI parser**
 
@@ -970,15 +970,15 @@ Expected: green.
 - [ ] **Step 7: Manual smoke**
 
 ```bash
-./build/ShaderGlassLinux/shaderglass --reset-config
-./build/ShaderGlassLinux/shaderglass --list-sources
+./build/ShaderScope/shaderscope --reset-config
+./build/ShaderScope/shaderscope --list-sources
 # expected: list of sources, exit 0
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --list-sources
+./build/ShaderScope/shaderscope --capture x11-screen --list-sources
 # expected: list of X11 sources, exit 0
-./build/ShaderGlassLinux/shaderglass &
+./build/ShaderScope/shaderscope &
 # expected: window opens with dark splash, panels visible, no capture yet
 sleep 3
-xdotool windowclose $(xdotool search --name shaderglass | head -1) 2>/dev/null
+xdotool windowclose $(xdotool search --name shaderscope | head -1) 2>/dev/null
 ```
 
 If those work, move on. If not, inspect `--help` carefully — the actual behaviour today may differ from what build-linux.md describes.
@@ -986,8 +986,8 @@ If those work, move on. If not, inspect `--help` carefully — the actual behavi
 - [ ] **Step 8: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/main.cpp
-git commit -m "feat(cli): --list-sources flag; bare shaderglass opens GUI with no capture"
+git add ShaderScope/src/main.cpp
+git commit -m "feat(cli): --list-sources flag; bare shaderscope opens GUI with no capture"
 ```
 
 ---
@@ -995,7 +995,7 @@ git commit -m "feat(cli): --list-sources flag; bare shaderglass opens GUI with n
 ### Task 8: SourcePickerPanel splash banner when no capture
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/SourcePickerPanel.cpp`
+- Modify: `ShaderScope/src/ui/SourcePickerPanel.cpp`
 
 - [ ] **Step 1: Add the splash banner**
 
@@ -1049,24 +1049,24 @@ cmake --build build -j 2>&1 | tail -5
 - [ ] **Step 4: Manual smoke**
 
 ```bash
-./build/ShaderGlassLinux/shaderglass --reset-config
-./build/ShaderGlassLinux/shaderglass &
+./build/ShaderScope/shaderscope --reset-config
+./build/ShaderScope/shaderscope &
 sleep 3
 # Verify visually: window opens, dark background, "Pick a source to begin"
 # centered, Source panel has a yellow "← Pick a source to begin" line.
 # Click a source row → splash disappears, capture begins.
-xdotool windowclose $(xdotool search --name shaderglass | head -1) 2>/dev/null
+xdotool windowclose $(xdotool search --name shaderscope | head -1) 2>/dev/null
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/SourcePickerPanel.cpp \
-        ShaderGlassLinux/src/ui/ImGuiLayer.cpp
+git add ShaderScope/src/ui/SourcePickerPanel.cpp \
+        ShaderScope/src/ui/ImGuiLayer.cpp
 git commit -m "feat(ui): splash banner + center text when no capture is active"
 ```
 
-End of Phase B. Bare `shaderglass` now opens cleanly into a picker-first GUI.
+End of Phase B. Bare `shaderscope` now opens cleanly into a picker-first GUI.
 
 ---
 
@@ -1075,14 +1075,14 @@ End of Phase B. Bare `shaderglass` now opens cleanly into a picker-first GUI.
 ### Task 9: `CropRect` type + `ConfigStore` crop API + tests
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/util/ConfigStore.h`
-- Modify: `ShaderGlassLinux/src/util/ConfigStore.cpp`
-- Create: `ShaderGlassLinux/tests/test_config_store_crop.cpp`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt`
+- Modify: `ShaderScope/src/util/ConfigStore.h`
+- Modify: `ShaderScope/src/util/ConfigStore.cpp`
+- Create: `ShaderScope/tests/test_config_store_crop.cpp`
+- Modify: `ShaderScope/tests/CMakeLists.txt`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `ShaderGlassLinux/tests/test_config_store_crop.cpp`:
+Create `ShaderScope/tests/test_config_store_crop.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -1092,7 +1092,7 @@ Create `ShaderGlassLinux/tests/test_config_store_crop.cpp`:
 
 namespace {
 std::filesystem::path tmpCfg(const std::string& name) {
-    auto p = std::filesystem::temp_directory_path() / ("shaderglass-test-" + name);
+    auto p = std::filesystem::temp_directory_path() / ("shaderscope-test-" + name);
     std::filesystem::remove(p);
     return p;
 }
@@ -1232,11 +1232,11 @@ void ConfigStore::clearCropFor(const std::string& kind,
 
 - [ ] **Step 4: Wire the test target**
 
-Append to `ShaderGlassLinux/tests/CMakeLists.txt`:
+Append to `ShaderScope/tests/CMakeLists.txt`:
 
 ```cmake
 add_executable(config_store_crop_tests test_config_store_crop.cpp)
-target_link_libraries(config_store_crop_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(config_store_crop_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(config_store_crop_tests)
 ```
 
@@ -1258,10 +1258,10 @@ Expected: all pre-existing tests still green.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/util/ConfigStore.h \
-        ShaderGlassLinux/src/util/ConfigStore.cpp \
-        ShaderGlassLinux/tests/test_config_store_crop.cpp \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/src/util/ConfigStore.h \
+        ShaderScope/src/util/ConfigStore.cpp \
+        ShaderScope/tests/test_config_store_crop.cpp \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "feat(util): ConfigStore — per-source crop rectangles in JSON"
 ```
 
@@ -1270,8 +1270,8 @@ git commit -m "feat(util): ConfigStore — per-source crop rectangles in JSON"
 ### Task 10: `ShaderPipeline` UV-transform uniform
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/render/ShaderPipeline.h`
-- Modify: `ShaderGlassLinux/src/render/ShaderPipeline.cpp`
+- Modify: `ShaderScope/src/render/ShaderPipeline.h`
+- Modify: `ShaderScope/src/render/ShaderPipeline.cpp`
 
 This task adds a vec4 UV-transform uniform to the pipeline. Pass-through is `(0, 0, 1, 1)` (i.e. full source UVs).
 
@@ -1300,7 +1300,7 @@ private:
 
 In `ShaderPipeline.cpp`, find the UBO upload logic (added in M4 — `updateUbo` paths). Add a slot for the UV transform vec4. The simplest path: append it to the existing per-frame UBO buffer at a known offset, and reference it in a built-in `engine` block at the slang level (M5 preset reflection already understands the convention — verify in code).
 
-If the existing pipeline uses descriptor set 0 with a single UBO for engine params + user params, append a `vec4 uvTransform` slot at a fixed offset (e.g. byte 0 of a small `engineParams` UBO). Confirm by inspecting `ShaderPipeline::updateUbo` and the slang shader sources in `ShaderGlassLinux/shaders/starter/`.
+If the existing pipeline uses descriptor set 0 with a single UBO for engine params + user params, append a `vec4 uvTransform` slot at a fixed offset (e.g. byte 0 of a small `engineParams` UBO). Confirm by inspecting `ShaderPipeline::updateUbo` and the slang shader sources in `ShaderScope/shaders/starter/`.
 
 Pseudocode for the implementation site:
 
@@ -1356,9 +1356,9 @@ Revert the temporary code.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/render/ShaderPipeline.h \
-        ShaderGlassLinux/src/render/ShaderPipeline.cpp \
-        ShaderGlassLinux/shaders/starter/*.slang*   # if any tweaks needed
+git add ShaderScope/src/render/ShaderPipeline.h \
+        ShaderScope/src/render/ShaderPipeline.cpp \
+        ShaderScope/shaders/starter/*.slang*   # if any tweaks needed
 git commit -m "feat(render): ShaderPipeline — uvTransform vec4 uniform for crop"
 ```
 
@@ -1367,14 +1367,14 @@ git commit -m "feat(render): ShaderPipeline — uvTransform vec4 uniform for cro
 ### Task 11: `AppState` crop intent fields + `applyPending` consumes
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/AppState.h`
-- Modify: `ShaderGlassLinux/src/ui/AppState.cpp`
-- Create: `ShaderGlassLinux/tests/test_app_state_crop.cpp`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt`
+- Modify: `ShaderScope/src/ui/AppState.h`
+- Modify: `ShaderScope/src/ui/AppState.cpp`
+- Create: `ShaderScope/tests/test_app_state_crop.cpp`
+- Modify: `ShaderScope/tests/CMakeLists.txt`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `ShaderGlassLinux/tests/test_app_state_crop.cpp`:
+Create `ShaderScope/tests/test_app_state_crop.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -1395,7 +1395,7 @@ std::unique_ptr<CaptureBackend> makeFake(int w, int h) {
 } // namespace
 
 TEST(AppStateCrop, ApplyPendingConsumesPendingCropAndPersists) {
-    auto p = std::filesystem::temp_directory_path() / "shaderglass-test-appstate-crop1";
+    auto p = std::filesystem::temp_directory_path() / "shaderscope-test-appstate-crop1";
     std::filesystem::remove(p);
     ConfigStore cfg(p);
 
@@ -1419,7 +1419,7 @@ TEST(AppStateCrop, ApplyPendingConsumesPendingCropAndPersists) {
 }
 
 TEST(AppStateCrop, ResolutionShrinkResetsCropWhenTooSmall) {
-    auto p = std::filesystem::temp_directory_path() / "shaderglass-test-appstate-crop2";
+    auto p = std::filesystem::temp_directory_path() / "shaderscope-test-appstate-crop2";
     std::filesystem::remove(p);
     ConfigStore cfg(p);
 
@@ -1440,7 +1440,7 @@ TEST(AppStateCrop, ResolutionShrinkResetsCropWhenTooSmall) {
 }
 
 TEST(AppStateCrop, PendingClearCropDropsCropAndPersists) {
-    auto p = std::filesystem::temp_directory_path() / "shaderglass-test-appstate-crop3";
+    auto p = std::filesystem::temp_directory_path() / "shaderscope-test-appstate-crop3";
     std::filesystem::remove(p);
     ConfigStore cfg(p);
 
@@ -1469,7 +1469,7 @@ TEST(AppStateCrop, PendingClearCropDropsCropAndPersists) {
 ("x11-screen", "wayland-screen", "static-image") and the active source's
 size in pixels. Both are needed for the crop config key and the clamp.
 
-In `ShaderGlassLinux/src/capture/CaptureBackend.h`, add to the base class:
+In `ShaderScope/src/capture/CaptureBackend.h`, add to the base class:
 
 ```cpp
 class CaptureBackend {
@@ -1573,11 +1573,11 @@ if (currentCrop && capture) {
 
 - [ ] **Step 5: Wire the new test**
 
-Append to `ShaderGlassLinux/tests/CMakeLists.txt`:
+Append to `ShaderScope/tests/CMakeLists.txt`:
 
 ```cmake
 add_executable(app_state_crop_tests test_app_state_crop.cpp)
-target_link_libraries(app_state_crop_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(app_state_crop_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(app_state_crop_tests)
 ```
 
@@ -1599,12 +1599,12 @@ Expected: green.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/AppState.h \
-        ShaderGlassLinux/src/ui/AppState.cpp \
-        ShaderGlassLinux/src/capture/CaptureBackend.h \
-        ShaderGlassLinux/src/capture/*.cpp \
-        ShaderGlassLinux/tests/test_app_state_crop.cpp \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/src/ui/AppState.h \
+        ShaderScope/src/ui/AppState.cpp \
+        ShaderScope/src/capture/CaptureBackend.h \
+        ShaderScope/src/capture/*.cpp \
+        ShaderScope/tests/test_app_state_crop.cpp \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "feat(ui): AppState — crop intent fields + applyPending consumes + clamp"
 ```
 
@@ -1615,17 +1615,17 @@ git commit -m "feat(ui): AppState — crop intent fields + applyPending consumes
 ### Task 12: `CropOverlay` — drag state + viewport→source coordinate mapping
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/CropOverlay.h`
-- Create: `ShaderGlassLinux/src/ui/CropOverlay.cpp`
-- Create: `ShaderGlassLinux/tests/test_crop_overlay.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt`
+- Create: `ShaderScope/src/ui/CropOverlay.h`
+- Create: `ShaderScope/src/ui/CropOverlay.cpp`
+- Create: `ShaderScope/tests/test_crop_overlay.cpp`
+- Modify: `ShaderScope/CMakeLists.txt`
+- Modify: `ShaderScope/tests/CMakeLists.txt`
 
 CropOverlay has two responsibilities: drag-state machine (testable) and ImGui rendering (smoke-tested). The tests cover only the state machine + coordinate mapping.
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `ShaderGlassLinux/tests/test_crop_overlay.cpp`:
+Create `ShaderScope/tests/test_crop_overlay.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -1686,7 +1686,7 @@ TEST(CropOverlay, BuildRectFromTwoPointsNormalizesXY) {
 
 - [ ] **Step 2: Create the header**
 
-Create `ShaderGlassLinux/src/ui/CropOverlay.h`:
+Create `ShaderScope/src/ui/CropOverlay.h`:
 
 ```cpp
 #pragma once
@@ -1890,11 +1890,11 @@ bool CropOverlay::draw(AppState& state) {
 
 - [ ] **Step 5: Wire CMake**
 
-Add `src/ui/CropOverlay.cpp` to `shaderglass_core`. Append the test target to `tests/CMakeLists.txt`:
+Add `src/ui/CropOverlay.cpp` to `shaderscope_core`. Append the test target to `tests/CMakeLists.txt`:
 
 ```cmake
 add_executable(crop_overlay_tests test_crop_overlay.cpp)
-target_link_libraries(crop_overlay_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(crop_overlay_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(crop_overlay_tests)
 ```
 
@@ -1909,11 +1909,11 @@ Expected: 5 CropOverlay tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/CropOverlay.h \
-        ShaderGlassLinux/src/ui/CropOverlay.cpp \
-        ShaderGlassLinux/tests/test_crop_overlay.cpp \
-        ShaderGlassLinux/CMakeLists.txt \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/src/ui/CropOverlay.h \
+        ShaderScope/src/ui/CropOverlay.cpp \
+        ShaderScope/tests/test_crop_overlay.cpp \
+        ShaderScope/CMakeLists.txt \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "feat(ui): CropOverlay — drag-to-select with snap + clamp"
 ```
 
@@ -1922,9 +1922,9 @@ git commit -m "feat(ui): CropOverlay — drag-to-select with snap + clamp"
 ### Task 13: ImGuiLayer wires CropOverlay + per-frame UV transform feed
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/ImGuiLayer.h`
-- Modify: `ShaderGlassLinux/src/ui/ImGuiLayer.cpp`
-- Modify: `ShaderGlassLinux/src/main.cpp` (per-frame UV feed)
+- Modify: `ShaderScope/src/ui/ImGuiLayer.h`
+- Modify: `ShaderScope/src/ui/ImGuiLayer.cpp`
+- Modify: `ShaderScope/src/main.cpp` (per-frame UV feed)
 
 - [ ] **Step 1: Add CropOverlay member**
 
@@ -1979,9 +1979,9 @@ Expected: green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/ImGuiLayer.h \
-        ShaderGlassLinux/src/ui/ImGuiLayer.cpp \
-        ShaderGlassLinux/src/main.cpp
+git add ShaderScope/src/ui/ImGuiLayer.h \
+        ShaderScope/src/ui/ImGuiLayer.cpp \
+        ShaderScope/src/main.cpp
 git commit -m "feat(ui): wire CropOverlay; feed currentCrop UV transform to pipeline"
 ```
 
@@ -1990,7 +1990,7 @@ git commit -m "feat(ui): wire CropOverlay; feed currentCrop UV transform to pipe
 ### Task 14: SourcePickerPanel "Crop region" + "Clear crop" buttons
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/SourcePickerPanel.cpp`
+- Modify: `ShaderScope/src/ui/SourcePickerPanel.cpp`
 
 - [ ] **Step 1: Add the buttons**
 
@@ -2026,20 +2026,20 @@ Expected: green.
 - [ ] **Step 3: Manual smoke**
 
 ```bash
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root &
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root &
 sleep 2
 # Visually:
 # 1. Click "Crop region" → viewport shows shaded overlay
 # 2. Drag a box → box drawn with size label
 # 3. Press Enter → output now shows just that region
 # 4. Click "Clear crop" → back to full source
-xdotool windowclose $(xdotool search --name shaderglass | head -1) 2>/dev/null
+xdotool windowclose $(xdotool search --name shaderscope | head -1) 2>/dev/null
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/SourcePickerPanel.cpp
+git add ShaderScope/src/ui/SourcePickerPanel.cpp
 git commit -m "feat(ui): SourcePickerPanel — Crop region + Clear crop buttons"
 ```
 
@@ -2048,7 +2048,7 @@ git commit -m "feat(ui): SourcePickerPanel — Crop region + Clear crop buttons"
 ### Task 15: Crop persistence on launch + Phase C manual smoke
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp` (load crop from config on source pick)
+- Modify: `ShaderScope/src/main.cpp` (load crop from config on source pick)
 
 - [ ] **Step 1: Restore saved crop when a source is activated**
 
@@ -2070,8 +2070,8 @@ This goes in `AppState.cpp` (the file modified in Task 11). Strictly this should
 cmake --build build -j 2>&1 | tail -5
 
 # Smoke
-./build/ShaderGlassLinux/shaderglass --reset-config
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root &
+./build/ShaderScope/shaderscope --reset-config
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root &
 sleep 2
 # Set a crop, exit, relaunch — verify crop persists.
 # (manual UI driving; agent shell may not work — defer to user.)
@@ -2087,7 +2087,7 @@ Expected: green.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/ui/AppState.cpp
+git add ShaderScope/src/ui/AppState.cpp
 git commit -m "feat(ui): restore saved crop on source activation"
 ```
 
@@ -2100,17 +2100,17 @@ End of Phase C. The user can crop and persist crops per source.
 ### Task 16: `util/Time` + `util/ScreenshotPath` + tests
 
 **Files:**
-- Create: `ShaderGlassLinux/src/util/Time.h`
-- Create: `ShaderGlassLinux/src/util/Time.cpp`
-- Create: `ShaderGlassLinux/src/util/ScreenshotPath.h`
-- Create: `ShaderGlassLinux/src/util/ScreenshotPath.cpp`
-- Create: `ShaderGlassLinux/tests/test_screenshot_path.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt`
+- Create: `ShaderScope/src/util/Time.h`
+- Create: `ShaderScope/src/util/Time.cpp`
+- Create: `ShaderScope/src/util/ScreenshotPath.h`
+- Create: `ShaderScope/src/util/ScreenshotPath.cpp`
+- Create: `ShaderScope/tests/test_screenshot_path.cpp`
+- Modify: `ShaderScope/CMakeLists.txt`
+- Modify: `ShaderScope/tests/CMakeLists.txt`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `ShaderGlassLinux/tests/test_screenshot_path.cpp`:
+Create `ShaderScope/tests/test_screenshot_path.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -2119,7 +2119,7 @@ Create `ShaderGlassLinux/tests/test_screenshot_path.cpp`:
 #include <fstream>
 
 TEST(ScreenshotPath, UsesPicturesDirWhenSet) {
-    auto tmp = std::filesystem::temp_directory_path() / "shaderglass-pics";
+    auto tmp = std::filesystem::temp_directory_path() / "shaderscope-pics";
     std::filesystem::create_directories(tmp);
 
     ScreenshotPath::Resolver r;
@@ -2127,12 +2127,12 @@ TEST(ScreenshotPath, UsesPicturesDirWhenSet) {
 
     auto p = r.resolve(/*now=*/std::chrono::system_clock::time_point{});
     EXPECT_EQ(p.parent_path(), tmp);
-    EXPECT_TRUE(p.filename().string().starts_with("shaderglass-"));
+    EXPECT_TRUE(p.filename().string().starts_with("shaderscope-"));
     EXPECT_TRUE(p.filename().string().ends_with(".png"));
 }
 
 TEST(ScreenshotPath, AppendsUniqueSuffixOnCollision) {
-    auto tmp = std::filesystem::temp_directory_path() / "shaderglass-pics-coll";
+    auto tmp = std::filesystem::temp_directory_path() / "shaderscope-pics-coll";
     std::filesystem::remove_all(tmp);
     std::filesystem::create_directories(tmp);
 
@@ -2169,7 +2169,7 @@ TEST(ScreenshotPath, FallsBackToHomePicturesThenHome) {
 
 - [ ] **Step 2: Create `Time.h` / `Time.cpp`**
 
-`ShaderGlassLinux/src/util/Time.h`:
+`ShaderScope/src/util/Time.h`:
 
 ```cpp
 #pragma once
@@ -2218,7 +2218,7 @@ Migrate the ImGuiLayer.cpp `nowMonotonicMs` static to use `Time::nowMonotonicMs(
 
 - [ ] **Step 3: Create `ScreenshotPath.h` / `.cpp`**
 
-`ShaderGlassLinux/src/util/ScreenshotPath.h`:
+`ShaderScope/src/util/ScreenshotPath.h`:
 
 ```cpp
 #pragma once
@@ -2299,7 +2299,7 @@ std::filesystem::path Resolver::resolve(std::chrono::system_clock::time_point no
     }
 
     std::string stamp = Time::formatStamp(now);
-    auto base = dir / ("shaderglass-" + stamp);
+    auto base = dir / ("shaderscope-" + stamp);
     auto candidate = base; candidate += ".png";
     int n = 1;
     while (std::filesystem::exists(candidate) && n < 1000) {
@@ -2319,11 +2319,11 @@ std::filesystem::path resolveNow() {
 
 - [ ] **Step 4: Wire CMake**
 
-Add `src/util/Time.cpp` and `src/util/ScreenshotPath.cpp` to `shaderglass_core`. Add the test target:
+Add `src/util/Time.cpp` and `src/util/ScreenshotPath.cpp` to `shaderscope_core`. Add the test target:
 
 ```cmake
 add_executable(screenshot_path_tests test_screenshot_path.cpp)
-target_link_libraries(screenshot_path_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(screenshot_path_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(screenshot_path_tests)
 ```
 
@@ -2338,11 +2338,11 @@ Expected: green.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/util/Time.h ShaderGlassLinux/src/util/Time.cpp \
-        ShaderGlassLinux/src/util/ScreenshotPath.h ShaderGlassLinux/src/util/ScreenshotPath.cpp \
-        ShaderGlassLinux/src/ui/ImGuiLayer.cpp \
-        ShaderGlassLinux/tests/test_screenshot_path.cpp \
-        ShaderGlassLinux/CMakeLists.txt ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/src/util/Time.h ShaderScope/src/util/Time.cpp \
+        ShaderScope/src/util/ScreenshotPath.h ShaderScope/src/util/ScreenshotPath.cpp \
+        ShaderScope/src/ui/ImGuiLayer.cpp \
+        ShaderScope/tests/test_screenshot_path.cpp \
+        ShaderScope/CMakeLists.txt ShaderScope/tests/CMakeLists.txt
 git commit -m "feat(util): Time helper + ScreenshotPath resolver with XDG fallback"
 ```
 
@@ -2351,15 +2351,15 @@ git commit -m "feat(util): Time helper + ScreenshotPath resolver with XDG fallba
 ### Task 17: `ScreenshotWriter` — Vulkan readback + worker thread + PNG encode
 
 **Files:**
-- Create: `ShaderGlassLinux/src/util/ScreenshotWriter.h`
-- Create: `ShaderGlassLinux/src/util/ScreenshotWriter.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt`
+- Create: `ShaderScope/src/util/ScreenshotWriter.h`
+- Create: `ShaderScope/src/util/ScreenshotWriter.cpp`
+- Modify: `ShaderScope/CMakeLists.txt`
 
 This task has no unit tests — it's exercised end-to-end in Task 19.
 
 - [ ] **Step 1: Create the header**
 
-`ShaderGlassLinux/src/util/ScreenshotWriter.h`:
+`ShaderScope/src/util/ScreenshotWriter.h`:
 
 ```cpp
 #pragma once
@@ -2444,7 +2444,7 @@ private:
 
 - [ ] **Step 2: Implement**
 
-`ShaderGlassLinux/src/util/ScreenshotWriter.cpp`:
+`ShaderScope/src/util/ScreenshotWriter.cpp`:
 
 ```cpp
 #include "util/ScreenshotWriter.h"
@@ -2614,7 +2614,7 @@ void ScreenshotWriter::workerLoop() {
 
 - [ ] **Step 3: Wire CMake**
 
-Add `src/util/ScreenshotWriter.cpp` to `shaderglass_core`.
+Add `src/util/ScreenshotWriter.cpp` to `shaderscope_core`.
 
 - [ ] **Step 4: Build**
 
@@ -2626,9 +2626,9 @@ Expected: green. (No new tests — exercised in Task 19.)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/util/ScreenshotWriter.h \
-        ShaderGlassLinux/src/util/ScreenshotWriter.cpp \
-        ShaderGlassLinux/CMakeLists.txt
+git add ShaderScope/src/util/ScreenshotWriter.h \
+        ShaderScope/src/util/ScreenshotWriter.cpp \
+        ShaderScope/CMakeLists.txt
 git commit -m "feat(util): ScreenshotWriter — readback + worker-thread PNG encode"
 ```
 
@@ -2637,10 +2637,10 @@ git commit -m "feat(util): ScreenshotWriter — readback + worker-thread PNG enc
 ### Task 18: RenderEngine readback hook + button + manual smoke
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/render/RenderEngine.h`
-- Modify: `ShaderGlassLinux/src/render/RenderEngine.cpp`
-- Modify: `ShaderGlassLinux/src/main.cpp`
-- Modify: `ShaderGlassLinux/src/ui/SourcePickerPanel.cpp`
+- Modify: `ShaderScope/src/render/RenderEngine.h`
+- Modify: `ShaderScope/src/render/RenderEngine.cpp`
+- Modify: `ShaderScope/src/main.cpp`
+- Modify: `ShaderScope/src/ui/SourcePickerPanel.cpp`
 
 - [ ] **Step 1: Extend `RenderEngine::renderFrame` to accept a screenshot writer**
 
@@ -2681,7 +2681,7 @@ if (state && state->screenshotPending && screenshotWriter && !screenshotWriter->
 existing pipeline-target naming. Most likely candidates:
 
 ```bash
-rtk grep -n "pipelineOutput\|outputImage\|targetImage\|m_target\|pipelineOut" ShaderGlassLinux/src/render/
+rtk grep -n "pipelineOutput\|outputImage\|targetImage\|m_target\|pipelineOut" ShaderScope/src/render/
 ```
 
 Use the symbol that the existing pipeline writes to and that ImGui samples
@@ -2751,11 +2751,11 @@ Expected: green.
 - [ ] **Step 5: Manual smoke**
 
 ```bash
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root &
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root &
 sleep 2
 # Click "Screenshot" in the GUI; a PNG should appear under ~/Pictures/.
-ls -lt ~/Pictures/shaderglass-*.png | head -1
-xdotool windowclose $(xdotool search --name shaderglass | head -1) 2>/dev/null
+ls -lt ~/Pictures/shaderscope-*.png | head -1
+xdotool windowclose $(xdotool search --name shaderscope | head -1) 2>/dev/null
 ```
 
 Inspect the PNG to confirm it's the rendered output (preset applied, no ImGui chrome).
@@ -2763,10 +2763,10 @@ Inspect the PNG to confirm it's the rendered output (preset applied, no ImGui ch
 - [ ] **Step 6: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/render/RenderEngine.h \
-        ShaderGlassLinux/src/render/RenderEngine.cpp \
-        ShaderGlassLinux/src/main.cpp \
-        ShaderGlassLinux/src/ui/SourcePickerPanel.cpp
+git add ShaderScope/src/render/RenderEngine.h \
+        ShaderScope/src/render/RenderEngine.cpp \
+        ShaderScope/src/main.cpp \
+        ShaderScope/src/ui/SourcePickerPanel.cpp
 git commit -m "feat(render): screenshot readback hook + Screenshot button + smoke"
 ```
 
@@ -2775,8 +2775,8 @@ git commit -m "feat(render): screenshot readback hook + Screenshot button + smok
 ### Task 19: PNG-encoder unit test
 
 **Files:**
-- Create: `ShaderGlassLinux/tests/test_screenshot_encode.cpp`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt`
+- Create: `ShaderScope/tests/test_screenshot_encode.cpp`
+- Modify: `ShaderScope/tests/CMakeLists.txt`
 
 The full Vulkan readback path is covered by the manual smoke in Task 18.
 What's worth a unit test is the host-side encoder: BGRA→RGBA channel swap
@@ -2786,7 +2786,7 @@ pixel buffer and decoding the resulting PNG.
 
 - [ ] **Step 1: Write the test**
 
-Create `ShaderGlassLinux/tests/test_screenshot_encode.cpp`:
+Create `ShaderScope/tests/test_screenshot_encode.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -2799,7 +2799,7 @@ Create `ShaderGlassLinux/tests/test_screenshot_encode.cpp`:
 
 namespace {
 std::filesystem::path tmpFile(const std::string& name) {
-    auto p = std::filesystem::temp_directory_path() / ("shaderglass-test-encode-" + name + ".png");
+    auto p = std::filesystem::temp_directory_path() / ("shaderscope-test-encode-" + name + ".png");
     std::filesystem::remove(p);
     return p;
 }
@@ -2873,11 +2873,11 @@ TEST(ScreenshotEncode, RejectsNullBufferAndZeroExtent) {
 
 - [ ] **Step 2: Wire CMake**
 
-Append to `ShaderGlassLinux/tests/CMakeLists.txt`:
+Append to `ShaderScope/tests/CMakeLists.txt`:
 
 ```cmake
 add_executable(screenshot_encode_tests test_screenshot_encode.cpp)
-target_link_libraries(screenshot_encode_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(screenshot_encode_tests PRIVATE shaderscope_core gtest_main)
 target_include_directories(screenshot_encode_tests PRIVATE ${stb_SOURCE_DIR})
 gtest_discover_tests(screenshot_encode_tests)
 ```
@@ -2900,8 +2900,8 @@ Expected: green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ShaderGlassLinux/tests/test_screenshot_encode.cpp \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/tests/test_screenshot_encode.cpp \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "test: ScreenshotWriter::encodeToPng — RGBA/BGRA + reject unsupported"
 ```
 
@@ -2933,14 +2933,14 @@ Add to the "Run" section:
 
 ```bash
 # List sources for the current backend and exit (scripted use):
-./build/ShaderGlassLinux/shaderglass --list-sources
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --list-sources
+./build/ShaderScope/shaderscope --list-sources
+./build/ShaderScope/shaderscope --capture x11-screen --list-sources
 ```
 
 - [ ] **Step 2: Create `docs/manual-tests-m5-ux-polish.md`**
 
 ```markdown
-# ShaderGlass Linux M5 UX polish — manual test checklist
+# ShaderScope Linux M5 UX polish — manual test checklist
 
 ## Toast UI
 - [ ] Switch to a deleted/invalid source — red error toast bottom-right
@@ -2950,11 +2950,11 @@ Add to the "Run" section:
 - [ ] Click a toast — it disappears immediately
 
 ## First-run
-- [ ] `--reset-config && shaderglass` — window opens with splash; picking
+- [ ] `--reset-config && shaderscope` — window opens with splash; picking
       a source begins capture
-- [ ] `shaderglass --list-sources` prints sources, exits 0
-- [ ] `shaderglass --capture x11-screen --list-sources` lists X11 sources, exits 0
-- [ ] `shaderglass --capture x11-screen` (no source) opens GUI (no longer
+- [ ] `shaderscope --list-sources` prints sources, exits 0
+- [ ] `shaderscope --capture x11-screen --list-sources` lists X11 sources, exits 0
+- [ ] `shaderscope --capture x11-screen` (no source) opens GUI (no longer
       exits)
 
 ## Region/crop
@@ -2967,7 +2967,7 @@ Add to the "Run" section:
 - [ ] Restart app — crop restored for the active source
 
 ## Screenshot
-- [ ] Click "Screenshot" — file appears at `$XDG_PICTURES_DIR/shaderglass-*.png`
+- [ ] Click "Screenshot" — file appears at `$XDG_PICTURES_DIR/shaderscope-*.png`
 - [ ] Open the PNG — post-pipeline render (preset applied, cropped if
       applicable, no ImGui chrome)
 - [ ] Read-only `$XDG_PICTURES_DIR` — red error toast with the path
@@ -3022,13 +3022,13 @@ The agent shell (nested X11) can run most checks but cannot verify Wayland or th
 ## Plan summary
 
 - **Phase A** — 5 tasks → Toast UI lands first, hooks 3 stderr-only error sites.
-- **Phase B** — 3 tasks → bare `shaderglass` opens GUI; `--list-sources` flag.
+- **Phase B** — 3 tasks → bare `shaderscope` opens GUI; `--list-sources` flag.
 - **Phase C** — 7 tasks → drag-to-select crop, UV transform uniform, per-source persistence.
 - **Phase D** — 4 tasks → screenshot to PNG via worker-thread readback.
 - **Final** — 1 task → docs + manual checklist.
 
 **Total: 20 tasks, ~20 commits, 25 new unit tests.**
 
-Estimated total LOC: ~1500–2000 new + ~300 modified, mostly under `ShaderGlassLinux/src/{ui,util,render}/`.
+Estimated total LOC: ~1500–2000 new + ~300 modified, mostly under `ShaderScope/src/{ui,util,render}/`.
 
 Once Phase A is in, B/C/D's error paths all surface naturally. Phases B/C/D can be executed in order with no skipping — they touch overlapping files (main.cpp, AppState, SourcePickerPanel) so per-phase commits keep the merge story clean.

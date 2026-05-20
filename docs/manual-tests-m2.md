@@ -11,7 +11,7 @@ Run these on a real Plasma 6 Wayland session before signing off on M2.
 
 ### 1. Portal handshake — debug mode
 ```
-./build/ShaderGlassLinux/shaderglass --debug-portal
+./build/ShaderScope/shaderscope --debug-portal
 ```
 - Expect: KDE source-picker dialog appears.
 - Pick any window or screen.
@@ -20,27 +20,27 @@ Run these on a real Plasma 6 Wayland session before signing off on M2.
 ### 2. Restore-token persistence
 Run test 1 a second time:
 ```
-./build/ShaderGlassLinux/shaderglass --debug-portal
+./build/ShaderScope/shaderscope --debug-portal
 ```
 - Expect: no picker. The `[INFO] portal: loaded restore token from disk` line is followed by an immediate handshake-complete with the same node id from the first run.
-- Verify token file: `cat ~/.config/shaderglass/portal-token` is non-empty.
+- Verify token file: `cat ~/.config/shaderscope/portal-token` is non-empty.
 
 ### 3. Capture window — full pipeline (DMA-BUF if available)
 ```
-./build/ShaderGlassLinux/shaderglass --capture wayland-screen
+./build/ShaderScope/shaderscope --capture wayland-screen
 ```
 - Expect: picker (or instant restore from test 2). Pick a single window.
-- Expect: window opens. The captured app's contents should show inside the ShaderGlass window, rendered through the passthrough shader.
+- Expect: window opens. The captured app's contents should show inside the ShaderScope window, rendered through the passthrough shader.
 - Move the source window — the rendered content should follow.
 - Log: `[INFO] portal: DMA-BUF import enabled` (or fallback warning).
 
 ### 4. Capture monitor
 Repeat test 3, picking a monitor instead of a window.
-- Expect: full-monitor capture displayed in ShaderGlass window.
+- Expect: full-monitor capture displayed in ShaderScope window.
 
 ### 5. CPU-only path
 ```
-SHADERGLASS_DISABLE_DMABUF=1 ./build/ShaderGlassLinux/shaderglass --capture wayland-screen
+SHADERSCOPE_DISABLE_DMABUF=1 ./build/ShaderScope/shaderscope --capture wayland-screen
 ```
 - Expect: identical visual output, with log line saying DMA-BUF is disabled.
 

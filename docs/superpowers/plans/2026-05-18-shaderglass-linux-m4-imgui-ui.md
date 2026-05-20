@@ -1,14 +1,14 @@
-# ShaderGlass Linux M4 — ImGui UI Implementation Plan
+# ShaderScope Linux M4 — ImGui UI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make ShaderGlass on Linux interactive. After M4, typing `shaderglass` (no flags) opens a dockable ImGui window with three panels — source picker, preset browser, parameter editor — and remembers the user's last session across restarts. The CLI continues to work unchanged so scripts and existing tests are unaffected.
+**Goal:** Make ShaderScope on Linux interactive. After M4, typing `shaderscope` (no flags) opens a dockable ImGui window with three panels — source picker, preset browser, parameter editor — and remembers the user's last session across restarts. The CLI continues to work unchanged so scripts and existing tests are unaffected.
 
-**Architecture:** Single-threaded canonical ImGui+SDL3+Vulkan loop. Panels are immediate-mode: they read from `AppState`, write back intents into `pending*` fields; `AppState::applyPending()` is the sole point where capture/preset get rebuilt, between `ImGui::Render()` and `capture->acquireFrame()`. UBO-aware shader pipeline is introduced in Phase B so the curated single-pass `.slangp` presets can actually run. Config persisted to `~/.config/shaderglass/config.json`.
+**Architecture:** Single-threaded canonical ImGui+SDL3+Vulkan loop. Panels are immediate-mode: they read from `AppState`, write back intents into `pending*` fields; `AppState::applyPending()` is the sole point where capture/preset get rebuilt, between `ImGui::Render()` and `capture->acquireFrame()`. UBO-aware shader pipeline is introduced in Phase B so the curated single-pass `.slangp` presets can actually run. Config persisted to `~/.config/shaderscope/config.json`.
 
 **Tech Stack:** C++20, Dear ImGui (FetchContent, v1.91.5), `imgui_impl_sdl3` + `imgui_impl_vulkan`, nlohmann/json (FetchContent, v3.11.3), existing SDL3 + Vulkan + ShaderGC core.
 
-**Spec:** [`docs/superpowers/specs/2026-05-18-shaderglass-linux-m4-imgui-ui-design.md`](../specs/2026-05-18-shaderglass-linux-m4-imgui-ui-design.md)
+**Spec:** [`docs/superpowers/specs/2026-05-18-shaderscope-linux-m4-imgui-ui-design.md`](../specs/2026-05-18-shaderscope-linux-m4-imgui-ui-design.md)
 
 **Predecessors:** M1 (foundation), M2 (Wayland capture), M3 (X11 capture). Branch: `linux/main`.
 
@@ -29,25 +29,25 @@
 | Path | Action | Responsibility |
 |---|---|---|
 | `CMakeLists.txt` (top-level) | modify | Add FetchContent for ImGui + nlohmann/json; expose `imgui` interface target |
-| `ShaderGlassLinux/CMakeLists.txt` | modify | Link ImGui + json into `shaderglass_core`; add new `ui/*.cpp` + `util/ConfigStore.cpp` + `util/PresetLibrary.cpp` sources; CMake install rule for starter shaders |
-| `ShaderGlassLinux/src/ui/ImGuiLayer.{h,cpp}` | create | SDL3+Vulkan ImGui backend init/teardown, descriptor pool, font upload, frame begin/end, event dispatch |
-| `ShaderGlassLinux/src/ui/AppState.{h,cpp}` | create | Shared UI ↔ render state; `applyPending()` is the single capture/preset rebuild point |
-| `ShaderGlassLinux/src/ui/SourcePickerPanel.{h,cpp}` | create | Capture-source list table; click-to-switch; Wayland portal short-circuit |
-| `ShaderGlassLinux/src/ui/PresetBrowserPanel.{h,cpp}` | create | Tree-by-category preset browser with search filter; click sets pending preset path |
-| `ShaderGlassLinux/src/ui/ParamsPanel.{h,cpp}` | create | Per-param widgets (float/int/bool); "Reset to defaults" button; placeholder rows for rare param types |
-| `ShaderGlassLinux/src/util/ConfigStore.{h,cpp}` | create | `~/.config/shaderglass/config.json` load/save; atomic temp-file rename; debounce queue + saveSync on shutdown |
-| `ShaderGlassLinux/src/util/PresetLibrary.{h,cpp}` | create | Scans `~/.local/share/shaderglass/shaders/` (+ build-dir fallback); returns sorted `{path, displayName, category}` entries |
-| `ShaderGlassLinux/src/render/Preset.{h,cpp}` | create | Owns the compiled `PresetDef*` + active `ShaderPipeline` + per-instance param vector + parameter UBO buffer |
-| `ShaderGlassLinux/src/render/ShaderPipeline.{h,cpp}` | modify | Optional UBO binding alongside the existing sampler; new constructor overload + `updateParamsUbo()` |
-| `ShaderGlassLinux/src/render/RenderEngine.{h,cpp}` | modify | New `recordImGuiDraw()` that wraps the swapchain image render pass and lets ImGui draw on top |
-| `ShaderGlassLinux/src/output/SdlWindow.{h,cpp}` | modify | `pollEvents()` forwards each `SDL_Event` to `ImGui_ImplSDL3_ProcessEvent` when an ImGui layer is registered |
-| `ShaderGlassLinux/src/main.cpp` | modify | GUI-first launch when no source/input/capture given; CLI bypass preserved; `--reset-config` flag; wire `AppState` + panels into the frame loop |
-| `ShaderGlassLinux/shaders/starter/*` | create | ~20 curated single-pass `.slangp` files (+ any `.slang` dependencies) copied from RetroArch slang-shaders |
-| `ShaderGlassLinux/tests/test_app_state.cpp` | create | Headless `AppState::applyPending()` test against `FakeX11CaptureSession` |
-| `ShaderGlassLinux/tests/test_config_store.cpp` | create | Round-trip + atomic-write + malformed-recovery tests for `ConfigStore` |
-| `ShaderGlassLinux/tests/test_preset_library.cpp` | create | `PresetLibrary::scan()` over a fixture directory |
-| `ShaderGlassLinux/tests/CMakeLists.txt` | modify | Register the three new gtest targets |
-| `ShaderGlassLinux/tests/data/preset_library_fixture/` | create | Tiny fixture tree (2 categories, 4 stub `.slangp` files) for `PresetLibrary` scan tests |
+| `ShaderScope/CMakeLists.txt` | modify | Link ImGui + json into `shaderscope_core`; add new `ui/*.cpp` + `util/ConfigStore.cpp` + `util/PresetLibrary.cpp` sources; CMake install rule for starter shaders |
+| `ShaderScope/src/ui/ImGuiLayer.{h,cpp}` | create | SDL3+Vulkan ImGui backend init/teardown, descriptor pool, font upload, frame begin/end, event dispatch |
+| `ShaderScope/src/ui/AppState.{h,cpp}` | create | Shared UI ↔ render state; `applyPending()` is the single capture/preset rebuild point |
+| `ShaderScope/src/ui/SourcePickerPanel.{h,cpp}` | create | Capture-source list table; click-to-switch; Wayland portal short-circuit |
+| `ShaderScope/src/ui/PresetBrowserPanel.{h,cpp}` | create | Tree-by-category preset browser with search filter; click sets pending preset path |
+| `ShaderScope/src/ui/ParamsPanel.{h,cpp}` | create | Per-param widgets (float/int/bool); "Reset to defaults" button; placeholder rows for rare param types |
+| `ShaderScope/src/util/ConfigStore.{h,cpp}` | create | `~/.config/shaderscope/config.json` load/save; atomic temp-file rename; debounce queue + saveSync on shutdown |
+| `ShaderScope/src/util/PresetLibrary.{h,cpp}` | create | Scans `~/.local/share/shaderscope/shaders/` (+ build-dir fallback); returns sorted `{path, displayName, category}` entries |
+| `ShaderScope/src/render/Preset.{h,cpp}` | create | Owns the compiled `PresetDef*` + active `ShaderPipeline` + per-instance param vector + parameter UBO buffer |
+| `ShaderScope/src/render/ShaderPipeline.{h,cpp}` | modify | Optional UBO binding alongside the existing sampler; new constructor overload + `updateParamsUbo()` |
+| `ShaderScope/src/render/RenderEngine.{h,cpp}` | modify | New `recordImGuiDraw()` that wraps the swapchain image render pass and lets ImGui draw on top |
+| `ShaderScope/src/output/SdlWindow.{h,cpp}` | modify | `pollEvents()` forwards each `SDL_Event` to `ImGui_ImplSDL3_ProcessEvent` when an ImGui layer is registered |
+| `ShaderScope/src/main.cpp` | modify | GUI-first launch when no source/input/capture given; CLI bypass preserved; `--reset-config` flag; wire `AppState` + panels into the frame loop |
+| `ShaderScope/shaders/starter/*` | create | ~20 curated single-pass `.slangp` files (+ any `.slang` dependencies) copied from RetroArch slang-shaders |
+| `ShaderScope/tests/test_app_state.cpp` | create | Headless `AppState::applyPending()` test against `FakeX11CaptureSession` |
+| `ShaderScope/tests/test_config_store.cpp` | create | Round-trip + atomic-write + malformed-recovery tests for `ConfigStore` |
+| `ShaderScope/tests/test_preset_library.cpp` | create | `PresetLibrary::scan()` over a fixture directory |
+| `ShaderScope/tests/CMakeLists.txt` | modify | Register the three new gtest targets |
+| `ShaderScope/tests/data/preset_library_fixture/` | create | Tiny fixture tree (2 categories, 4 stub `.slangp` files) for `PresetLibrary` scan tests |
 | `docs/manual-tests-m4.md` | create | Live-X11/Wayland smoke checklist for M4 |
 | `docs/build-linux.md` | modify | Update M4 status + add new dep notes (ImGui, json) |
 
@@ -72,7 +72,7 @@ FetchContent_Declare(imgui
 FetchContent_MakeAvailable(imgui)
 
 # ImGui ships no CMakeLists.txt — we build it as a small static lib here so
-# every consumer (shaderglass_core, tests) gets the same target.
+# every consumer (shaderscope_core, tests) gets the same target.
 add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -98,7 +98,7 @@ Replace the existing block:
 ```cmake
 if(BUILD_LINUX_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(ShaderGC)
-    add_subdirectory(ShaderGlassLinux)
+    add_subdirectory(ShaderScope)
 endif()
 ```
 
@@ -106,7 +106,7 @@ with:
 ```cmake
 if(BUILD_LINUX_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(ShaderGC)
-    add_subdirectory(ShaderGlassLinux)
+    add_subdirectory(ShaderScope)
 
     # imgui needs SDL3 + Vulkan headers; SDL3 isn't found at top-level scope.
     # Add the link after the subdir is processed so the imported targets exist.
@@ -118,22 +118,22 @@ endif()
 
 - [ ] **Step 2: Verify the configure step pulls both deps**
 
-Run: `cmake -S /home/blake/Documents/GitHub/ShaderGlass -B /home/blake/Documents/GitHub/ShaderGlass/build`
+Run: `cmake -S /home/blake/Documents/GitHub/ShaderScope -B /home/blake/Documents/GitHub/ShaderScope/build`
 Expected: configure completes, output contains lines like `-- Populating imgui` and `-- Populating json`. No errors.
 
 - [ ] **Step 3: Verify the `imgui` target builds in isolation**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target imgui`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target imgui`
 Expected: `[100%] Built target imgui`. No undefined-symbol errors from the SDL3/Vulkan backends.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "build(linux): add Dear ImGui + nlohmann/json via FetchContent
+git -C /home/blake/Documents/GitHub/ShaderScope add CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "build(linux): add Dear ImGui + nlohmann/json via FetchContent
 
 ImGui 1.91.5 includes the SDL3 + Vulkan backends. We compile them into
-a small 'imgui' static lib so shaderglass_core and tests can link a
+a small 'imgui' static lib so shaderscope_core and tests can link a
 single target. nlohmann/json 3.11.3 is single-header; pulled now so
 Phase D's ConfigStore can use it without a second FetchContent round.
 "
@@ -144,13 +144,13 @@ Phase D's ConfigStore can use it without a second FetchContent round.
 ### Task 2: ImGuiLayer — Vulkan + SDL3 backend init/shutdown
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/ImGuiLayer.h`
-- Create: `ShaderGlassLinux/src/ui/ImGuiLayer.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add new sources + link `imgui`)
+- Create: `ShaderScope/src/ui/ImGuiLayer.h`
+- Create: `ShaderScope/src/ui/ImGuiLayer.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add new sources + link `imgui`)
 
 - [ ] **Step 1: Create the header**
 
-Create `ShaderGlassLinux/src/ui/ImGuiLayer.h`:
+Create `ShaderScope/src/ui/ImGuiLayer.h`:
 
 ```cpp
 #pragma once
@@ -190,7 +190,7 @@ private:
 
 - [ ] **Step 2: Create the implementation**
 
-Create `ShaderGlassLinux/src/ui/ImGuiLayer.cpp`:
+Create `ShaderScope/src/ui/ImGuiLayer.cpp`:
 
 ```cpp
 #include "ImGuiLayer.h"
@@ -285,33 +285,33 @@ void ImGuiLayer::recordDrawData(VkCommandBuffer cb) {
 }
 ```
 
-The implementation assumes `VulkanContext` exposes `instance()`, `device()`, `physicalDevice()`, `graphicsQueue()`, `graphicsQueueFamily()` and that `Swapchain` exposes `format()` and `imageCount()`. If any are missing, add minimal getters before completing this task (they likely exist already — confirm via `grep -n 'graphicsQueueFamily\|imageCount\|physicalDevice' ShaderGlassLinux/src/render/`).
+The implementation assumes `VulkanContext` exposes `instance()`, `device()`, `physicalDevice()`, `graphicsQueue()`, `graphicsQueueFamily()` and that `Swapchain` exposes `format()` and `imageCount()`. If any are missing, add minimal getters before completing this task (they likely exist already — confirm via `grep -n 'graphicsQueueFamily\|imageCount\|physicalDevice' ShaderScope/src/render/`).
 
 - [ ] **Step 3: Wire the new sources into CMake + link `imgui`**
 
-Modify `ShaderGlassLinux/CMakeLists.txt`. In the `add_library(shaderglass_core STATIC …)` source list, add the line:
+Modify `ShaderScope/CMakeLists.txt`. In the `add_library(shaderscope_core STATIC …)` source list, add the line:
 
 ```cmake
     src/ui/ImGuiLayer.cpp
 ```
 
-Then extend the `target_link_libraries(shaderglass_core PUBLIC …)` block by adding `imgui` to the list. Also add `imgui` to `target_link_libraries` for the `shaderglass` executable target if it needs ImGui headers (it will, in Task 7) — but you can wait to add that linkage until Task 7. For now, only `shaderglass_core` needs it.
+Then extend the `target_link_libraries(shaderscope_core PUBLIC …)` block by adding `imgui` to the list. Also add `imgui` to `target_link_libraries` for the `shaderscope` executable target if it needs ImGui headers (it will, in Task 7) — but you can wait to add that linkage until Task 7. For now, only `shaderscope_core` needs it.
 
-- [ ] **Step 4: Verify shaderglass_core still builds with ImGuiLayer included**
+- [ ] **Step 4: Verify shaderscope_core still builds with ImGuiLayer included**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass_core`
-Expected: `[100%] Built target shaderglass_core`. No undefined symbols related to ImGui_ImplSDL3 or ImGui_ImplVulkan.
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope_core`
+Expected: `[100%] Built target shaderscope_core`. No undefined symbols related to ImGui_ImplSDL3 or ImGui_ImplVulkan.
 
 If `VulkanContext` or `Swapchain` lack the required getters, the build will fail with "no member named X". Add those getters as minimal inline accessors (e.g. `VkInstance instance() const { return m_instance; }`) and re-run.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/ImGuiLayer.h \
-    ShaderGlassLinux/src/ui/ImGuiLayer.cpp \
-    ShaderGlassLinux/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): ImGuiLayer wraps SDL3+Vulkan backends with dynamic rendering
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/ImGuiLayer.h \
+    ShaderScope/src/ui/ImGuiLayer.cpp \
+    ShaderScope/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): ImGuiLayer wraps SDL3+Vulkan backends with dynamic rendering
 
 Owns the descriptor pool and lifetime of ImGui's two backends. Uses
 dynamic rendering so we don't have to introduce a real VkRenderPass
@@ -325,12 +325,12 @@ and we let RenderEngine record everything in one transition scope.
 ### Task 3: SdlWindow forwards events to ImGui
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/output/SdlWindow.h`
-- Modify: `ShaderGlassLinux/src/output/SdlWindow.cpp`
+- Modify: `ShaderScope/src/output/SdlWindow.h`
+- Modify: `ShaderScope/src/output/SdlWindow.cpp`
 
 - [ ] **Step 1: Add an optional event-listener pointer to the header**
 
-Modify `ShaderGlassLinux/src/output/SdlWindow.h` — add a forward declaration and a setter:
+Modify `ShaderScope/src/output/SdlWindow.h` — add a forward declaration and a setter:
 
 ```cpp
 class ImGuiLayer;
@@ -350,7 +350,7 @@ Keep the existing members. The pointer is non-owning — `SdlWindow` does not fr
 
 - [ ] **Step 2: Forward each SDL_Event to the layer in `pollEvents`**
 
-Modify `ShaderGlassLinux/src/output/SdlWindow.cpp`. The current `pollEvents()` body should be replaced with:
+Modify `ShaderScope/src/output/SdlWindow.cpp`. The current `pollEvents()` body should be replaced with:
 
 ```cpp
 bool SdlWindow::pollEvents() {
@@ -377,21 +377,21 @@ Add `#include "ui/ImGuiLayer.h"` near the existing includes so the call to `proc
 
 - [ ] **Step 3: Build to confirm no regressions**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
-Expected: `[100%] Built target shaderglass`.
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
+Expected: `[100%] Built target shaderscope`.
 
 - [ ] **Step 4: Smoke-test that the binary still launches normally**
 
-Run: `timeout 2 /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root 2>&1 | head -3`
+Run: `timeout 2 /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope --capture x11-screen --source monitor:root 2>&1 | head -3`
 Expected: a `[INFO] Rendering x11-screen (...)` line within 2s. No crash. (ImGui is not yet wired into the loop, so the event forwarder is a no-op.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/output/SdlWindow.h \
-    ShaderGlassLinux/src/output/SdlWindow.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): SdlWindow forwards SDL events to optional ImGuiLayer
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/output/SdlWindow.h \
+    ShaderScope/src/output/SdlWindow.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): SdlWindow forwards SDL events to optional ImGuiLayer
 
 setImGuiLayer() is opt-in; pollEvents() degrades to the old behaviour
 when no layer is attached. Keeps the existing close/quit/Esc logic
@@ -404,14 +404,14 @@ intact so the CLI binary path is unchanged.
 ### Task 4: RenderEngine.recordImGuiDraw — emit ImGui pass after the shader pass
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/render/RenderEngine.h`
-- Modify: `ShaderGlassLinux/src/render/RenderEngine.cpp`
+- Modify: `ShaderScope/src/render/RenderEngine.h`
+- Modify: `ShaderScope/src/render/RenderEngine.cpp`
 
 The existing `renderTexture` / `renderImageView` methods both call `renderFrame` with a body lambda that runs *inside* the dynamic-rendering scope on the swapchain image. We add a new overload that accepts an *additional* lambda for ImGui — invoked in the same scope after the shader-pass body. This keeps ImGui drawing on top of the shader output without requiring a second pass / second transition.
 
 - [ ] **Step 1: Add the new public overload signature**
 
-Modify `ShaderGlassLinux/src/render/RenderEngine.h`. Add inside the public section, just after the existing `renderImageView` declaration:
+Modify `ShaderScope/src/render/RenderEngine.h`. Add inside the public section, just after the existing `renderImageView` declaration:
 
 ```cpp
     // Variants that also record an ImGui pass on top of the shader output.
@@ -451,16 +451,16 @@ The exact `{{0,0,0,1}}` clear-colour literal must match the `VkClearValue` field
 
 - [ ] **Step 3: Build to confirm**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass_core`
-Expected: `[100%] Built target shaderglass_core`.
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope_core`
+Expected: `[100%] Built target shaderscope_core`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/render/RenderEngine.h \
-    ShaderGlassLinux/src/render/RenderEngine.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(render): renderTextureWithOverlay/renderImageViewWithOverlay
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/render/RenderEngine.h \
+    ShaderScope/src/render/RenderEngine.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(render): renderTextureWithOverlay/renderImageViewWithOverlay
 
 Adds variants of the existing render entry points that take an extra
 imguiBody lambda. The lambda runs after the shader pass body inside
@@ -474,17 +474,17 @@ shader output with no extra image transition.
 ### Task 5: AppState skeleton — capture-only state + applyPending()
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/AppState.h`
-- Create: `ShaderGlassLinux/src/ui/AppState.cpp`
-- Create: `ShaderGlassLinux/tests/test_app_state.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add `src/ui/AppState.cpp`)
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt` (register `app_state_tests`)
+- Create: `ShaderScope/src/ui/AppState.h`
+- Create: `ShaderScope/src/ui/AppState.cpp`
+- Create: `ShaderScope/tests/test_app_state.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add `src/ui/AppState.cpp`)
+- Modify: `ShaderScope/tests/CMakeLists.txt` (register `app_state_tests`)
 
 In Phase A we only model capture state; preset/params fields land in Phase B/C.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `ShaderGlassLinux/tests/test_app_state.cpp`:
+Create `ShaderScope/tests/test_app_state.cpp`:
 
 ```cpp
 // AppState::applyPending() rebuilds the capture backend when pendingSourceId
@@ -540,7 +540,7 @@ TEST(AppState, ApplyPendingClearsIntentEvenOnNoOp) {
 
 - [ ] **Step 2: Create the header**
 
-Create `ShaderGlassLinux/src/ui/AppState.h`:
+Create `ShaderScope/src/ui/AppState.h`:
 
 ```cpp
 #pragma once
@@ -578,7 +578,7 @@ struct AppState {
 
 - [ ] **Step 3: Create the implementation**
 
-Create `ShaderGlassLinux/src/ui/AppState.cpp`:
+Create `ShaderScope/src/ui/AppState.cpp`:
 
 ```cpp
 #include "AppState.h"
@@ -621,31 +621,31 @@ void AppState::applyPending() {
 
 - [ ] **Step 4: Wire CMake**
 
-In `ShaderGlassLinux/CMakeLists.txt` add `src/ui/AppState.cpp` to the `shaderglass_core` source list (next to `src/ui/ImGuiLayer.cpp`).
+In `ShaderScope/CMakeLists.txt` add `src/ui/AppState.cpp` to the `shaderscope_core` source list (next to `src/ui/ImGuiLayer.cpp`).
 
-In `ShaderGlassLinux/tests/CMakeLists.txt` add:
+In `ShaderScope/tests/CMakeLists.txt` add:
 
 ```cmake
 add_executable(app_state_tests test_app_state.cpp)
-target_link_libraries(app_state_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(app_state_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(app_state_tests)
 ```
 
 - [ ] **Step 5: Run the test, confirm it now compiles and passes**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target app_state_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build -R AppState --output-on-failure`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target app_state_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build -R AppState --output-on-failure`
 Expected: 2 tests pass.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/AppState.h \
-    ShaderGlassLinux/src/ui/AppState.cpp \
-    ShaderGlassLinux/tests/test_app_state.cpp \
-    ShaderGlassLinux/CMakeLists.txt \
-    ShaderGlassLinux/tests/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): AppState with applyPending() — capture-state phase A skeleton
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/AppState.h \
+    ShaderScope/src/ui/AppState.cpp \
+    ShaderScope/tests/test_app_state.cpp \
+    ShaderScope/CMakeLists.txt \
+    ShaderScope/tests/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): AppState with applyPending() — capture-state phase A skeleton
 
 Panels write back into pending* intent fields; applyPending() consumes
 them between ImGui::Render() and the next capture->acquireFrame(). M4
@@ -658,15 +658,15 @@ will grow this with preset + params fields in Phases B and C.
 ### Task 6: SourcePickerPanel — table + click-to-switch + Wayland short-circuit
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/SourcePickerPanel.h`
-- Create: `ShaderGlassLinux/src/ui/SourcePickerPanel.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add `src/ui/SourcePickerPanel.cpp`)
+- Create: `ShaderScope/src/ui/SourcePickerPanel.h`
+- Create: `ShaderScope/src/ui/SourcePickerPanel.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add `src/ui/SourcePickerPanel.cpp`)
 
 This task has no automated test — the rendering side is exercised manually in Task 7's smoke. The panel itself contains no logic worth unit-testing apart from the click→pendingSourceId mapping, which is already covered by Task 5's `AppState` tests.
 
 - [ ] **Step 1: Create the header**
 
-Create `ShaderGlassLinux/src/ui/SourcePickerPanel.h`:
+Create `ShaderScope/src/ui/SourcePickerPanel.h`:
 
 ```cpp
 #pragma once
@@ -693,7 +693,7 @@ private:
 
 - [ ] **Step 2: Create the implementation**
 
-Create `ShaderGlassLinux/src/ui/SourcePickerPanel.cpp`:
+Create `ShaderScope/src/ui/SourcePickerPanel.cpp`:
 
 ```cpp
 #include "SourcePickerPanel.h"
@@ -758,21 +758,21 @@ void SourcePickerPanel::draw(AppState& state) {
 
 - [ ] **Step 3: Wire CMake**
 
-In `ShaderGlassLinux/CMakeLists.txt` add `src/ui/SourcePickerPanel.cpp` to the `shaderglass_core` source list.
+In `ShaderScope/CMakeLists.txt` add `src/ui/SourcePickerPanel.cpp` to the `shaderscope_core` source list.
 
 - [ ] **Step 4: Build**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass_core`
-Expected: `[100%] Built target shaderglass_core`.
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope_core`
+Expected: `[100%] Built target shaderscope_core`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/SourcePickerPanel.h \
-    ShaderGlassLinux/src/ui/SourcePickerPanel.cpp \
-    ShaderGlassLinux/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): SourcePickerPanel — 2-column table with Wayland short-circuit
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/SourcePickerPanel.h \
+    ShaderScope/src/ui/SourcePickerPanel.cpp \
+    ShaderScope/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): SourcePickerPanel — 2-column table with Wayland short-circuit
 
 On x11-screen: lists each SourceInfo with a Refresh button; click sets
 state.pendingSourceId. On wayland-screen: collapses to a single 'Open
@@ -785,23 +785,23 @@ portal picker...' button since the portal owns source selection.
 ### Task 7: Main loop integration — GUI-first launch + Phase A smoke
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (link `imgui` into `shaderglass` executable)
+- Modify: `ShaderScope/src/main.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (link `imgui` into `shaderscope` executable)
 - Create: `docs/manual-tests-m4.md` (initial Phase A entries; will be extended in later tasks)
 
 - [ ] **Step 1: Link `imgui` into the executable**
 
-In `ShaderGlassLinux/CMakeLists.txt`, find the `target_link_libraries(shaderglass PRIVATE shaderglass_core)` line and change to:
+In `ShaderScope/CMakeLists.txt`, find the `target_link_libraries(shaderscope PRIVATE shaderscope_core)` line and change to:
 
 ```cmake
-target_link_libraries(shaderglass PRIVATE shaderglass_core imgui)
+target_link_libraries(shaderscope PRIVATE shaderscope_core imgui)
 ```
 
-This is the propagation safety net: `imgui` is already linked into `shaderglass_core` PUBLICly, but listing it explicitly here protects against future static-lib link-order issues.
+This is the propagation safety net: `imgui` is already linked into `shaderscope_core` PUBLICly, but listing it explicitly here protects against future static-lib link-order issues.
 
 - [ ] **Step 2: Refactor runWindowed to host ImGuiLayer + panels**
 
-Modify `ShaderGlassLinux/src/main.cpp`. Add new includes near the top:
+Modify `ShaderScope/src/main.cpp`. Add new includes near the top:
 
 ```cpp
 #include "ui/AppState.h"
@@ -855,12 +855,12 @@ The `state.refreshSources()` initial call should happen once after the capture-b
 
 - [ ] **Step 3: Build**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
-Expected: `[100%] Built target shaderglass`. If `f` is misused (e.g. variable shadowing the outer `frame`), rename the outer first-frame variable to avoid clashing with the loop-local `f`.
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
+Expected: `[100%] Built target shaderscope`. If `f` is misused (e.g. variable shadowing the outer `frame`), rename the outer first-frame variable to avoid clashing with the loop-local `f`.
 
 - [ ] **Step 4: Live smoke — x11-screen renders with the picker overlay**
 
-Run: `timeout 4 /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root 2>&1 | head -5`
+Run: `timeout 4 /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope --capture x11-screen --source monitor:root 2>&1 | head -5`
 Expected: `[INFO] ImGui ... initialised` line followed by `[INFO] Rendering x11-screen (...)`. The window should open and (briefly) show a "Source" panel listing `monitor:root`. No crash; exit cleanly when the timeout fires.
 
 The agent host runs in nested XFCE so an interactive eyeball check is possible — but the headless line "ImGui ... initialised" plus a successful exit is the gate for completing this task.
@@ -870,20 +870,20 @@ The agent host runs in nested XFCE so an interactive eyeball check is possible �
 Create `docs/manual-tests-m4.md`:
 
 ```markdown
-# ShaderGlass Linux M4 — manual test checklist
+# ShaderScope Linux M4 — manual test checklist
 
 Run on a real X11 or Wayland session (the nested agent X server is enough for
 the X11 entries; Wayland entries need the user's actual desktop).
 
 ## Phase A — ImGui scaffolding + source picker
 
-- [ ] `shaderglass --capture x11-screen --source monitor:root` opens a window
+- [ ] `shaderscope --capture x11-screen --source monitor:root` opens a window
       and the "Source" panel lists at least one source.
 - [ ] Clicking a different `monitor:*` row in the Source panel switches the
       visible capture within ~1 second.
 - [ ] Clicking "Refresh" re-enumerates sources (open a new window, click
       Refresh, the new window appears).
-- [ ] `shaderglass --capture wayland-screen` shows the "Open portal picker..."
+- [ ] `shaderscope --capture wayland-screen` shows the "Open portal picker..."
       button; clicking it re-triggers the portal dialog.
 - [ ] Closing the window (or pressing Esc) exits with code 0.
 - [ ] All Phase A automated tests (`ctest -R AppState`) pass.
@@ -894,17 +894,17 @@ _(extended by later tasks)_
 
 - [ ] **Step 6: Full ctest run to confirm no regression**
 
-Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build --output-on-failure 2>&1 | tail -8`
+Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build --output-on-failure 2>&1 | tail -8`
 Expected: all tests pass (the existing 38 + the 2 new AppState tests = 40 tests).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/main.cpp \
-    ShaderGlassLinux/CMakeLists.txt \
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/main.cpp \
+    ShaderScope/CMakeLists.txt \
     docs/manual-tests-m4.md
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): wire ImGuiLayer + SourcePickerPanel into the windowed loop
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): wire ImGuiLayer + SourcePickerPanel into the windowed loop
 
 Phase A end-state: --capture x11-screen / --capture wayland-screen
 both open the window with a 'Source' panel docked over the shader
@@ -923,27 +923,27 @@ GUI-first no-args launch is Task 22; Phase A still requires --capture.
 ### Task 8: Curated starter `.slangp` set
 
 **Files:**
-- Create: `ShaderGlassLinux/shaders/starter/passthrough.slangp` (+ `.slang`)
-- Create: `ShaderGlassLinux/shaders/starter/grayscale.slangp` (+ `.slang`)
-- Create: `ShaderGlassLinux/shaders/starter/invert.slangp` (+ `.slang`)
-- Create: `ShaderGlassLinux/shaders/starter/scanline.slangp` (+ `.slang`)
-- Create: `ShaderGlassLinux/shaders/starter/crt-easymode.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/crt-geom.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/crt-lottes.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/crt-aperture.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/crt-hyllian.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/lcd-grid.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/xbr-lv2.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/xbrz-freescale.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/super-xbr.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/jinc2.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/aann.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/sharp-bilinear.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/grade.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/monochrome.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/blur5fast.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/box-blur.slangp` (+ deps)
-- Create: `ShaderGlassLinux/shaders/starter/README.md`
+- Create: `ShaderScope/shaders/starter/passthrough.slangp` (+ `.slang`)
+- Create: `ShaderScope/shaders/starter/grayscale.slangp` (+ `.slang`)
+- Create: `ShaderScope/shaders/starter/invert.slangp` (+ `.slang`)
+- Create: `ShaderScope/shaders/starter/scanline.slangp` (+ `.slang`)
+- Create: `ShaderScope/shaders/starter/crt-easymode.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/crt-geom.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/crt-lottes.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/crt-aperture.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/crt-hyllian.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/lcd-grid.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/xbr-lv2.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/xbrz-freescale.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/super-xbr.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/jinc2.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/aann.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/sharp-bilinear.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/grade.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/monochrome.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/blur5fast.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/box-blur.slangp` (+ deps)
+- Create: `ShaderScope/shaders/starter/README.md`
 
 The starter set must be **single-pass** for M4 (multi-pass is M5 scope). Source the files from the upstream `libretro/slang-shaders` repo and adapt or substitute as needed.
 
@@ -956,7 +956,7 @@ git clone --depth 1 https://github.com/libretro/slang-shaders.git /tmp/slang-sha
 
 - [ ] **Step 2: For each candidate in the list above, copy the `.slangp` and the `.slang` files it references**
 
-For each candidate, `cat /tmp/slang-shaders-upstream/<category>/<name>.slangp` and inspect the `shader0 = "<path>"` line. If the `.slangp` declares exactly one `shaderN` line (single-pass), copy both files into `ShaderGlassLinux/shaders/starter/` and rewrite the `shader0` path to be relative to that flat directory. If it declares more than one shader line, **skip it** — multi-pass is out of scope — and substitute another single-pass candidate from the same upstream category.
+For each candidate, `cat /tmp/slang-shaders-upstream/<category>/<name>.slangp` and inspect the `shader0 = "<path>"` line. If the `.slangp` declares exactly one `shaderN` line (single-pass), copy both files into `ShaderScope/shaders/starter/` and rewrite the `shader0` path to be relative to that flat directory. If it declares more than one shader line, **skip it** — multi-pass is out of scope — and substitute another single-pass candidate from the same upstream category.
 
 Example for `passthrough.slangp` (which lives in `stock.slangp` upstream):
 
@@ -971,25 +971,25 @@ scale_type_y0 = source
 scale_y0 = 1.0
 ```
 
-Copy `stock.slangp` to `ShaderGlassLinux/shaders/starter/passthrough.slangp` and `stock.slang` to `ShaderGlassLinux/shaders/starter/passthrough.slang`, then edit `passthrough.slangp` to reference `shader0 = passthrough.slang`.
+Copy `stock.slangp` to `ShaderScope/shaders/starter/passthrough.slangp` and `stock.slang` to `ShaderScope/shaders/starter/passthrough.slang`, then edit `passthrough.slangp` to reference `shader0 = passthrough.slang`.
 
 - [ ] **Step 3: Discard any candidate that fails to compile with the existing `--compile-preset` path**
 
 Run for each starter:
 
 ```bash
-/home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass \
-    --compile-preset /home/blake/Documents/GitHub/ShaderGlass/ShaderGlassLinux/shaders/starter/<name>.slangp
+/home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope \
+    --compile-preset /home/blake/Documents/GitHub/ShaderScope/ShaderScope/shaders/starter/<name>.slangp
 ```
 
 Expected: `[INFO] compiled preset, 1 shader(s)`. If compile fails or reports more than 1 shader, remove the candidate and pick a replacement from the same upstream category. Aim for ≥15 working starters at end of this task.
 
-- [ ] **Step 4: Write `ShaderGlassLinux/shaders/starter/README.md`**
+- [ ] **Step 4: Write `ShaderScope/shaders/starter/README.md`**
 
 ```markdown
 # Starter shader set
 
-The ShaderGlass Linux M4 milestone ships a curated single-pass subset of
+The ShaderScope Linux M4 milestone ships a curated single-pass subset of
 the RetroArch slang-shaders library so the preset browser has something
 to browse out of the box. Multi-pass presets are M5 scope.
 
@@ -999,14 +999,14 @@ directory.
 
 To add more presets, drop a `.slangp` + its `.slang` here, ensure the
 file declares exactly one `shader0`, and rebuild. The CMake install
-rule copies the whole directory to `${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/`.
+rule copies the whole directory to `${CMAKE_INSTALL_DATADIR}/shaderscope/shaders/`.
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add ShaderGlassLinux/shaders/starter/
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(shaders): curated single-pass starter set for M4 preset browser
+git -C /home/blake/Documents/GitHub/ShaderScope add ShaderScope/shaders/starter/
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(shaders): curated single-pass starter set for M4 preset browser
 
 ~15-20 single-pass slang shaders from libretro/slang-shaders (GPL-3.0)
 covering passthrough, scanline, several CRT variants, LCD, xBR/xBRZ
@@ -1023,68 +1023,68 @@ preset verified to compile through ShaderGC::CompilePreset.
 ### Task 9: CMake install rule + dev-mode staging path
 
 **Files:**
-- Modify: `ShaderGlassLinux/CMakeLists.txt`
+- Modify: `ShaderScope/CMakeLists.txt`
 
 - [ ] **Step 1: Add install + staging logic**
 
-Append to `ShaderGlassLinux/CMakeLists.txt`, after the existing `target_compile_definitions(shaderglass PRIVATE ...)` block:
+Append to `ShaderScope/CMakeLists.txt`, after the existing `target_compile_definitions(shaderscope PRIVATE ...)` block:
 
 ```cmake
-# Starter shader set: install to ${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/
+# Starter shader set: install to ${CMAKE_INSTALL_DATADIR}/shaderscope/shaders/
 # for packaged installs, and stage into the build dir at configure time so
-# dev runs find them at ${CMAKE_BINARY_DIR}/ShaderGlassLinux/shaders-staging/.
+# dev runs find them at ${CMAKE_BINARY_DIR}/ShaderScope/shaders-staging/.
 include(GNUInstallDirs)
 
-set(SHADERGLASS_STARTER_SRC ${CMAKE_CURRENT_SOURCE_DIR}/shaders/starter)
-set(SHADERGLASS_STARTER_STAGING
+set(SHADERSCOPE_STARTER_SRC ${CMAKE_CURRENT_SOURCE_DIR}/shaders/starter)
+set(SHADERSCOPE_STARTER_STAGING
     ${CMAKE_CURRENT_BINARY_DIR}/shaders-staging)
-file(MAKE_DIRECTORY ${SHADERGLASS_STARTER_STAGING})
+file(MAKE_DIRECTORY ${SHADERSCOPE_STARTER_STAGING})
 
 # Glob at configure time — adding a new starter file requires re-running
 # cmake. That's the standard CMake glob caveat; documented in starter/README.
-file(GLOB STARTER_FILES RELATIVE ${SHADERGLASS_STARTER_SRC}
-     ${SHADERGLASS_STARTER_SRC}/*.slangp
-     ${SHADERGLASS_STARTER_SRC}/*.slang
-     ${SHADERGLASS_STARTER_SRC}/*.png
-     ${SHADERGLASS_STARTER_SRC}/*.md)
+file(GLOB STARTER_FILES RELATIVE ${SHADERSCOPE_STARTER_SRC}
+     ${SHADERSCOPE_STARTER_SRC}/*.slangp
+     ${SHADERSCOPE_STARTER_SRC}/*.slang
+     ${SHADERSCOPE_STARTER_SRC}/*.png
+     ${SHADERSCOPE_STARTER_SRC}/*.md)
 foreach(f IN LISTS STARTER_FILES)
     configure_file(
-        ${SHADERGLASS_STARTER_SRC}/${f}
-        ${SHADERGLASS_STARTER_STAGING}/${f}
+        ${SHADERSCOPE_STARTER_SRC}/${f}
+        ${SHADERSCOPE_STARTER_STAGING}/${f}
         COPYONLY)
 endforeach()
 
-install(DIRECTORY ${SHADERGLASS_STARTER_SRC}/
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/shaderglass/shaders)
+install(DIRECTORY ${SHADERSCOPE_STARTER_SRC}/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/shaderscope/shaders)
 
-# Inject the staging path into shaderglass so PresetLibrary can find it
+# Inject the staging path into shaderscope so PresetLibrary can find it
 # without an installed copy. (Production binaries also probe XDG paths.)
-target_compile_definitions(shaderglass PRIVATE
-    SHADERGLASS_DEV_SHADERS_DIR="${SHADERGLASS_STARTER_STAGING}")
-target_compile_definitions(shaderglass_core PRIVATE
-    SHADERGLASS_DEV_SHADERS_DIR="${SHADERGLASS_STARTER_STAGING}")
+target_compile_definitions(shaderscope PRIVATE
+    SHADERSCOPE_DEV_SHADERS_DIR="${SHADERSCOPE_STARTER_STAGING}")
+target_compile_definitions(shaderscope_core PRIVATE
+    SHADERSCOPE_DEV_SHADERS_DIR="${SHADERSCOPE_STARTER_STAGING}")
 ```
 
 - [ ] **Step 2: Reconfigure + verify staging dir gets populated**
 
-Run: `cmake -S /home/blake/Documents/GitHub/ShaderGlass -B /home/blake/Documents/GitHub/ShaderGlass/build && ls /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaders-staging/ | head -30`
+Run: `cmake -S /home/blake/Documents/GitHub/ShaderScope -B /home/blake/Documents/GitHub/ShaderScope/build && ls /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaders-staging/ | head -30`
 Expected: list shows all the starter files copied into the staging dir.
 
 - [ ] **Step 3: Confirm install rule works (smoke `cmake --install` to a scratch prefix)**
 
-Run: `DESTDIR=/tmp/sg-install-smoke cmake --install /home/blake/Documents/GitHub/ShaderGlass/build --prefix /usr 2>&1 | tail -5 && ls /tmp/sg-install-smoke/usr/share/shaderglass/shaders/ | head -10`
-Expected: the install command lists shader files copied into `/tmp/sg-install-smoke/usr/share/shaderglass/shaders/`.
+Run: `DESTDIR=/tmp/sg-install-smoke cmake --install /home/blake/Documents/GitHub/ShaderScope/build --prefix /usr 2>&1 | tail -5 && ls /tmp/sg-install-smoke/usr/share/shaderscope/shaders/ | head -10`
+Expected: the install command lists shader files copied into `/tmp/sg-install-smoke/usr/share/shaderscope/shaders/`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add ShaderGlassLinux/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "build(linux): install starter shaders + dev staging path
+git -C /home/blake/Documents/GitHub/ShaderScope add ShaderScope/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "build(linux): install starter shaders + dev staging path
 
 configure_file COPYONLY each starter file into the build dir so dev
 runs find them without 'cmake --install'. install(DIRECTORY) ships
-them to \${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/ for packaged
-builds. SHADERGLASS_DEV_SHADERS_DIR compile-def lets PresetLibrary
+them to \${CMAKE_INSTALL_DATADIR}/shaderscope/shaders/ for packaged
+builds. SHADERSCOPE_DEV_SHADERS_DIR compile-def lets PresetLibrary
 locate the staging copy at runtime.
 "
 ```
@@ -1094,15 +1094,15 @@ locate the staging copy at runtime.
 ### Task 10: PresetLibrary::scan() — find and sort starter shaders
 
 **Files:**
-- Create: `ShaderGlassLinux/src/util/PresetLibrary.h`
-- Create: `ShaderGlassLinux/src/util/PresetLibrary.cpp`
-- Create: `ShaderGlassLinux/tests/test_preset_library.cpp`
-- Create: `ShaderGlassLinux/tests/data/preset_library_fixture/crt/crt-test.slangp`
-- Create: `ShaderGlassLinux/tests/data/preset_library_fixture/crt/scanline-test.slangp`
-- Create: `ShaderGlassLinux/tests/data/preset_library_fixture/upscale/jinc2-test.slangp`
-- Create: `ShaderGlassLinux/tests/data/preset_library_fixture/upscale/xbr-test.slangp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add `src/util/PresetLibrary.cpp`)
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt` (register `preset_library_tests`)
+- Create: `ShaderScope/src/util/PresetLibrary.h`
+- Create: `ShaderScope/src/util/PresetLibrary.cpp`
+- Create: `ShaderScope/tests/test_preset_library.cpp`
+- Create: `ShaderScope/tests/data/preset_library_fixture/crt/crt-test.slangp`
+- Create: `ShaderScope/tests/data/preset_library_fixture/crt/scanline-test.slangp`
+- Create: `ShaderScope/tests/data/preset_library_fixture/upscale/jinc2-test.slangp`
+- Create: `ShaderScope/tests/data/preset_library_fixture/upscale/xbr-test.slangp`
+- Modify: `ShaderScope/CMakeLists.txt` (add `src/util/PresetLibrary.cpp`)
+- Modify: `ShaderScope/tests/CMakeLists.txt` (register `preset_library_tests`)
 
 Categories come from the immediate subdirectory name. The starter directory we ship is flat (all `.slangp` in one dir), so we treat flat-directory presets as `category = "starter"`. The fixture-based scan test verifies subdirectory grouping when present.
 
@@ -1111,14 +1111,14 @@ Categories come from the immediate subdirectory name. The starter directory we s
 Create the fixture stubs first (empty `.slangp` files are enough — `scan` only checks file presence and path shape, not contents):
 
 ```bash
-mkdir -p /home/blake/Documents/GitHub/ShaderGlass/ShaderGlassLinux/tests/data/preset_library_fixture/{crt,upscale}
-touch /home/blake/Documents/GitHub/ShaderGlass/ShaderGlassLinux/tests/data/preset_library_fixture/crt/crt-test.slangp
-touch /home/blake/Documents/GitHub/ShaderGlass/ShaderGlassLinux/tests/data/preset_library_fixture/crt/scanline-test.slangp
-touch /home/blake/Documents/GitHub/ShaderGlass/ShaderGlassLinux/tests/data/preset_library_fixture/upscale/jinc2-test.slangp
-touch /home/blake/Documents/GitHub/ShaderGlass/ShaderGlassLinux/tests/data/preset_library_fixture/upscale/xbr-test.slangp
+mkdir -p /home/blake/Documents/GitHub/ShaderScope/ShaderScope/tests/data/preset_library_fixture/{crt,upscale}
+touch /home/blake/Documents/GitHub/ShaderScope/ShaderScope/tests/data/preset_library_fixture/crt/crt-test.slangp
+touch /home/blake/Documents/GitHub/ShaderScope/ShaderScope/tests/data/preset_library_fixture/crt/scanline-test.slangp
+touch /home/blake/Documents/GitHub/ShaderScope/ShaderScope/tests/data/preset_library_fixture/upscale/jinc2-test.slangp
+touch /home/blake/Documents/GitHub/ShaderScope/ShaderScope/tests/data/preset_library_fixture/upscale/xbr-test.slangp
 ```
 
-Create `ShaderGlassLinux/tests/test_preset_library.cpp`:
+Create `ShaderScope/tests/test_preset_library.cpp`:
 
 ```cpp
 // PresetLibrary::scan() over a fixture tree with two categories.
@@ -1157,7 +1157,7 @@ TEST(PresetLibrary, ScansCategoriesFromImmediateSubdirs) {
 }
 
 TEST(PresetLibrary, FlatDirYieldsStarterCategory) {
-    fs::path tmp = fs::temp_directory_path() / "shaderglass_preset_flat_test";
+    fs::path tmp = fs::temp_directory_path() / "shaderscope_preset_flat_test";
     fs::create_directories(tmp);
     {
         std::ofstream o(tmp / "a.slangp"); o << "shaders = 1\n";
@@ -1185,7 +1185,7 @@ Add `#include <fstream>` to the test file.
 
 - [ ] **Step 2: Create the header**
 
-Create `ShaderGlassLinux/src/util/PresetLibrary.h`:
+Create `ShaderScope/src/util/PresetLibrary.h`:
 
 ```cpp
 #pragma once
@@ -1202,10 +1202,10 @@ struct PresetEntry {
 class PresetLibrary {
 public:
     // Scan the default search path:
-    //   1. $XDG_DATA_HOME/shaderglass/shaders/  (or $HOME/.local/share/...)
-    //   2. /usr/local/share/shaderglass/shaders/
-    //   3. /usr/share/shaderglass/shaders/
-    //   4. SHADERGLASS_DEV_SHADERS_DIR (compile-time fallback for dev runs)
+    //   1. $XDG_DATA_HOME/shaderscope/shaders/  (or $HOME/.local/share/...)
+    //   2. /usr/local/share/shaderscope/shaders/
+    //   3. /usr/share/shaderscope/shaders/
+    //   4. SHADERSCOPE_DEV_SHADERS_DIR (compile-time fallback for dev runs)
     // First directory that exists wins (no merging across paths).
     std::vector<PresetEntry> scan();
 
@@ -1223,7 +1223,7 @@ private:
 
 - [ ] **Step 3: Create the implementation**
 
-Create `ShaderGlassLinux/src/util/PresetLibrary.cpp`:
+Create `ShaderScope/src/util/PresetLibrary.cpp`:
 
 ```cpp
 #include "PresetLibrary.h"
@@ -1231,8 +1231,8 @@ Create `ShaderGlassLinux/src/util/PresetLibrary.cpp`:
 #include <algorithm>
 #include <cstdlib>
 
-#ifndef SHADERGLASS_DEV_SHADERS_DIR
-#  define SHADERGLASS_DEV_SHADERS_DIR ""
+#ifndef SHADERSCOPE_DEV_SHADERS_DIR
+#  define SHADERSCOPE_DEV_SHADERS_DIR ""
 #endif
 
 namespace fs = std::filesystem;
@@ -1240,14 +1240,14 @@ namespace fs = std::filesystem;
 std::vector<PresetEntry> PresetLibrary::scan() {
     std::vector<fs::path> probes;
     if (const char* xdg = std::getenv("XDG_DATA_HOME")) {
-        probes.emplace_back(fs::path(xdg) / "shaderglass/shaders");
+        probes.emplace_back(fs::path(xdg) / "shaderscope/shaders");
     } else if (const char* home = std::getenv("HOME")) {
-        probes.emplace_back(fs::path(home) / ".local/share/shaderglass/shaders");
+        probes.emplace_back(fs::path(home) / ".local/share/shaderscope/shaders");
     }
-    probes.emplace_back("/usr/local/share/shaderglass/shaders");
-    probes.emplace_back("/usr/share/shaderglass/shaders");
-    if (SHADERGLASS_DEV_SHADERS_DIR[0]) {
-        probes.emplace_back(SHADERGLASS_DEV_SHADERS_DIR);
+    probes.emplace_back("/usr/local/share/shaderscope/shaders");
+    probes.emplace_back("/usr/share/shaderscope/shaders");
+    if (SHADERSCOPE_DEV_SHADERS_DIR[0]) {
+        probes.emplace_back(SHADERSCOPE_DEV_SHADERS_DIR);
     }
     for (const auto& d : probes) {
         if (fs::exists(d) && fs::is_directory(d)) {
@@ -1297,13 +1297,13 @@ std::vector<PresetEntry> PresetLibrary::scanDir(const fs::path& dir) {
 
 - [ ] **Step 4: Wire CMake**
 
-In `ShaderGlassLinux/CMakeLists.txt`, add `src/util/PresetLibrary.cpp` to the `shaderglass_core` source list (next to `src/util/SourceMatcher.cpp`).
+In `ShaderScope/CMakeLists.txt`, add `src/util/PresetLibrary.cpp` to the `shaderscope_core` source list (next to `src/util/SourceMatcher.cpp`).
 
-In `ShaderGlassLinux/tests/CMakeLists.txt`, add:
+In `ShaderScope/tests/CMakeLists.txt`, add:
 
 ```cmake
 add_executable(preset_library_tests test_preset_library.cpp)
-target_link_libraries(preset_library_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(preset_library_tests PRIVATE shaderscope_core gtest_main)
 target_compile_definitions(preset_library_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 gtest_discover_tests(preset_library_tests)
@@ -1311,23 +1311,23 @@ gtest_discover_tests(preset_library_tests)
 
 - [ ] **Step 5: Build and run the new tests**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target preset_library_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build -R PresetLibrary --output-on-failure`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target preset_library_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build -R PresetLibrary --output-on-failure`
 Expected: 3 tests pass.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/util/PresetLibrary.h \
-    ShaderGlassLinux/src/util/PresetLibrary.cpp \
-    ShaderGlassLinux/tests/test_preset_library.cpp \
-    ShaderGlassLinux/tests/data/preset_library_fixture \
-    ShaderGlassLinux/CMakeLists.txt \
-    ShaderGlassLinux/tests/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(util): PresetLibrary scans XDG data dirs + dev staging dir
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/util/PresetLibrary.h \
+    ShaderScope/src/util/PresetLibrary.cpp \
+    ShaderScope/tests/test_preset_library.cpp \
+    ShaderScope/tests/data/preset_library_fixture \
+    ShaderScope/CMakeLists.txt \
+    ShaderScope/tests/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(util): PresetLibrary scans XDG data dirs + dev staging dir
 
-Probes \$XDG_DATA_HOME/shaderglass/shaders → /usr/local/share/... →
-/usr/share/... → SHADERGLASS_DEV_SHADERS_DIR; first existing wins.
+Probes \$XDG_DATA_HOME/shaderscope/shaders → /usr/local/share/... →
+/usr/share/... → SHADERSCOPE_DEV_SHADERS_DIR; first existing wins.
 Returns sorted PresetEntry { path, displayName, category }. Category
 is the immediate-parent dirname, or 'starter' for flat layouts.
 "
@@ -1338,15 +1338,15 @@ is the immediate-parent dirname, or 'starter' for flat layouts.
 ### Task 11: PresetBrowserPanel — categorised tree + search filter
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/PresetBrowserPanel.h`
-- Create: `ShaderGlassLinux/src/ui/PresetBrowserPanel.cpp`
-- Modify: `ShaderGlassLinux/src/ui/AppState.h` (add preset library + pendingPresetPath fields)
-- Modify: `ShaderGlassLinux/src/ui/AppState.cpp` (no behaviour change yet — fields wired in Task 12)
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add `src/ui/PresetBrowserPanel.cpp`)
+- Create: `ShaderScope/src/ui/PresetBrowserPanel.h`
+- Create: `ShaderScope/src/ui/PresetBrowserPanel.cpp`
+- Modify: `ShaderScope/src/ui/AppState.h` (add preset library + pendingPresetPath fields)
+- Modify: `ShaderScope/src/ui/AppState.cpp` (no behaviour change yet — fields wired in Task 12)
+- Modify: `ShaderScope/CMakeLists.txt` (add `src/ui/PresetBrowserPanel.cpp`)
 
 - [ ] **Step 1: Extend AppState with the preset fields**
 
-Modify `ShaderGlassLinux/src/ui/AppState.h`. Replace the existing pending-intents region with:
+Modify `ShaderScope/src/ui/AppState.h`. Replace the existing pending-intents region with:
 
 ```cpp
     // Active preset (nullptr → passthrough)
@@ -1366,7 +1366,7 @@ In `AppState.cpp`, no behaviour change is needed yet — the new fields are popu
 
 - [ ] **Step 2: Create the panel header**
 
-Create `ShaderGlassLinux/src/ui/PresetBrowserPanel.h`:
+Create `ShaderScope/src/ui/PresetBrowserPanel.h`:
 
 ```cpp
 #pragma once
@@ -1385,7 +1385,7 @@ private:
 
 - [ ] **Step 3: Create the panel implementation**
 
-Create `ShaderGlassLinux/src/ui/PresetBrowserPanel.cpp`:
+Create `ShaderScope/src/ui/PresetBrowserPanel.cpp`:
 
 ```cpp
 #include "PresetBrowserPanel.h"
@@ -1468,20 +1468,20 @@ void PresetBrowserPanel::draw(AppState& state) {
 
 - [ ] **Step 4: Wire CMake**
 
-Add `src/ui/PresetBrowserPanel.cpp` to the `shaderglass_core` source list.
+Add `src/ui/PresetBrowserPanel.cpp` to the `shaderscope_core` source list.
 
-- [ ] **Step 5: Build** — `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass_core`
+- [ ] **Step 5: Build** — `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope_core`
 Expected: green.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/PresetBrowserPanel.h \
-    ShaderGlassLinux/src/ui/PresetBrowserPanel.cpp \
-    ShaderGlassLinux/src/ui/AppState.h \
-    ShaderGlassLinux/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): PresetBrowserPanel — categorised tree + filter
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/PresetBrowserPanel.h \
+    ShaderScope/src/ui/PresetBrowserPanel.cpp \
+    ShaderScope/src/ui/AppState.h \
+    ShaderScope/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): PresetBrowserPanel — categorised tree + filter
 
 ImGui tree grouped by category, search filter spans displayName +
 category, leading 'Passthrough' entry clears the active preset.
@@ -1494,19 +1494,19 @@ Writes state.pendingPresetPath; applyPending hookup lands in T12.
 ### Task 12: Preset class + applyPending preset-switch (no UBO yet)
 
 **Files:**
-- Create: `ShaderGlassLinux/src/render/Preset.h`
-- Create: `ShaderGlassLinux/src/render/Preset.cpp`
-- Modify: `ShaderGlassLinux/src/ui/AppState.h` (add `preset` field)
-- Modify: `ShaderGlassLinux/src/ui/AppState.cpp` (extend `applyPending`)
-- Modify: `ShaderGlassLinux/tests/test_app_state.cpp` (preset-switch test)
-- Modify: `ShaderGlassLinux/src/main.cpp` (wire library + browser; use `state.preset` for the active pipeline)
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add `src/render/Preset.cpp`)
+- Create: `ShaderScope/src/render/Preset.h`
+- Create: `ShaderScope/src/render/Preset.cpp`
+- Modify: `ShaderScope/src/ui/AppState.h` (add `preset` field)
+- Modify: `ShaderScope/src/ui/AppState.cpp` (extend `applyPending`)
+- Modify: `ShaderScope/tests/test_app_state.cpp` (preset-switch test)
+- Modify: `ShaderScope/src/main.cpp` (wire library + browser; use `state.preset` for the active pipeline)
+- Modify: `ShaderScope/CMakeLists.txt` (add `src/render/Preset.cpp`)
 
 Phase B end-state: preset switching swaps the active shader pipeline. Without UBO binding (added in Phase C T13), shaders that read uniforms render whatever the GPU has at descriptor binding 0 — usually visibly off but never crashing. Phase C wires the UBO so the shaders look correct.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `ShaderGlassLinux/tests/test_app_state.cpp`:
+Append to `ShaderScope/tests/test_app_state.cpp`:
 
 ```cpp
 #include "render/VulkanContext.h"
@@ -1543,11 +1543,11 @@ TEST(AppState, ApplyPendingSwitchesPresetWhenIntentSet) {
 
 Add `<filesystem>` to the test's includes if not already present.
 
-Confirm `ShaderGlassLinux/tests/data/stock.slangp` exists (it does — it's used by `test_e2e_shadergc_render`). If not, copy from the starter dir.
+Confirm `ShaderScope/tests/data/stock.slangp` exists (it does — it's used by `test_e2e_shadergc_render`). If not, copy from the starter dir.
 
 - [ ] **Step 2: Define the Preset header**
 
-Create `ShaderGlassLinux/src/render/Preset.h`:
+Create `ShaderScope/src/render/Preset.h`:
 
 ```cpp
 #pragma once
@@ -1588,7 +1588,7 @@ private:
 
 - [ ] **Step 3: Define the Preset implementation**
 
-Create `ShaderGlassLinux/src/render/Preset.cpp`:
+Create `ShaderScope/src/render/Preset.cpp`:
 
 ```cpp
 #include "Preset.h"
@@ -1641,7 +1641,7 @@ Preset::~Preset() {
 
 - [ ] **Step 4: Extend AppState**
 
-In `ShaderGlassLinux/src/ui/AppState.h`, add the preset field + Vulkan + library wiring. The full header should now look like:
+In `ShaderScope/src/ui/AppState.h`, add the preset field + Vulkan + library wiring. The full header should now look like:
 
 ```cpp
 #pragma once
@@ -1747,12 +1747,12 @@ void AppState::applyPending() {
 
 - [ ] **Step 5: Run the new applyPending preset test**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target app_state_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build -R AppState --output-on-failure`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target app_state_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build -R AppState --output-on-failure`
 Expected: 3 tests pass.
 
 - [ ] **Step 6: Wire the panel + preset into main.cpp**
 
-In `ShaderGlassLinux/src/main.cpp`, add `#include "ui/PresetBrowserPanel.h"`.
+In `ShaderScope/src/main.cpp`, add `#include "ui/PresetBrowserPanel.h"`.
 
 Inside `runWindowed`, after the `SourcePickerPanel sourcePanel{a.captureKind};` line, add:
 
@@ -1789,15 +1789,15 @@ The `--preset` initial seeding replaces the existing `buildPipelineSource(a) →
 
 - [ ] **Step 7: Build + manual smoke**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
 Expected: green.
 
-Run: `timeout 4 /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root 2>&1 | head -8`
+Run: `timeout 4 /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope --capture x11-screen --source monitor:root 2>&1 | head -8`
 Expected: `[INFO] PresetLibrary: scanning ...staging` line + `[INFO] Rendering x11-screen (...)`. Two ImGui panels (Source, Presets) visible.
 
 - [ ] **Step 8: Full ctest run**
 
-Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build 2>&1 | tail -6`
+Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build 2>&1 | tail -6`
 Expected: 41 tests pass (38 prior + 1 new AppState preset test + 3 new PresetLibrary minus dedup).
 
 If the totals don't match, count actual tests via `ctest -N` and update the manual-test checklist line accordingly.
@@ -1809,7 +1809,7 @@ Append to `docs/manual-tests-m4.md` after the Phase A section:
 ```markdown
 ## Phase B — Preset library + browser
 
-- [ ] `shaderglass --capture x11-screen --source monitor:root` shows a
+- [ ] `shaderscope --capture x11-screen --source monitor:root` shows a
       "Presets" panel listing the starter library grouped by category.
 - [ ] Clicking a preset (e.g. `crt-easymode`) visibly changes the rendered
       output within ~200ms (first compile) and instantly on revisit.
@@ -1823,16 +1823,16 @@ Append to `docs/manual-tests-m4.md` after the Phase A section:
 - [ ] **Step 10: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/render/Preset.h \
-    ShaderGlassLinux/src/render/Preset.cpp \
-    ShaderGlassLinux/src/ui/AppState.h \
-    ShaderGlassLinux/src/ui/AppState.cpp \
-    ShaderGlassLinux/src/main.cpp \
-    ShaderGlassLinux/tests/test_app_state.cpp \
-    ShaderGlassLinux/CMakeLists.txt \
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/render/Preset.h \
+    ShaderScope/src/render/Preset.cpp \
+    ShaderScope/src/ui/AppState.h \
+    ShaderScope/src/ui/AppState.cpp \
+    ShaderScope/src/main.cpp \
+    ShaderScope/tests/test_app_state.cpp \
+    ShaderScope/CMakeLists.txt \
     docs/manual-tests-m4.md
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(render): Preset class + applyPending preset-switch path
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(render): Preset class + applyPending preset-switch path
 
 Preset wraps a compiled PresetDef + its ShaderPipeline; single-pass
 only for M4 (multi-pass throws and is caught into a toast). AppState::
@@ -1849,14 +1849,14 @@ parameters lands in Phase C T13.
 ### Task 13: ShaderPipeline gains optional UBO binding (slang convention)
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/render/ShaderPipeline.h`
-- Modify: `ShaderGlassLinux/src/render/ShaderPipeline.cpp`
+- Modify: `ShaderScope/src/render/ShaderPipeline.h`
+- Modify: `ShaderScope/src/render/ShaderPipeline.cpp`
 
 The existing pipeline binds a sampler at descriptor set 0 binding 0 — that matches the built-in passthrough shader. Slang shaders compiled from RetroArch follow a different convention: UBO at binding 0, "Source" sampler at binding 2. To support both without breaking passthrough, add a new constructor overload that opts into the slang-style layout when `uboSize > 0`.
 
 - [ ] **Step 1: Add the new constructor + UBO buffer field to the header**
 
-Modify `ShaderGlassLinux/src/render/ShaderPipeline.h`. Replace the existing class body with:
+Modify `ShaderScope/src/render/ShaderPipeline.h`. Replace the existing class body with:
 
 ```cpp
 class ShaderPipeline {
@@ -1918,7 +1918,7 @@ private:
 
 - [ ] **Step 2: Implement the new constructor + UBO setup**
 
-Modify `ShaderGlassLinux/src/render/ShaderPipeline.cpp`. Refactor the existing constructor body into a shared `createPipeline(...)` private helper that handles both paths (no UBO when `uboSize == 0`).
+Modify `ShaderScope/src/render/ShaderPipeline.cpp`. Refactor the existing constructor body into a shared `createPipeline(...)` private helper that handles both paths (no UBO when `uboSize == 0`).
 
 The shared helper differs from the existing constructor only in:
 - Descriptor set layout — when `uboSize > 0`, two bindings (UBO at 0, sampler at 2) instead of one (sampler at 0).
@@ -2014,21 +2014,21 @@ In the destructor, also tear down the UBO resources:
 
 - [ ] **Step 3: Build to confirm both paths still compile**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass_core`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope_core`
 Expected: green.
 
 - [ ] **Step 4: Smoke — the existing passthrough path still renders**
 
-Run: `timeout 2 /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root 2>&1 | head -5`
+Run: `timeout 2 /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope --capture x11-screen --source monitor:root 2>&1 | head -5`
 Expected: same `[INFO] Rendering x11-screen` line; no Vulkan validation errors. (Pure refactor for the existing path — no behaviour change yet.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/render/ShaderPipeline.h \
-    ShaderGlassLinux/src/render/ShaderPipeline.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(render): ShaderPipeline gains optional UBO binding (slang style)
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/render/ShaderPipeline.h \
+    ShaderScope/src/render/ShaderPipeline.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(render): ShaderPipeline gains optional UBO binding (slang style)
 
 New tag-dispatched constructor takes uboSize; allocates a host-visible
 host-coherent UBO, maps it persistently, exposes mappedUbo()/uboSizeBytes().
@@ -2043,14 +2043,14 @@ preserved for the built-in passthrough shader.
 ### Task 14: Preset owns UBO + activeParams; updates UBO on demand
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/render/Preset.h`
-- Modify: `ShaderGlassLinux/src/render/Preset.cpp`
+- Modify: `ShaderScope/src/render/Preset.h`
+- Modify: `ShaderScope/src/render/Preset.cpp`
 
 Switch the Preset constructor to the new ShaderPipeline UBO-mode. Copy `ShaderDef::Params` into the Preset's `activeParams` vector. Add `updateUbo()` which copies each param's `currentValue` into the mapped UBO at its declared `offset`.
 
 - [ ] **Step 1: Update Preset header**
 
-Modify `ShaderGlassLinux/src/render/Preset.h`. Replace the class body with:
+Modify `ShaderScope/src/render/Preset.h`. Replace the class body with:
 
 ```cpp
 class Preset {
@@ -2088,7 +2088,7 @@ Add `#include "ShaderDef.h"` (for `ShaderParam`) and `#include <vector>` near th
 
 - [ ] **Step 2: Update Preset implementation**
 
-Modify `ShaderGlassLinux/src/render/Preset.cpp`. Replace the constructor body with:
+Modify `ShaderScope/src/render/Preset.cpp`. Replace the constructor body with:
 
 ```cpp
 Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
@@ -2172,21 +2172,21 @@ Add `#include <cstring>` to the includes.
 
 - [ ] **Step 3: Build**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass_core`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope_core`
 Expected: green.
 
 - [ ] **Step 4: Re-run AppState tests — they should still pass since they use stock.slangp**
 
-Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build -R AppState --output-on-failure`
+Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build -R AppState --output-on-failure`
 Expected: 3 tests pass.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/render/Preset.h \
-    ShaderGlassLinux/src/render/Preset.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(render): Preset owns activeParams + UBO; updateUbo() per frame
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/render/Preset.h \
+    ShaderScope/src/render/Preset.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(render): Preset owns activeParams + UBO; updateUbo() per frame
 
 Constructor copies ShaderDef::Params (mutable currentValue) and sizes
 the pipeline's UBO from ParamsSize(0). updateUbo() copies currentValues
@@ -2203,9 +2203,9 @@ Buffer 1+ params are detected and logged; only buffer 0 is bound in M4
 ### Task 15: ParamsPanel — widgets per type + Reset button
 
 **Files:**
-- Create: `ShaderGlassLinux/src/ui/ParamsPanel.h`
-- Create: `ShaderGlassLinux/src/ui/ParamsPanel.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add `src/ui/ParamsPanel.cpp`)
+- Create: `ShaderScope/src/ui/ParamsPanel.h`
+- Create: `ShaderScope/src/ui/ParamsPanel.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add `src/ui/ParamsPanel.cpp`)
 
 Widget choice is driven by ShaderParam attributes (`stepValue`, `minValue`, `maxValue`) since RetroArch params are always floats. Heuristic:
 - `step >= 1.0 && min == 0 && max == 1` → `Checkbox` (boolean toggle)
@@ -2214,7 +2214,7 @@ Widget choice is driven by ShaderParam attributes (`stepValue`, `minValue`, `max
 
 - [ ] **Step 1: Create the header**
 
-Create `ShaderGlassLinux/src/ui/ParamsPanel.h`:
+Create `ShaderScope/src/ui/ParamsPanel.h`:
 
 ```cpp
 #pragma once
@@ -2229,7 +2229,7 @@ public:
 
 - [ ] **Step 2: Create the implementation**
 
-Create `ShaderGlassLinux/src/ui/ParamsPanel.cpp`:
+Create `ShaderScope/src/ui/ParamsPanel.cpp`:
 
 ```cpp
 #include "ParamsPanel.h"
@@ -2314,31 +2314,31 @@ void ParamsPanel::draw(AppState& state) {
 
 - [ ] **Step 3: Wire CMake**
 
-Add `src/ui/ParamsPanel.cpp` to the `shaderglass_core` source list.
+Add `src/ui/ParamsPanel.cpp` to the `shaderscope_core` source list.
 
 - [ ] **Step 4: Wire into the main loop**
 
-In `ShaderGlassLinux/src/main.cpp`, add `#include "ui/ParamsPanel.h"`.
+In `ShaderScope/src/main.cpp`, add `#include "ui/ParamsPanel.h"`.
 
 After `PresetBrowserPanel presetPanel;`, add `ParamsPanel paramsPanel;`. In the frame body, after `presetPanel.draw(state);`, add `paramsPanel.draw(state);`.
 
 - [ ] **Step 5: Build + smoke**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
 Expected: green.
 
-Run: `timeout 4 /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root --preset /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaders-staging/scanline.slangp 2>&1 | head -6`
+Run: `timeout 4 /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope --capture x11-screen --source monitor:root --preset /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaders-staging/scanline.slangp 2>&1 | head -6`
 Expected: `[INFO] Rendering` line + window opens with Source/Presets/Parameters panels. The Parameters panel lists scanline's params (if any) with sliders.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/ParamsPanel.h \
-    ShaderGlassLinux/src/ui/ParamsPanel.cpp \
-    ShaderGlassLinux/src/main.cpp \
-    ShaderGlassLinux/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): ParamsPanel — Checkbox/SliderInt/SliderFloat per param
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/ParamsPanel.h \
+    ShaderScope/src/ui/ParamsPanel.cpp \
+    ShaderScope/src/main.cpp \
+    ShaderScope/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): ParamsPanel — Checkbox/SliderInt/SliderFloat per param
 
 Widget heuristic from ShaderParam attributes: step>=1+min0+max1 → bool,
 step>=1 → int, else float. Reset button restores declared defaults +
@@ -2352,13 +2352,13 @@ the shader on the next frame.
 ### Task 16: Preset-switch resets activeParams to declared defaults
 
 **Files:**
-- Modify: `ShaderGlassLinux/tests/test_app_state.cpp` (new test case)
+- Modify: `ShaderScope/tests/test_app_state.cpp` (new test case)
 
 This behaviour is already provided by Phase B's `applyPending` (a fresh `Preset` always copies `ShaderDef::Params` whose `currentValue == defaultValue`). Add an explicit test so the behaviour can't regress.
 
 - [ ] **Step 1: Add the test**
 
-Append to `ShaderGlassLinux/tests/test_app_state.cpp`:
+Append to `ShaderScope/tests/test_app_state.cpp`:
 
 ```cpp
 TEST(AppState, PresetSwitchResetsActiveParamsToDefaults) {
@@ -2410,16 +2410,16 @@ auto next = std::make_unique<Preset>(*ctx, want, fmt);
 
 - [ ] **Step 2: Run the test**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target app_state_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build -R AppState --output-on-failure`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target app_state_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build -R AppState --output-on-failure`
 Expected: 4 tests pass (or 3 pass + 1 skip if stock.slangp has no params).
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/tests/test_app_state.cpp \
-    ShaderGlassLinux/src/ui/AppState.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "test(ui): preset-switch resets activeParams to declared defaults
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/tests/test_app_state.cpp \
+    ShaderScope/src/ui/AppState.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "test(ui): preset-switch resets activeParams to declared defaults
 
 Belt-and-braces test for an invariant already enforced by Preset's
 constructor copying ShaderDef::Params. Catches future regressions
@@ -2433,14 +2433,14 @@ explicitly chose reset-on-switch).
 ### Task 17: Per-frame UBO update + Phase C verification
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp` (per-frame `state.preset->updateUbo()`)
+- Modify: `ShaderScope/src/main.cpp` (per-frame `state.preset->updateUbo()`)
 - Modify: `docs/manual-tests-m4.md` (Phase C entries)
 
 ParamsPanel calls `updateUbo()` on its own edits, but a per-frame call is a cheap safety net for any code path that mutates `currentValue` without going through the panel (e.g. a future automation hook). Also handles the case where ImGui drag-slider doesn't emit a value-changed signal between frames but the underlying float was mutated by user input.
 
 - [ ] **Step 1: Add the per-frame call**
 
-In `ShaderGlassLinux/src/main.cpp`, inside the frame loop body, immediately after `state.applyPending();` add:
+In `ShaderScope/src/main.cpp`, inside the frame loop body, immediately after `state.applyPending();` add:
 
 ```cpp
         if (state.preset) state.preset->updateUbo();
@@ -2448,10 +2448,10 @@ In `ShaderGlassLinux/src/main.cpp`, inside the frame loop body, immediately afte
 
 - [ ] **Step 2: Build + smoke**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
 Expected: green.
 
-Run: `timeout 4 /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root --preset /home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaders-staging/crt-easymode.slangp 2>&1 | head -5`
+Run: `timeout 4 /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope --capture x11-screen --source monitor:root --preset /home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaders-staging/crt-easymode.slangp 2>&1 | head -5`
 Expected: `[INFO] Rendering x11-screen` line + window opens with the CRT shader actually applied (scanlines visible) and the Parameters panel listing the crt-easymode knobs.
 
 - [ ] **Step 3: Extend manual-tests-m4.md with Phase C entries**
@@ -2477,10 +2477,10 @@ Append to `docs/manual-tests-m4.md`:
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/main.cpp \
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/main.cpp \
     docs/manual-tests-m4.md
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): per-frame Preset::updateUbo() in the main loop
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): per-frame Preset::updateUbo() in the main loop
 
 ParamsPanel already calls updateUbo() on edit, but a per-frame call
 is a cheap safety net for any future code path that mutates
@@ -2496,15 +2496,15 @@ CRT preset slider drags visibly change the rendered output.
 ### Task 18: ConfigStore — load/save with atomic write + malformed recovery
 
 **Files:**
-- Create: `ShaderGlassLinux/src/util/ConfigStore.h`
-- Create: `ShaderGlassLinux/src/util/ConfigStore.cpp`
-- Create: `ShaderGlassLinux/tests/test_config_store.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add `src/util/ConfigStore.cpp`; link `nlohmann_json::nlohmann_json`)
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt` (register `config_store_tests`)
+- Create: `ShaderScope/src/util/ConfigStore.h`
+- Create: `ShaderScope/src/util/ConfigStore.cpp`
+- Create: `ShaderScope/tests/test_config_store.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add `src/util/ConfigStore.cpp`; link `nlohmann_json::nlohmann_json`)
+- Modify: `ShaderScope/tests/CMakeLists.txt` (register `config_store_tests`)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `ShaderGlassLinux/tests/test_config_store.cpp`:
+Create `ShaderScope/tests/test_config_store.cpp`:
 
 ```cpp
 // ConfigStore round-trip + atomic-write + malformed-file recovery.
@@ -2518,7 +2518,7 @@ namespace fs = std::filesystem;
 
 namespace {
 fs::path tmpFile(const std::string& tag) {
-    auto p = fs::temp_directory_path() / ("shaderglass_cfg_" + tag + ".json");
+    auto p = fs::temp_directory_path() / ("shaderscope_cfg_" + tag + ".json");
     fs::remove(p);
     return p;
 }
@@ -2592,7 +2592,7 @@ TEST(ConfigStore, ResetWipesFileOnDisk) {
 
 - [ ] **Step 2: Create the header**
 
-Create `ShaderGlassLinux/src/util/ConfigStore.h`:
+Create `ShaderScope/src/util/ConfigStore.h`:
 
 ```cpp
 #pragma once
@@ -2608,8 +2608,8 @@ struct LastSource {
 
 class ConfigStore {
 public:
-    // Default path: $XDG_CONFIG_HOME/shaderglass/config.json
-    //               (or $HOME/.config/shaderglass/config.json)
+    // Default path: $XDG_CONFIG_HOME/shaderscope/config.json
+    //               (or $HOME/.config/shaderscope/config.json)
     static std::filesystem::path defaultPath();
 
     explicit ConfigStore(std::filesystem::path path = defaultPath());
@@ -2658,7 +2658,7 @@ private:
 
 - [ ] **Step 3: Create the implementation**
 
-Create `ShaderGlassLinux/src/util/ConfigStore.cpp`:
+Create `ShaderScope/src/util/ConfigStore.cpp`:
 
 ```cpp
 #include "ConfigStore.h"
@@ -2680,11 +2680,11 @@ static int g_tickIntervalMs      = 16;   // ~60Hz; updated via setTickInterval
 
 fs::path ConfigStore::defaultPath() {
     if (const char* xdg = std::getenv("XDG_CONFIG_HOME")) {
-        return fs::path(xdg) / "shaderglass/config.json";
+        return fs::path(xdg) / "shaderscope/config.json";
     } else if (const char* home = std::getenv("HOME")) {
-        return fs::path(home) / ".config/shaderglass/config.json";
+        return fs::path(home) / ".config/shaderscope/config.json";
     }
-    return fs::current_path() / "shaderglass_config.json";
+    return fs::current_path() / "shaderscope_config.json";
 }
 
 ConfigStore::ConfigStore(fs::path path) : m_path(std::move(path)) {}
@@ -2811,31 +2811,31 @@ void ConfigStore::setPresetParams(const std::string& presetPath,
 
 - [ ] **Step 4: Wire CMake**
 
-In `ShaderGlassLinux/CMakeLists.txt`, add `src/util/ConfigStore.cpp` to the `shaderglass_core` source list. In the same `target_link_libraries` block, add `nlohmann_json::nlohmann_json` to the PUBLIC list (so the tests can include `<nlohmann/json.hpp>` if they ever need to).
+In `ShaderScope/CMakeLists.txt`, add `src/util/ConfigStore.cpp` to the `shaderscope_core` source list. In the same `target_link_libraries` block, add `nlohmann_json::nlohmann_json` to the PUBLIC list (so the tests can include `<nlohmann/json.hpp>` if they ever need to).
 
-In `ShaderGlassLinux/tests/CMakeLists.txt`, add:
+In `ShaderScope/tests/CMakeLists.txt`, add:
 
 ```cmake
 add_executable(config_store_tests test_config_store.cpp)
-target_link_libraries(config_store_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(config_store_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(config_store_tests)
 ```
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target config_store_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build -R ConfigStore --output-on-failure`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target config_store_tests && ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build -R ConfigStore --output-on-failure`
 Expected: 5 tests pass.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/util/ConfigStore.h \
-    ShaderGlassLinux/src/util/ConfigStore.cpp \
-    ShaderGlassLinux/tests/test_config_store.cpp \
-    ShaderGlassLinux/CMakeLists.txt \
-    ShaderGlassLinux/tests/CMakeLists.txt
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(util): ConfigStore — JSON load/save with debounce + atomic write
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/util/ConfigStore.h \
+    ShaderScope/src/util/ConfigStore.cpp \
+    ShaderScope/tests/test_config_store.cpp \
+    ShaderScope/CMakeLists.txt \
+    ShaderScope/tests/CMakeLists.txt
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(util): ConfigStore — JSON load/save with debounce + atomic write
 
 Schema versioned (v1): lastSource{kind,id}, lastPreset, presetParams.
 saveSync() writes via temp-file + rename; saveAsync() schedules a
@@ -2850,13 +2850,13 @@ round-trip + missing/malformed file + atomic write + reset.
 ### Task 19: Session auto-resume on launch
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/AppState.h` (add `config` pointer)
-- Modify: `ShaderGlassLinux/src/ui/AppState.cpp` (write-through on apply; param save)
-- Modify: `ShaderGlassLinux/src/main.cpp` (load config + seed pending intents before frame loop)
+- Modify: `ShaderScope/src/ui/AppState.h` (add `config` pointer)
+- Modify: `ShaderScope/src/ui/AppState.cpp` (write-through on apply; param save)
+- Modify: `ShaderScope/src/main.cpp` (load config + seed pending intents before frame loop)
 
 - [ ] **Step 1: Wire `ConfigStore*` into AppState**
 
-In `ShaderGlassLinux/src/ui/AppState.h`, add to the construction-time wiring block:
+In `ShaderScope/src/ui/AppState.h`, add to the construction-time wiring block:
 
 ```cpp
     ConfigStore*    config    = nullptr;
@@ -2886,22 +2886,22 @@ In `AppState.cpp`, after each successful source switch, add:
 This requires `CaptureBackend::kindName()` returning the matching kind string. Add it to the base + each derived class:
 
 ```cpp
-// ShaderGlassLinux/src/capture/CaptureBackend.h — add inside `class CaptureBackend`:
+// ShaderScope/src/capture/CaptureBackend.h — add inside `class CaptureBackend`:
 virtual std::string kindName() const = 0;
 ```
 
 ```cpp
-// ShaderGlassLinux/src/capture/X11Capture.h — add to public section:
+// ShaderScope/src/capture/X11Capture.h — add to public section:
 std::string kindName() const override { return "x11-screen"; }
 ```
 
 ```cpp
-// ShaderGlassLinux/src/capture/WaylandCapture.h — add to public section:
+// ShaderScope/src/capture/WaylandCapture.h — add to public section:
 std::string kindName() const override { return "wayland-screen"; }
 ```
 
 ```cpp
-// ShaderGlassLinux/src/capture/StaticImageCapture.h — add to public section:
+// ShaderScope/src/capture/StaticImageCapture.h — add to public section:
 std::string kindName() const override { return "static-image"; }
 ```
 
@@ -2936,7 +2936,7 @@ Restore saved params right after loading the Preset:
 
 - [ ] **Step 3: Seed pending intents from config on launch in main**
 
-In `ShaderGlassLinux/src/main.cpp`, near the top of `runWindowed` (before constructing capture/preset panels), add:
+In `ShaderScope/src/main.cpp`, near the top of `runWindowed` (before constructing capture/preset panels), add:
 
 ```cpp
     ConfigStore config;
@@ -2963,16 +2963,16 @@ Place this AFTER `state.refreshSources()` is called so the source list is popula
 
 - [ ] **Step 4: Build + smoke a round trip**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
 Expected: green.
 
 Round-trip smoke: 1) launch with explicit `--preset crt-easymode.slangp`, exit immediately; 2) launch with no `--preset`; the config should auto-resume to crt-easymode.
 
 ```bash
-SG=/home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass
-PRESET=/home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaders-staging/crt-easymode.slangp
+SG=/home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope
+PRESET=/home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaders-staging/crt-easymode.slangp
 # Wipe config first
-rm -f "$HOME/.config/shaderglass/config.json"
+rm -f "$HOME/.config/shaderscope/config.json"
 # First run: explicit preset, brief render then exit
 timeout 2 $SG --capture x11-screen --source monitor:root --preset $PRESET 2>&1 | head -3
 # Second run: no preset flag; should auto-resume
@@ -2984,15 +2984,15 @@ Expected: second run logs `[INFO] AppState: loaded preset .../crt-easymode.slang
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/AppState.h \
-    ShaderGlassLinux/src/ui/AppState.cpp \
-    ShaderGlassLinux/src/main.cpp \
-    ShaderGlassLinux/src/capture/CaptureBackend.h \
-    ShaderGlassLinux/src/capture/X11Capture.cpp \
-    ShaderGlassLinux/src/capture/WaylandCapture.cpp \
-    ShaderGlassLinux/src/capture/StaticImageCapture.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): session auto-resume — config seeds pending intents on launch
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/AppState.h \
+    ShaderScope/src/ui/AppState.cpp \
+    ShaderScope/src/main.cpp \
+    ShaderScope/src/capture/CaptureBackend.h \
+    ShaderScope/src/capture/X11Capture.cpp \
+    ShaderScope/src/capture/WaylandCapture.cpp \
+    ShaderScope/src/capture/StaticImageCapture.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): session auto-resume — config seeds pending intents on launch
 
 applyPending writes through to ConfigStore on source/preset changes
 and restores saved per-preset param values when a preset loads. main()
@@ -3009,12 +3009,12 @@ owned the saved source id.
 ### Task 20: ParamsPanel triggers debounced save + shutdown sync
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/ParamsPanel.cpp`
-- Modify: `ShaderGlassLinux/src/main.cpp` (`config.tick()` per frame; `saveSync()` on exit)
+- Modify: `ShaderScope/src/ui/ParamsPanel.cpp`
+- Modify: `ShaderScope/src/main.cpp` (`config.tick()` per frame; `saveSync()` on exit)
 
 - [ ] **Step 1: ParamsPanel writes params back to ConfigStore on edit**
 
-Modify `ShaderGlassLinux/src/ui/ParamsPanel.cpp`. At the bottom of `draw()`, after `state.preset->updateUbo();`, add:
+Modify `ShaderScope/src/ui/ParamsPanel.cpp`. At the bottom of `draw()`, after `state.preset->updateUbo();`, add:
 
 ```cpp
     if (edited && state.config) {
@@ -3031,7 +3031,7 @@ Modify `ShaderGlassLinux/src/ui/ParamsPanel.cpp`. At the bottom of `draw()`, aft
 
 - [ ] **Step 2: Per-frame `config.tick()` + shutdown `saveSync()`**
 
-In `ShaderGlassLinux/src/main.cpp`, inside the frame loop body, after `state.applyPending();`, add:
+In `ShaderScope/src/main.cpp`, inside the frame loop body, after `state.applyPending();`, add:
 
 ```cpp
         config.tick();
@@ -3045,7 +3045,7 @@ After the `while (window.pollEvents()) { … }` loop exits, before `releasePipel
 
 - [ ] **Step 3: Build + smoke**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
 Expected: green.
 
 Manual: launch the binary, switch to crt-easymode, tweak a slider, exit; re-launch; the slider should be at the tweaked value.
@@ -3053,10 +3053,10 @@ Manual: launch the binary, switch to crt-easymode, tweak a slider, exit; re-laun
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/ParamsPanel.cpp \
-    ShaderGlassLinux/src/main.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): ParamsPanel persists edits; tick() debounce + saveSync on exit
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/ParamsPanel.cpp \
+    ShaderScope/src/main.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): ParamsPanel persists edits; tick() debounce + saveSync on exit
 
 ParamsPanel.draw() snapshots params on edit and pushes to ConfigStore::
 setPresetParams which schedules a 500ms debounced save. main()'s frame
@@ -3070,13 +3070,13 @@ loop guarantees the final state lands on disk before exit.
 ### Task 21: ImGui dock layout persistence
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/ui/ImGuiLayer.cpp`
+- Modify: `ShaderScope/src/ui/ImGuiLayer.cpp`
 
-ImGui already auto-saves its dock layout to `imgui.ini` next to the working directory. M4 wants this file under `~/.config/shaderglass/` instead, so dock layout survives across `cd` invocations.
+ImGui already auto-saves its dock layout to `imgui.ini` next to the working directory. M4 wants this file under `~/.config/shaderscope/` instead, so dock layout survives across `cd` invocations.
 
 - [ ] **Step 1: Point ImGui at the config dir**
 
-In `ShaderGlassLinux/src/ui/ImGuiLayer.cpp`, inside the constructor before `ImGui::CreateContext()`, prepare the desired path; after `ImGui::CreateContext()` set `io.IniFilename` to a stable string. ImGui borrows the pointer — keep the storage alive for the layer's lifetime.
+In `ShaderScope/src/ui/ImGuiLayer.cpp`, inside the constructor before `ImGui::CreateContext()`, prepare the desired path; after `ImGui::CreateContext()` set `io.IniFilename` to a stable string. ImGui borrows the pointer — keep the storage alive for the layer's lifetime.
 
 Add a private member:
 
@@ -3090,11 +3090,11 @@ In the constructor, after `ImGui::CreateContext()`:
 
 ```cpp
     if (const char* xdg = std::getenv("XDG_CONFIG_HOME")) {
-        m_iniPath = std::string(xdg) + "/shaderglass/imgui.ini";
+        m_iniPath = std::string(xdg) + "/shaderscope/imgui.ini";
     } else if (const char* home = std::getenv("HOME")) {
-        m_iniPath = std::string(home) + "/.config/shaderglass/imgui.ini";
+        m_iniPath = std::string(home) + "/.config/shaderscope/imgui.ini";
     } else {
-        m_iniPath = "shaderglass_imgui.ini";
+        m_iniPath = "shaderscope_imgui.ini";
     }
     std::filesystem::create_directories(
         std::filesystem::path(m_iniPath).parent_path());
@@ -3105,20 +3105,20 @@ Add `#include <filesystem>` to the file.
 
 - [ ] **Step 2: Build + smoke**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
 Expected: green.
 
-Manual: launch, drag a panel to a different dock location, exit; re-launch; layout should be restored. The file `~/.config/shaderglass/imgui.ini` should exist after exit.
+Manual: launch, drag a panel to a different dock location, exit; re-launch; layout should be restored. The file `~/.config/shaderscope/imgui.ini` should exist after exit.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/ui/ImGuiLayer.cpp \
-    ShaderGlassLinux/src/ui/ImGuiLayer.h
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(ui): persist ImGui dock layout under \$XDG_CONFIG_HOME/shaderglass
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/ui/ImGuiLayer.cpp \
+    ShaderScope/src/ui/ImGuiLayer.h
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(ui): persist ImGui dock layout under \$XDG_CONFIG_HOME/shaderscope
 
-io.IniFilename now points at ~/.config/shaderglass/imgui.ini so the
+io.IniFilename now points at ~/.config/shaderscope/imgui.ini so the
 docked layout survives launching from different working directories.
 ImGui handles read/write automatically; we just own the path string.
 "
@@ -3129,13 +3129,13 @@ ImGui handles read/write automatically; we just own the path string.
 ### Task 22: `--reset-config` CLI flag + GUI-first no-args launch
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp`
+- Modify: `ShaderScope/src/main.cpp`
 
 Two related tweaks bundled: the `--reset-config` escape hatch when config goes bad, and the GUI-first launch behaviour that was promised in spec §1 but parked until now. With session restore in place, the no-args launch becomes meaningful — open the window with the picker, auto-resume to the last source if available.
 
 - [ ] **Step 1: Add `--reset-config` to the parser**
 
-Modify `parseArgs` in `ShaderGlassLinux/src/main.cpp`. Add a bool to `Args`:
+Modify `parseArgs` in `ShaderScope/src/main.cpp`. Add a bool to `Args`:
 
 ```cpp
     bool resetConfig = false;
@@ -3151,7 +3151,7 @@ And a branch in the parser:
 Also update `printUsage` — add to the USAGE section:
 
 ```cpp
-        "  --reset-config        Delete ~/.config/shaderglass/config.json "
+        "  --reset-config        Delete ~/.config/shaderscope/config.json "
                                   "and exit (escape hatch when the saved\n"
         "                        session is bad).\n"
 ```
@@ -3165,7 +3165,7 @@ In `main()`, before the existing `if (a.debugPortal) ...` line, add:
         ConfigStore cfg;
         cfg.load();
         cfg.resetAndDelete();
-        std::fprintf(stdout, "shaderglass: removed %s\n",
+        std::fprintf(stdout, "shaderscope: removed %s\n",
                      ConfigStore::defaultPath().string().c_str());
         return 0;
     }
@@ -3173,7 +3173,7 @@ In `main()`, before the existing `if (a.debugPortal) ...` line, add:
 
 Add `#include "util/ConfigStore.h"` to `main.cpp`'s includes.
 
-- [ ] **Step 3: Make `shaderglass` (no args) open the GUI**
+- [ ] **Step 3: Make `shaderscope` (no args) open the GUI**
 
 `runWindowed` currently aborts when `a.input.empty() && a.captureKind.empty()` — relax that to: if no capture kind was given but we have a `config.lastSource`, infer the capture kind from that. If we have neither, infer the capture kind from the environment (matching the M3 backend-selection logic).
 
@@ -3181,7 +3181,7 @@ Replace the existing guard at the top of `runWindowed`:
 
 ```cpp
     if (a.input.empty() && a.captureKind.empty()) {
-        std::fprintf(stderr, "shaderglass: no input or capture source specified\n\n");
+        std::fprintf(stderr, "shaderscope: no input or capture source specified\n\n");
         printUsage(stderr);
         return 2;
     }
@@ -3203,7 +3203,7 @@ with:
         } else if (std::getenv("DISPLAY")) {
             const_cast<Args&>(a).captureKind = "x11-screen";
         } else {
-            std::fprintf(stderr, "shaderglass: no DISPLAY/WAYLAND_DISPLAY "
+            std::fprintf(stderr, "shaderscope: no DISPLAY/WAYLAND_DISPLAY "
                          "and no saved session — can't infer a backend.\n\n");
             printUsage(stderr);
             return 2;
@@ -3215,15 +3215,15 @@ Prefer changing `runWindowed`'s signature to take `Args&` (non-const) — drop t
 
 - [ ] **Step 4: Build + smoke**
 
-Run: `cmake --build /home/blake/Documents/GitHub/ShaderGlass/build --target shaderglass`
+Run: `cmake --build /home/blake/Documents/GitHub/ShaderScope/build --target shaderscope`
 Expected: green.
 
 Smoke:
 
 ```bash
-SG=/home/blake/Documents/GitHub/ShaderGlass/build/ShaderGlassLinux/shaderglass
+SG=/home/blake/Documents/GitHub/ShaderScope/build/ShaderScope/shaderscope
 $SG --reset-config; echo "exit=$?"
-# Expected: "shaderglass: removed /home/.../config.json" + exit=0
+# Expected: "shaderscope: removed /home/.../config.json" + exit=0
 timeout 2 $SG 2>&1 | head -3; echo "exit=$?"
 # Expected: window opens with picker; exits cleanly (timeout) with the
 # usual render lines once a source is picked. Exit 124 from timeout is fine.
@@ -3232,12 +3232,12 @@ timeout 2 $SG 2>&1 | head -3; echo "exit=$?"
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
-    ShaderGlassLinux/src/main.cpp
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "feat(cli): --reset-config + GUI-first no-args launch
+git -C /home/blake/Documents/GitHub/ShaderScope add \
+    ShaderScope/src/main.cpp
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "feat(cli): --reset-config + GUI-first no-args launch
 
---reset-config deletes ~/.config/shaderglass/config.json and exits. With
-session-restore in place from T19, bare 'shaderglass' now infers the
+--reset-config deletes ~/.config/shaderscope/config.json and exits. With
+session-restore in place from T19, bare 'shaderscope' now infers the
 capture kind from the saved session (or WAYLAND_DISPLAY/DISPLAY env)
 and opens the GUI — matching the spec's GUI-first entry-flow promise.
 "
@@ -3253,7 +3253,7 @@ and opens the GUI — matching the spec's GUI-first entry-flow promise.
 
 - [ ] **Step 1: Run the full ctest suite + capture count**
 
-Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderGlass/build --output-on-failure 2>&1 | tail -8`
+Run: `ctest --test-dir /home/blake/Documents/GitHub/ShaderScope/build --output-on-failure 2>&1 | tail -8`
 Expected: ~50 tests pass (38 from M3 baseline + ~2 AppState + 3 PresetLibrary + 5 ConfigStore + others). One pre-existing env skip (DmaBufImport.ImportsGbmAllocatedBuffer).
 
 If a test fails, fix root cause before continuing. If `cmake --install` ever wedges on the staging path, ensure CMake re-ran since Task 9.
@@ -3265,17 +3265,17 @@ Append to `docs/manual-tests-m4.md`:
 ```markdown
 ## Phase D — Config persistence + session restore
 
-- [ ] `shaderglass --reset-config` exits 0 with "removed ..." message;
-      ~/.config/shaderglass/config.json is gone afterwards.
+- [ ] `shaderscope --reset-config` exits 0 with "removed ..." message;
+      ~/.config/shaderscope/config.json is gone afterwards.
 - [ ] Launch with `--capture x11-screen --source monitor:root --preset
       .../crt-easymode.slangp`, tweak a few sliders, exit.
-- [ ] Re-launch `shaderglass --capture x11-screen --source monitor:root`
+- [ ] Re-launch `shaderscope --capture x11-screen --source monitor:root`
       (no --preset). crt-easymode is auto-restored with the tweaks intact.
-- [ ] Re-launch `shaderglass` (no flags). Window opens; same source +
+- [ ] Re-launch `shaderscope` (no flags). Window opens; same source +
       preset + params are restored.
 - [ ] Drag a panel to a new dock position, exit, re-launch. The new
       dock layout is restored (imgui.ini is the proof).
-- [ ] Hand-corrupt ~/.config/shaderglass/config.json (e.g. `echo "{"
+- [ ] Hand-corrupt ~/.config/shaderscope/config.json (e.g. `echo "{"
       > $_`); re-launch. App starts with defaults, logs a warning.
 
 ## M4 final integration
@@ -3283,8 +3283,8 @@ Append to `docs/manual-tests-m4.md`:
 - [ ] All Phase A/B/C/D automated tests pass (`ctest`).
 - [ ] All Phase A/B/C/D manual checks pass on the user's actual desktop
       (X11 *and* Wayland, where applicable).
-- [ ] `shaderglass --version` still reports a sensible commit hash + date.
-- [ ] `shaderglass --help` includes the `--reset-config` line.
+- [ ] `shaderscope --version` still reports a sensible commit hash + date.
+- [ ] `shaderscope --help` includes the `--reset-config` line.
 - [ ] No new validation-layer errors in `cmake --build` or `ctest`
       output beyond the M3 baseline.
 ```
@@ -3311,13 +3311,13 @@ In the run-examples block, add:
 ```bash
 # GUI-first launch (no flags) — auto-resumes the last session, or opens
 # the picker if there's no saved state.
-./build/ShaderGlassLinux/shaderglass
+./build/ShaderScope/shaderscope
 
 # Reset a bad config:
-./build/ShaderGlassLinux/shaderglass --reset-config
+./build/ShaderScope/shaderscope --reset-config
 
 # Override the log verbosity:
-SHADERGLASS_LOG=debug ./build/ShaderGlassLinux/shaderglass
+SHADERSCOPE_LOG=debug ./build/ShaderScope/shaderscope
 ```
 
 - [ ] **Step 4: Final end-to-end manual smoke (operator)**
@@ -3329,14 +3329,14 @@ Operator runs through the entire `docs/manual-tests-m4.md` checklist on their ac
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/blake/Documents/GitHub/ShaderGlass add \
+git -C /home/blake/Documents/GitHub/ShaderScope add \
     docs/manual-tests-m4.md \
     docs/build-linux.md
-git -C /home/blake/Documents/GitHub/ShaderGlass commit -m "docs(linux): M4 manual-test checklist (Phase D + integration) + status
+git -C /home/blake/Documents/GitHub/ShaderScope commit -m "docs(linux): M4 manual-test checklist (Phase D + integration) + status
 
 Completes the M4 manual-test file with Phase D persistence + the final
 integration block. Updates build-linux.md to reflect ImGui + json deps
-and the new GUI-first / --reset-config / SHADERGLASS_LOG usage examples.
+and the new GUI-first / --reset-config / SHADERSCOPE_LOG usage examples.
 "
 ```
 

@@ -1,20 +1,20 @@
-# ShaderGlass Linux M3 — X11 Capture (Design)
+# ShaderScope Linux M3 — X11 Capture (Design)
 
 **Date:** 2026-05-17
 **Status:** Design — pending implementation plan
 **Reference parents:**
-- `docs/superpowers/specs/2026-05-06-shaderglass-linux-port-design.md` (overall Linux port architecture; M3 sketch at lines 164-167, 321-323)
-- `docs/superpowers/specs/2026-05-06-shaderglass-linux-m2-wayland-capture-design.md` (M2 design — M3 mirrors its component-split pattern)
+- `docs/superpowers/specs/2026-05-06-shaderscope-linux-port-design.md` (overall Linux port architecture; M3 sketch at lines 164-167, 321-323)
+- `docs/superpowers/specs/2026-05-06-shaderscope-linux-m2-wayland-capture-design.md` (M2 design — M3 mirrors its component-split pattern)
 
 ## Goals
 
-Implement the X11 capture path defined in the M1 architecture: read pixels from a user-selected monitor or top-level window via `XComposite` + `XShm`, expose captured frames through the existing `CaptureBackend` interface, and wire a `--capture x11-screen` flag so ShaderGlass renders the X11 desktop or a single X11 window in real time.
+Implement the X11 capture path defined in the M1 architecture: read pixels from a user-selected monitor or top-level window via `XComposite` + `XShm`, expose captured frames through the existing `CaptureBackend` interface, and wire a `--capture x11-screen` flag so ShaderScope renders the X11 desktop or a single X11 window in real time.
 
 End state of M3:
-- `./shaderglass --capture x11-screen --source monitor:root` renders the entire X11 desktop through the passthrough shader in a window.
-- `./shaderglass --capture x11-screen --source <monitor-output-name>` renders a specific connected output (e.g. `monitor:DP-1`).
-- `./shaderglass --capture x11-screen --source window:0x<xid>` and `--source <name-substring>` render a single top-level window. Source survives the source being minimized (via XComposite redirection) and survives window resize (cap re-creates the SHM segment).
-- `./shaderglass --capture x11-screen` with no `--source` prints the enumerated source list to stderr and exits 2.
+- `./shaderscope --capture x11-screen --source monitor:root` renders the entire X11 desktop through the passthrough shader in a window.
+- `./shaderscope --capture x11-screen --source <monitor-output-name>` renders a specific connected output (e.g. `monitor:DP-1`).
+- `./shaderscope --capture x11-screen --source window:0x<xid>` and `--source <name-substring>` render a single top-level window. Source survives the source being minimized (via XComposite redirection) and survives window resize (cap re-creates the SHM segment).
+- `./shaderscope --capture x11-screen` with no `--source` prints the enumerated source list to stderr and exits 2.
 - Headless and real-X regression tests cover the integration; manual smoke checklist documents window/monitor/error-path verification.
 
 ## Non-Goals
@@ -55,7 +55,7 @@ End state of M3:
 
 ### Files
 
-New under `ShaderGlassLinux/src/capture/`:
+New under `ShaderScope/src/capture/`:
 
 ```
 X11Capture.h / .cpp              # CaptureBackend impl, ~80 LoC
@@ -64,7 +64,7 @@ RealX11CaptureSession.h / .cpp   # Xlib + XComposite + XShm + XRandR, ~400-500 L
 FakeX11CaptureSession.h / .cpp   # synthetic frame producer for headless tests
 ```
 
-New under `ShaderGlassLinux/src/util/`:
+New under `ShaderScope/src/util/`:
 
 ```
 FourccToVk.h / .cpp              # one function: VkFormat fourcc_to_vk(uint32_t)
@@ -73,9 +73,9 @@ FourccToVk.h / .cpp              # one function: VkFormat fourcc_to_vk(uint32_t)
 Modified:
 
 ```
-ShaderGlassLinux/src/main.cpp                  # --capture x11-screen branch, --source flag, fourcc-driven texture format
-ShaderGlassLinux/CMakeLists.txt                # pkg-config X11 deps; new sources
-ShaderGlassLinux/tests/CMakeLists.txt          # new test targets
+ShaderScope/src/main.cpp                  # --capture x11-screen branch, --source flag, fourcc-driven texture format
+ShaderScope/CMakeLists.txt                # pkg-config X11 deps; new sources
+ShaderScope/tests/CMakeLists.txt          # new test targets
 docs/build-linux.md                            # X11 deps for Arch/Debian/Fedora; M3 run example
 docs/manual-tests-m3.md                        # new manual smoke checklist
 ```
@@ -239,23 +239,23 @@ Patterns mirror M2 exactly: the fake-session test plays the role `wayland_captur
 
 | # | Command | Expectation |
 |---|---|---|
-| 1 | `shaderglass --capture x11-screen` | Prints enumerated source list to stderr, exits 2 |
-| 2 | `shaderglass --capture x11-screen --source monitor:root` | Renders the full X11 desktop into the ShaderGlass window |
-| 3 | `shaderglass --capture x11-screen --source monitor:<output>` (e.g. `monitor:DP-1`) | Renders only that output |
-| 4a | `shaderglass --capture x11-screen --source window:0x<xid>` | Renders just that window |
-| 4b | `shaderglass --capture x11-screen --source <name-substring>` | Renders matched window; moving/resizing source updates the captured image; minimizing the source keeps rendering last composited contents |
-| 5 | `shaderglass --capture x11-screen --source firefox` with 2+ firefox windows open | Exits with "ambiguous" error listing both |
-| 6 | `shaderglass --capture x11-screen --source bogus-name-12345` | Exits with "no match" error listing available sources |
+| 1 | `shaderscope --capture x11-screen` | Prints enumerated source list to stderr, exits 2 |
+| 2 | `shaderscope --capture x11-screen --source monitor:root` | Renders the full X11 desktop into the ShaderScope window |
+| 3 | `shaderscope --capture x11-screen --source monitor:<output>` (e.g. `monitor:DP-1`) | Renders only that output |
+| 4a | `shaderscope --capture x11-screen --source window:0x<xid>` | Renders just that window |
+| 4b | `shaderscope --capture x11-screen --source <name-substring>` | Renders matched window; moving/resizing source updates the captured image; minimizing the source keeps rendering last composited contents |
+| 5 | `shaderscope --capture x11-screen --source firefox` with 2+ firefox windows open | Exits with "ambiguous" error listing both |
+| 6 | `shaderscope --capture x11-screen --source bogus-name-12345` | Exits with "no match" error listing available sources |
 | 7 | Co-existence with M2 (when a Wayland session exists) | `--capture wayland-screen` and `--capture x11-screen` don't interfere |
 
 ## Build & deps
 
-**`ShaderGlassLinux/CMakeLists.txt`:**
+**`ShaderScope/CMakeLists.txt`:**
 ```cmake
 pkg_check_modules(X11 REQUIRED x11 xcomposite xext xrandr)
-target_link_libraries(shaderglass_core PUBLIC ${X11_LIBRARIES})
-target_include_directories(shaderglass_core PUBLIC ${X11_INCLUDE_DIRS})
-target_compile_options(shaderglass_core PUBLIC ${X11_CFLAGS_OTHER})
+target_link_libraries(shaderscope_core PUBLIC ${X11_LIBRARIES})
+target_include_directories(shaderscope_core PUBLIC ${X11_INCLUDE_DIRS})
+target_compile_options(shaderscope_core PUBLIC ${X11_CFLAGS_OTHER})
 ```
 (`xext` provides MIT-SHM; `xrandr` provides monitor enumeration. `xfixes` is intentionally NOT added in M3 — that's cursor capture, deferred to M5.)
 
@@ -266,7 +266,7 @@ target_compile_options(shaderglass_core PUBLIC ${X11_CFLAGS_OTHER})
 
 **`docs/build-linux.md` run section addition:**
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root
 ```
 
 **`docs/build-linux.md` status table:** mark M3 ✅ when shipped; document remaining gap (DMA-BUF fast path) as M3.5 / future.

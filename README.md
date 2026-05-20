@@ -1,6 +1,6 @@
 <div align="center">
 
-# ShaderGlass for Linux
+# ShaderScope for Linux
 
 **GPU shader overlay using Vulkan + SDL3** | RetroArch slang shaders | X11 + Wayland capture
 
@@ -43,13 +43,13 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 
 # GUI (auto-resumes last session, or shows source picker)
-./build/ShaderGlassLinux/shaderglass
+./build/ShaderScope/shaderscope
 
 # Capture the X11 root window
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root
 
 # Capture a Wayland source via xdg-desktop-portal
-./build/ShaderGlassLinux/shaderglass --capture wayland-screen
+./build/ShaderScope/shaderscope --capture wayland-screen
 ```
 
 Full dependency list, distro-specific install commands, and run examples:

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-ShaderGlass is a Linux desktop overlay that applies RetroArch slang shaders
+ShaderScope is a Linux desktop overlay that applies RetroArch slang shaders
 to captured desktop content using Vulkan and SDL3. Capture backends cover
 both X11 (XComposite + XShm) and Wayland (xdg-desktop-portal + PipeWire +
 DMA-BUF). The UI is Dear ImGui — source picker, preset browser, per-shader
@@ -33,7 +33,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-- The build dir lives at the repo root (`build/`), not under `ShaderGlassLinux/`.
+- The build dir lives at the repo root (`build/`), not under `ShaderScope/`.
 - `ctest --test-dir build` runs ~76 gtest binaries. One test
   (`DmaBufImport.ImportsGbmAllocatedBuffer`) skips on systems without
   a GBM-capable iGPU; that's environmental, not a failure.
@@ -43,7 +43,7 @@ ctest --test-dir build --output-on-failure
 ## CLI surface
 
 ```bash
-./build/ShaderGlassLinux/shaderglass --help
+./build/ShaderScope/shaderscope --help
 ```
 
 Useful flags:
@@ -54,14 +54,14 @@ Useful flags:
 - `--headless --input X --output Y [--width N] [--height N]` — render an image and exit
 - `--compile-preset <path>` — compile a `.slangp` and print pass info
 - `--debug-portal` — probe xdg-desktop-portal screencast
-- `--reset-config` — wipe `~/.config/shaderglass/config.json` before launching
+- `--reset-config` — wipe `~/.config/shaderscope/config.json` before launching
 - `-h` / `-V` — help / version
 
 Env:
-- `SHADERGLASS_LOG=debug|info|warn|error|off` (default `info`)
+- `SHADERSCOPE_LOG=debug|info|warn|error|off` (default `info`)
 
 In-window hotkeys (active only when ImGui doesn't have keyboard focus):
-- `F11` — screenshot to `$XDG_PICTURES_DIR/shaderglass-*.png`
+- `F11` — screenshot to `$XDG_PICTURES_DIR/shaderscope-*.png`
 - `B` — bypass toggle (current preset ⇄ passthrough; remembers prior preset)
 - `]` / PageDown — cycle to next preset (PresetLibrary scan order)
 - `[` / PageUp — cycle to previous preset
@@ -80,31 +80,31 @@ Drag-and-drop: drop a `.slangp` file onto the window to import it
 
 | Layer | Path | Notes |
 |---|---|---|
-| Capture | `ShaderGlassLinux/src/capture/` | `X11Capture` + `RealX11CaptureSession` / `FakeX11CaptureSession` (XShm), `WaylandCapture` + `PortalCaptureSession` / `FakeWaylandCaptureSession` (PipeWire), `StaticImageCapture` (PNG via stb). Common `CaptureBackend` interface (`kindName()`, `size()`, `acquireFrame()`, `release()`). `BadWindowRegistry` filters bad windows. |
-| Render | `ShaderGlassLinux/src/render/` | `VulkanContext` + `Swapchain` + `RenderEngine` (dynamic-rendering swapchain frame loop). `ShaderPipeline` runs either the builtin passthrough shader or a slang-compiled fragment shader, with a UV-transform push constant for crop. `Preset` owns one ShaderPipeline per `.slangp`. `Texture` + `DmaBufImport` + `HeadlessOutput` round out the render side. |
-| UI | `ShaderGlassLinux/src/ui/` | `ImGuiLayer` initialises the Vulkan ImGui backend. `AppState` is the single shared state object. Panels: `SourcePickerPanel`, `PresetBrowserPanel`, `ParamsPanel`, `CropOverlay`, `ToastPanel`. |
-| Util | `ShaderGlassLinux/src/util/` | `ConfigStore` (JSON config + per-source crops), `PresetLibrary`, `Logging` (+ toast variants), `ToastQueue`, `ScreenshotPath` + `ScreenshotWriter`, `Time`, `XdgConfig`, `SourceMatcher`, `FourccToVk`. |
-| Output | `ShaderGlassLinux/src/output/` | `SdlWindow` thin wrapper around SDL3 window + event loop. |
+| Capture | `ShaderScope/src/capture/` | `X11Capture` + `RealX11CaptureSession` / `FakeX11CaptureSession` (XShm), `WaylandCapture` + `PortalCaptureSession` / `FakeWaylandCaptureSession` (PipeWire), `StaticImageCapture` (PNG via stb). Common `CaptureBackend` interface (`kindName()`, `size()`, `acquireFrame()`, `release()`). `BadWindowRegistry` filters bad windows. |
+| Render | `ShaderScope/src/render/` | `VulkanContext` + `Swapchain` + `RenderEngine` (dynamic-rendering swapchain frame loop). `ShaderPipeline` runs either the builtin passthrough shader or a slang-compiled fragment shader, with a UV-transform push constant for crop. `Preset` owns one ShaderPipeline per `.slangp`. `Texture` + `DmaBufImport` + `HeadlessOutput` round out the render side. |
+| UI | `ShaderScope/src/ui/` | `ImGuiLayer` initialises the Vulkan ImGui backend. `AppState` is the single shared state object. Panels: `SourcePickerPanel`, `PresetBrowserPanel`, `ParamsPanel`, `CropOverlay`, `ToastPanel`. |
+| Util | `ShaderScope/src/util/` | `ConfigStore` (JSON config + per-source crops), `PresetLibrary`, `Logging` (+ toast variants), `ToastQueue`, `ScreenshotPath` + `ScreenshotWriter`, `Time`, `XdgConfig`, `SourceMatcher`, `FourccToVk`. |
+| Output | `ShaderScope/src/output/` | `SdlWindow` thin wrapper around SDL3 window + event loop. |
 | Shader compiler | `ShaderGC/` | Shared library (also linked into the Windows trunk on `master`). On Linux, `HLSL_stub.cpp` and `SPIRV_stub.cpp` replace the DirectX-bound originals — Vulkan consumes SPIR-V directly so HLSL emission is dead code. |
 
 ### Built-in shaders
 
-`ShaderGlassLinux/shaders/` holds the GLSL source for the fullscreen
+`ShaderScope/shaders/` holds the GLSL source for the fullscreen
 passthrough vert/frag (compiled to SPV at configure time, embedded into
 `builtin_shaders.h` via `cmake/EmbedShaders.cmake`).
 
-`ShaderGlassLinux/shaders/starter/` is a curated single-pass `.slangp`
+`ShaderScope/shaders/starter/` is a curated single-pass `.slangp`
 set. CMake `install()` copies them to
-`${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/`, and they're staged into
-`build/ShaderGlassLinux/shaders-staging/` at configure time so dev runs
+`${CMAKE_INSTALL_DATADIR}/shaderscope/shaders/`, and they're staged into
+`build/ShaderScope/shaders-staging/` at configure time so dev runs
 find them without `make install`. `PresetLibrary` probes
-`SHADERGLASS_DEV_SHADERS_DIR` first, then the install path, then XDG dirs.
+`SHADERSCOPE_DEV_SHADERS_DIR` first, then the install path, then XDG dirs.
 
 ### Runtime config
 
-- `~/.config/shaderglass/config.json` — `ConfigStore` JSON. Tokens, last
+- `~/.config/shaderscope/config.json` — `ConfigStore` JSON. Tokens, last
   source ID, last preset path, per-source crop rectangles, param overrides.
-- `~/.config/shaderglass/imgui.ini` — Dear ImGui's window-layout file.
+- `~/.config/shaderscope/imgui.ini` — Dear ImGui's window-layout file.
 
 ### Frame loop
 
@@ -155,7 +155,7 @@ never touch GPU state from a panel.
 
 ## Key entry points
 
-- `ShaderGlassLinux/src/main.cpp` — `runWindowed(Args&)` is the GUI loop;
+- `ShaderScope/src/main.cpp` — `runWindowed(Args&)` is the GUI loop;
   `runHeadless`, `runListSources`, `runCompilePreset`, `runDebugPortal`
   cover the non-GUI subcommands.
 - `RenderEngine::renderImageViewWithOverlay` / `renderTextureWithOverlay`
@@ -241,15 +241,15 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
   `m_*` prefix for non-public class members, `kFoo` for static constants.
   clang-tidy `readability-identifier-naming` warnings to the contrary
   are noise on this codebase.
-- New tests: drop into `ShaderGlassLinux/tests/test_<thing>.cpp`,
-  register in `ShaderGlassLinux/tests/CMakeLists.txt` with
+- New tests: drop into `ShaderScope/tests/test_<thing>.cpp`,
+  register in `ShaderScope/tests/CMakeLists.txt` with
   `gtest_discover_tests(...)`. Use `TEST_DATA_DIR` macro for fixtures
-  under `ShaderGlassLinux/tests/data/`.
+  under `ShaderScope/tests/data/`.
 - Logging: `LOG_INFO`, `LOG_WARN`, `LOG_ERROR`, `LOG_DEBUG` macros
-  (filtered by `SHADERGLASS_LOG`). For user-visible messages, prefer
+  (filtered by `SHADERSCOPE_LOG`). For user-visible messages, prefer
   the toast variants in `util/Logging.h`: `Logging::infoToast(state, msg)`,
   `okToast`, `warnToast`, `errorToast` — these log AND post to the toast
   queue.
-- Don't add files to `shaderglass_core` in the top-level `CMakeLists.txt`
+- Don't add files to `shaderscope_core` in the top-level `CMakeLists.txt`
   unless they need to be in the static lib. Most new source belongs in
-  `ShaderGlassLinux/CMakeLists.txt`.
+  `ShaderScope/CMakeLists.txt`.

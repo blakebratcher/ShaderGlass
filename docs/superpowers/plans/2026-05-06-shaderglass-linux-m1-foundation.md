@@ -1,14 +1,14 @@
-# ShaderGlass Linux M1 — Foundation Implementation Plan
+# ShaderScope Linux M1 — Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up the Linux build, get `ShaderGC` compiling on Linux producing SPIR-V, open an SDL3 window with a Vulkan swapchain, render a static PNG through a runtime-compiled `.slangp` preset, and verify it via a headless reference-output test.
 
-**Architecture:** New top-level `CMakeLists.txt` + new `ShaderGlassLinux/` source tree. `ShaderGC/` is built as a static library with `HLSL.cpp` excluded and `ShaderGC.cpp` patched to emit SPIR-V (instead of HLSL DXBC bytecode) into `ShaderDef`. The Linux app uses SDL3 for window/input and Vulkan for rendering. Capture is a `StaticImageCapture` stub (loads a PNG); real X11/Wayland capture comes in M2/M3.
+**Architecture:** New top-level `CMakeLists.txt` + new `ShaderScope/` source tree. `ShaderGC/` is built as a static library with `HLSL.cpp` excluded and `ShaderGC.cpp` patched to emit SPIR-V (instead of HLSL DXBC bytecode) into `ShaderDef`. The Linux app uses SDL3 for window/input and Vulkan for rendering. Capture is a `StaticImageCapture` stub (loads a PNG); real X11/Wayland capture comes in M2/M3.
 
 **Tech Stack:** C++20, CMake ≥ 3.24, SDL3, Vulkan 1.3 (validation layers in debug), glslang (from `External/`), stb_image / stb_image_write, GoogleTest.
 
-**Reference spec:** `docs/superpowers/specs/2026-05-06-shaderglass-linux-port-design.md`
+**Reference spec:** `docs/superpowers/specs/2026-05-06-shaderscope-linux-port-design.md`
 
 ---
 
@@ -24,7 +24,7 @@ ShaderGC/
   HLSL_stub.cpp                                # NEW Linux-only stub for HLSL::CompileHLSL
 ShaderGC/ShaderGC.cpp                          # MODIFY: gate HLSL emission, add SPIR-V branch
 ShaderGC/pch.h, framework.h                    # MODIFY: include Portability.h
-ShaderGlassLinux/
+ShaderScope/
   CMakeLists.txt
   src/
     main.cpp
@@ -75,10 +75,10 @@ ShaderGlassLinux/
 - Create: `ShaderGC/HLSL_stub.cpp`
 - Modify: `ShaderGC/framework.h`
 - Modify: `ShaderGC/pch.h`
-- Create: `ShaderGlassLinux/CMakeLists.txt`
-- Create: `ShaderGlassLinux/src/main.cpp`
-- Create: `ShaderGlassLinux/tests/CMakeLists.txt`
-- Create: `ShaderGlassLinux/tests/test_shadergc_portability.cpp`
+- Create: `ShaderScope/CMakeLists.txt`
+- Create: `ShaderScope/src/main.cpp`
+- Create: `ShaderScope/tests/CMakeLists.txt`
+- Create: `ShaderScope/tests/test_shadergc_portability.cpp`
 
 - [ ] **Step 1.1: Add `Portability.h` shim**
 
@@ -183,37 +183,37 @@ endif()
 
 ```cmake
 cmake_minimum_required(VERSION 3.24)
-project(shaderglass LANGUAGES CXX)
+project(shaderscope LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(BUILD_LINUX_APP  "Build the Linux ShaderGlass app"   ON)
-option(SHADERGLASS_TESTS "Build unit + integration tests"   ON)
+option(BUILD_LINUX_APP  "Build the Linux ShaderScope app"   ON)
+option(SHADERSCOPE_TESTS "Build unit + integration tests"   ON)
 
 if(BUILD_LINUX_APP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(ShaderGC)
-    add_subdirectory(ShaderGlassLinux)
+    add_subdirectory(ShaderScope)
 endif()
 
-if(SHADERGLASS_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(SHADERSCOPE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     enable_testing()
-    add_subdirectory(ShaderGlassLinux/tests)
+    add_subdirectory(ShaderScope/tests)
 endif()
 ```
 
-- [ ] **Step 1.6: Write `ShaderGlassLinux/CMakeLists.txt` (skeleton)**
+- [ ] **Step 1.6: Write `ShaderScope/CMakeLists.txt` (skeleton)**
 
 ```cmake
-add_executable(shaderglass src/main.cpp)
-target_link_libraries(shaderglass PRIVATE shadergc)
-target_include_directories(shaderglass PRIVATE src)
+add_executable(shaderscope src/main.cpp)
+target_link_libraries(shaderscope PRIVATE shadergc)
+target_include_directories(shaderscope PRIVATE src)
 ```
 
 - [ ] **Step 1.7: Write hello-world `main.cpp`**
 
-`ShaderGlassLinux/src/main.cpp`:
+`ShaderScope/src/main.cpp`:
 ```cpp
 #include <cstdio>
 #include "ShaderGC.h"
@@ -221,7 +221,7 @@ target_include_directories(shaderglass PRIVATE src)
 int main(int argc, char** argv)
 {
     (void)argc; (void)argv;
-    std::printf("ShaderGlass Linux M1 — hello.\n");
+    std::printf("ShaderScope Linux M1 — hello.\n");
     // Trivial proof that ShaderGC links: call a header-only static.
     auto vec = ShaderGC::LoadSource(std::filesystem::path{"/dev/null"}, false);
     std::printf("LoadSource returned %zu lines.\n", vec.size());
@@ -231,7 +231,7 @@ int main(int argc, char** argv)
 
 - [ ] **Step 1.8: Set up GoogleTest + first portability test**
 
-Add `FetchContent` for GoogleTest in `ShaderGlassLinux/tests/CMakeLists.txt`:
+Add `FetchContent` for GoogleTest in `ShaderScope/tests/CMakeLists.txt`:
 
 ```cmake
 include(FetchContent)
@@ -250,7 +250,7 @@ include(GoogleTest)
 gtest_discover_tests(shadergc_portability_tests)
 ```
 
-`ShaderGlassLinux/tests/test_shadergc_portability.cpp`:
+`ShaderScope/tests/test_shadergc_portability.cpp`:
 ```cpp
 #include <gtest/gtest.h>
 #include "ShaderDef.h"
@@ -277,7 +277,7 @@ TEST(ShaderGCPortability, ShaderDefAddSamplerCompilesAndWorks) {
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
-./build/ShaderGlassLinux/shaderglass
+./build/ShaderScope/shaderscope
 ctest --test-dir build --output-on-failure
 ```
 
@@ -287,8 +287,8 @@ Expected: hello-world prints; both portability tests PASS.
 
 ```bash
 git add CMakeLists.txt ShaderGC/{CMakeLists.txt,Portability.h,HLSL_stub.cpp,framework.h} \
-        ShaderGlassLinux/CMakeLists.txt ShaderGlassLinux/src/main.cpp \
-        ShaderGlassLinux/tests/{CMakeLists.txt,test_shadergc_portability.cpp}
+        ShaderScope/CMakeLists.txt ShaderScope/src/main.cpp \
+        ShaderScope/tests/{CMakeLists.txt,test_shadergc_portability.cpp}
 git commit -m "feat(linux): CMake skeleton + Portability.h, ShaderGC builds on Linux"
 ```
 
@@ -300,10 +300,10 @@ git commit -m "feat(linux): CMake skeleton + Portability.h, ShaderGC builds on L
 
 **Files:**
 - Modify: `ShaderGC/ShaderGC.cpp` (the `CompileSourceShader` function around lines 60-80)
-- Create: `ShaderGlassLinux/tests/data/stock.slang`
-- Create: `ShaderGlassLinux/tests/data/stock.slangp`
-- Create: `ShaderGlassLinux/tests/test_shadergc_spirv.cpp`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt`
+- Create: `ShaderScope/tests/data/stock.slang`
+- Create: `ShaderScope/tests/data/stock.slangp`
+- Create: `ShaderScope/tests/test_shadergc_spirv.cpp`
+- Modify: `ShaderScope/tests/CMakeLists.txt`
 
 - [ ] **Step 2.1: Read `ShaderGC.cpp` lines 1-120 to understand `CompileSourceShader` shape**
 
@@ -369,7 +369,7 @@ def.FragmentLength = fragmentBytes.size();
 
 - [ ] **Step 2.3: Add a tiny test preset under `tests/data/`**
 
-`ShaderGlassLinux/tests/data/stock.slang`:
+`ShaderScope/tests/data/stock.slang`:
 ```glsl
 #version 450
 layout(push_constant) uniform Push { vec4 _unused; } params;
@@ -392,7 +392,7 @@ void main() {
 }
 ```
 
-`ShaderGlassLinux/tests/data/stock.slangp`:
+`ShaderScope/tests/data/stock.slangp`:
 ```
 shaders = 1
 shader0 = stock.slang
@@ -435,7 +435,7 @@ endif()
 
 - [ ] **Step 2.5: Write the SPIR-V emission test**
 
-`ShaderGlassLinux/tests/test_shadergc_spirv.cpp`:
+`ShaderScope/tests/test_shadergc_spirv.cpp`:
 ```cpp
 #include <gtest/gtest.h>
 #include <sstream>
@@ -473,7 +473,7 @@ TEST(ShaderGCSpirv, CompilePresetEmitsValidSpirvOnLinux) {
 }
 ```
 
-Add to `ShaderGlassLinux/tests/CMakeLists.txt`:
+Add to `ShaderScope/tests/CMakeLists.txt`:
 ```cmake
 add_executable(shadergc_spirv_tests test_shadergc_spirv.cpp)
 target_link_libraries(shadergc_spirv_tests PRIVATE shadergc gtest_main)
@@ -500,7 +500,7 @@ Expected: PASS.
 - [ ] **Step 2.8: Commit**
 
 ```bash
-git add ShaderGC/ShaderGC.cpp ShaderGlassLinux/tests/{CMakeLists.txt,test_shadergc_spirv.cpp,data/}
+git add ShaderGC/ShaderGC.cpp ShaderScope/tests/{CMakeLists.txt,test_shadergc_spirv.cpp,data/}
 git commit -m "feat(shadergc): emit SPIR-V into ShaderDef on non-MSVC builds"
 ```
 
@@ -511,19 +511,19 @@ git commit -m "feat(shadergc): emit SPIR-V into ShaderDef on non-MSVC builds"
 **Goal:** A binary that opens an SDL3 window, polls events, exits cleanly on close. No rendering yet.
 
 **Files:**
-- Modify: `ShaderGlassLinux/CMakeLists.txt`
-- Create: `ShaderGlassLinux/src/output/SdlWindow.{h,cpp}`
-- Modify: `ShaderGlassLinux/src/main.cpp`
-- Create: `ShaderGlassLinux/src/util/Logging.{h,cpp}`
+- Modify: `ShaderScope/CMakeLists.txt`
+- Create: `ShaderScope/src/output/SdlWindow.{h,cpp}`
+- Modify: `ShaderScope/src/main.cpp`
+- Create: `ShaderScope/src/util/Logging.{h,cpp}`
 
 - [ ] **Step 3.1: Add SDL3 + Vulkan as CMake deps**
 
-Append to `ShaderGlassLinux/CMakeLists.txt`:
+Append to `ShaderScope/CMakeLists.txt`:
 ```cmake
 find_package(SDL3   CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 
-target_link_libraries(shaderglass PRIVATE
+target_link_libraries(shaderscope PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
 )
@@ -542,7 +542,7 @@ endif()
 
 - [ ] **Step 3.2: Logging helpers**
 
-`ShaderGlassLinux/src/util/Logging.h`:
+`ShaderScope/src/util/Logging.h`:
 ```cpp
 #pragma once
 #include <cstdio>
@@ -554,7 +554,7 @@ endif()
 
 - [ ] **Step 3.3: `SdlWindow` wrapper**
 
-`ShaderGlassLinux/src/output/SdlWindow.h`:
+`ShaderScope/src/output/SdlWindow.h`:
 ```cpp
 #pragma once
 #include <SDL3/SDL.h>
@@ -583,7 +583,7 @@ private:
 };
 ```
 
-`ShaderGlassLinux/src/output/SdlWindow.cpp`:
+`ShaderScope/src/output/SdlWindow.cpp`:
 ```cpp
 #include "SdlWindow.h"
 #include "../util/Logging.h"
@@ -626,14 +626,14 @@ void SdlWindow::getDrawableSize(uint32_t& w, uint32_t& h) const {
 
 - [ ] **Step 3.4: `main.cpp` opens the window and runs an event loop**
 
-`ShaderGlassLinux/src/main.cpp`:
+`ShaderScope/src/main.cpp`:
 ```cpp
 #include "output/SdlWindow.h"
 #include "util/Logging.h"
 
 int main(int /*argc*/, char** /*argv*/) {
     try {
-        SdlWindow window("ShaderGlass (Linux M1)", 1280, 720);
+        SdlWindow window("ShaderScope (Linux M1)", 1280, 720);
         LOG_INFO("Window opened. Close or press Esc to exit.");
         while (window.pollEvents()) {
             SDL_Delay(16);
@@ -646,16 +646,16 @@ int main(int /*argc*/, char** /*argv*/) {
 }
 ```
 
-Update `ShaderGlassLinux/CMakeLists.txt` to add the new sources:
+Update `ShaderScope/CMakeLists.txt` to add the new sources:
 ```cmake
-target_sources(shaderglass PRIVATE
+target_sources(shaderscope PRIVATE
     src/main.cpp
     src/output/SdlWindow.cpp
     src/util/Logging.cpp  # empty TU but reserved
 )
 ```
 
-`ShaderGlassLinux/src/util/Logging.cpp`:
+`ShaderScope/src/util/Logging.cpp`:
 ```cpp
 #include "Logging.h"
 // Header-only macros for now — TU exists so CMake glob is happy.
@@ -665,14 +665,14 @@ target_sources(shaderglass PRIVATE
 
 ```bash
 cmake --build build -j
-./build/ShaderGlassLinux/shaderglass
+./build/ShaderScope/shaderscope
 ```
-Expected: a window titled "ShaderGlass (Linux M1)" appears; closing it (or Esc) returns to the prompt with exit code 0.
+Expected: a window titled "ShaderScope (Linux M1)" appears; closing it (or Esc) returns to the prompt with exit code 0.
 
 - [ ] **Step 3.6: Commit**
 
 ```bash
-git add ShaderGlassLinux/{CMakeLists.txt,src/main.cpp,src/output/,src/util/}
+git add ShaderScope/{CMakeLists.txt,src/main.cpp,src/output/,src/util/}
 git commit -m "feat(linux): SDL3 window skeleton, event loop"
 ```
 
@@ -683,10 +683,10 @@ git commit -m "feat(linux): SDL3 window skeleton, event loop"
 **Goal:** Encapsulated `VulkanContext` that creates `VkInstance` (with validation layers in Debug), picks a physical device, creates a logical device + graphics queue. Unit-testable in headless mode.
 
 **Files:**
-- Create: `ShaderGlassLinux/src/util/VkCheck.h`
-- Create: `ShaderGlassLinux/src/render/VulkanContext.{h,cpp}`
-- Create: `ShaderGlassLinux/tests/test_vulkan_context.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt`, `ShaderGlassLinux/tests/CMakeLists.txt`
+- Create: `ShaderScope/src/util/VkCheck.h`
+- Create: `ShaderScope/src/render/VulkanContext.{h,cpp}`
+- Create: `ShaderScope/tests/test_vulkan_context.cpp`
+- Modify: `ShaderScope/CMakeLists.txt`, `ShaderScope/tests/CMakeLists.txt`
 
 - [ ] **Step 4.1: `VkCheck.h` macro**
 
@@ -730,7 +730,7 @@ inline const char* vkResultStr(VkResult r) {
 
 - [ ] **Step 4.2: Write the failing test first**
 
-`ShaderGlassLinux/tests/test_vulkan_context.cpp`:
+`ShaderScope/tests/test_vulkan_context.cpp`:
 ```cpp
 #include <gtest/gtest.h>
 #include "render/VulkanContext.h"
@@ -748,22 +748,22 @@ TEST(VulkanContext, ConstructsAndExposesGraphicsQueue) {
 Add to `tests/CMakeLists.txt`:
 ```cmake
 add_executable(vulkan_context_tests test_vulkan_context.cpp)
-target_link_libraries(vulkan_context_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(vulkan_context_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(vulkan_context_tests)
 ```
 
-This requires factoring out a `shaderglass_core` static library so tests can link non-`main` symbols. Update `ShaderGlassLinux/CMakeLists.txt`:
+This requires factoring out a `shaderscope_core` static library so tests can link non-`main` symbols. Update `ShaderScope/CMakeLists.txt`:
 ```cmake
-add_library(shaderglass_core STATIC
+add_library(shaderscope_core STATIC
     src/output/SdlWindow.cpp
     src/util/Logging.cpp
     src/render/VulkanContext.cpp
 )
-target_include_directories(shaderglass_core PUBLIC src)
-target_link_libraries(shaderglass_core PUBLIC SDL3::SDL3 Vulkan::Vulkan shadergc)
+target_include_directories(shaderscope_core PUBLIC src)
+target_link_libraries(shaderscope_core PUBLIC SDL3::SDL3 Vulkan::Vulkan shadergc)
 
-add_executable(shaderglass src/main.cpp)
-target_link_libraries(shaderglass PRIVATE shaderglass_core)
+add_executable(shaderscope src/main.cpp)
+target_link_libraries(shaderscope PRIVATE shaderscope_core)
 ```
 
 - [ ] **Step 4.3: Run the test, observe failure (link error — header doesn't exist yet)**
@@ -855,7 +855,7 @@ VulkanContext::~VulkanContext() {
 
 void VulkanContext::createInstance(bool enableValidation, bool headless) {
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName = "ShaderGlass";
+    app.pApplicationName = "ShaderScope";
     app.apiVersion       = VK_API_VERSION_1_3;
 
     std::vector<const char*> exts;
@@ -955,7 +955,7 @@ Expected: PASS. (If it fails with "no Vulkan devices", install `mesa-vulkan-driv
 - [ ] **Step 4.7: Commit**
 
 ```bash
-git add ShaderGlassLinux/{CMakeLists.txt,src/render/VulkanContext.{h,cpp},src/util/VkCheck.h,tests/{CMakeLists.txt,test_vulkan_context.cpp}}
+git add ShaderScope/{CMakeLists.txt,src/render/VulkanContext.{h,cpp},src/util/VkCheck.h,tests/{CMakeLists.txt,test_vulkan_context.cpp}}
 git commit -m "feat(linux): VulkanContext + VK_CHECK + validation layers"
 ```
 
@@ -966,10 +966,10 @@ git commit -m "feat(linux): VulkanContext + VK_CHECK + validation layers"
 **Goal:** Window now shows a solid color (e.g., dark teal). End-to-end Vulkan present path is exercised. Resize handling deferred to swapchain-out-of-date recovery.
 
 **Files:**
-- Create: `ShaderGlassLinux/src/render/Swapchain.{h,cpp}`
-- Create: `ShaderGlassLinux/src/render/RenderEngine.{h,cpp}`
-- Modify: `ShaderGlassLinux/src/output/SdlWindow.{h,cpp}` — add Vulkan-instance-extension query + surface creation
-- Modify: `ShaderGlassLinux/src/main.cpp`
+- Create: `ShaderScope/src/render/Swapchain.{h,cpp}`
+- Create: `ShaderScope/src/render/RenderEngine.{h,cpp}`
+- Modify: `ShaderScope/src/output/SdlWindow.{h,cpp}` — add Vulkan-instance-extension query + surface creation
+- Modify: `ShaderScope/src/main.cpp`
 
 - [ ] **Step 5.1: SdlWindow — expose required Vulkan extensions + create surface**
 
@@ -1011,7 +1011,7 @@ struct VulkanContextOptions {
 
 - [ ] **Step 5.2: Failing visual test — write the smallest test that proves swapchain present works**
 
-There is no automated test in this step (visual smoke check only — automated headless verification arrives in Task 9). The acceptance criterion: running `./build/ShaderGlassLinux/shaderglass` shows a solid dark-teal window for as long as it's open.
+There is no automated test in this step (visual smoke check only — automated headless verification arrives in Task 9). The acceptance criterion: running `./build/ShaderScope/shaderscope` shows a solid dark-teal window for as long as it's open.
 
 - [ ] **Step 5.3: `Swapchain.h`**
 
@@ -1305,7 +1305,7 @@ void RenderEngine::renderClear(float r, float g, float b, float a) {
 
 int main(int /*argc*/, char** /*argv*/) {
     try {
-        SdlWindow window("ShaderGlass (Linux M1)", 1280, 720);
+        SdlWindow window("ShaderScope (Linux M1)", 1280, 720);
 
         VulkanContextOptions opts;
         opts.enableValidation       = true;
@@ -1328,19 +1328,19 @@ int main(int /*argc*/, char** /*argv*/) {
 }
 ```
 
-Add new sources to `shaderglass_core` library list.
+Add new sources to `shaderscope_core` library list.
 
 - [ ] **Step 5.8: Build + smoke**
 
 ```bash
-cmake --build build -j && ./build/ShaderGlassLinux/shaderglass
+cmake --build build -j && ./build/ShaderScope/shaderscope
 ```
 Expected: window opens, fills with dark teal, closes cleanly. Validation layers (debug build) should produce no errors in stderr.
 
 - [ ] **Step 5.9: Commit**
 
 ```bash
-git add ShaderGlassLinux/{CMakeLists.txt,src/render/{Swapchain.{h,cpp},RenderEngine.{h,cpp}},src/output/SdlWindow.{h,cpp},src/main.cpp}
+git add ShaderScope/{CMakeLists.txt,src/render/{Swapchain.{h,cpp},RenderEngine.{h,cpp}},src/output/SdlWindow.{h,cpp},src/main.cpp}
 git commit -m "feat(linux): swapchain + render engine clearing to color"
 ```
 
@@ -1351,12 +1351,12 @@ git commit -m "feat(linux): swapchain + render engine clearing to color"
 **Goal:** A `CaptureBackend` interface with one implementation, `StaticImageCapture`, that loads a PNG via `stb_image` and exposes it as a CPU-buffer `CapturedFrame`. Real X11/Wayland capture comes in M2/M3.
 
 **Files:**
-- Create: `ShaderGlassLinux/src/capture/CapturedFrame.h`
-- Create: `ShaderGlassLinux/src/capture/CaptureBackend.h`
-- Create: `ShaderGlassLinux/src/capture/StaticImageCapture.{h,cpp}`
-- Create: `ShaderGlassLinux/src/util/stb_image_impl.cpp`
-- Create: `ShaderGlassLinux/tests/test_static_image_capture.cpp`
-- Create: `ShaderGlassLinux/tests/data/4x4_red.png` (binary file, generated by Python helper at the bottom of this task)
+- Create: `ShaderScope/src/capture/CapturedFrame.h`
+- Create: `ShaderScope/src/capture/CaptureBackend.h`
+- Create: `ShaderScope/src/capture/StaticImageCapture.{h,cpp}`
+- Create: `ShaderScope/src/util/stb_image_impl.cpp`
+- Create: `ShaderScope/tests/test_static_image_capture.cpp`
+- Create: `ShaderScope/tests/data/4x4_red.png` (binary file, generated by Python helper at the bottom of this task)
 
 - [ ] **Step 6.1: Vendor `stb_image.h` via FetchContent**
 
@@ -1370,7 +1370,7 @@ FetchContent_Declare(stb
 FetchContent_MakeAvailable(stb)
 ```
 
-Create `ShaderGlassLinux/src/util/stb_image_impl.cpp`:
+Create `ShaderScope/src/util/stb_image_impl.cpp`:
 ```cpp
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -1378,10 +1378,10 @@ Create `ShaderGlassLinux/src/util/stb_image_impl.cpp`:
 #include <stb_image_write.h>
 ```
 
-In `ShaderGlassLinux/CMakeLists.txt`, add stb include + this new TU:
+In `ShaderScope/CMakeLists.txt`, add stb include + this new TU:
 ```cmake
-target_include_directories(shaderglass_core PUBLIC ${stb_SOURCE_DIR})
-target_sources(shaderglass_core PRIVATE
+target_include_directories(shaderscope_core PUBLIC ${stb_SOURCE_DIR})
+target_sources(shaderscope_core PRIVATE
     src/util/stb_image_impl.cpp
     src/capture/StaticImageCapture.cpp
 )
@@ -1439,7 +1439,7 @@ public:
 
 - [ ] **Step 6.4: Write the failing test**
 
-`ShaderGlassLinux/tests/test_static_image_capture.cpp`:
+`ShaderScope/tests/test_static_image_capture.cpp`:
 ```cpp
 #include <gtest/gtest.h>
 #include "capture/StaticImageCapture.h"
@@ -1472,7 +1472,7 @@ TEST(StaticImageCapture, LoadsKnown4x4RedPng) {
 Add to `tests/CMakeLists.txt`:
 ```cmake
 add_executable(static_image_capture_tests test_static_image_capture.cpp)
-target_link_libraries(static_image_capture_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(static_image_capture_tests PRIVATE shaderscope_core gtest_main)
 target_compile_definitions(static_image_capture_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 gtest_discover_tests(static_image_capture_tests)
@@ -1493,7 +1493,7 @@ def write_png(path, pixels, w, h):
     idat = zlib.compress(raw)
     with open(path,"wb") as f:
         f.write(sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
-write_png("ShaderGlassLinux/tests/data/4x4_red.png",
+write_png("ShaderScope/tests/data/4x4_red.png",
           [255,0,0,255]*16, 4, 4)
 EOF
 ```
@@ -1587,7 +1587,7 @@ Expected: PASS.
 - [ ] **Step 6.10: Commit**
 
 ```bash
-git add ShaderGlassLinux/{CMakeLists.txt,src/capture/,src/util/stb_image_impl.cpp,tests/{CMakeLists.txt,test_static_image_capture.cpp,data/4x4_red.png}}
+git add ShaderScope/{CMakeLists.txt,src/capture/,src/util/stb_image_impl.cpp,tests/{CMakeLists.txt,test_static_image_capture.cpp,data/4x4_red.png}}
 git commit -m "feat(linux): CaptureBackend interface + StaticImageCapture (PNG via stb)"
 ```
 
@@ -1598,12 +1598,12 @@ git commit -m "feat(linux): CaptureBackend interface + StaticImageCapture (PNG v
 **Goal:** A `Texture` helper that allocates a sampled `VkImage` of the requested size + format, accepts a CPU byte buffer, and uploads it via staging buffer + `vkCmdCopyBufferToImage`. Read-back round-trip is unit-tested.
 
 **Files:**
-- Create: `ShaderGlassLinux/src/render/Texture.{h,cpp}`
-- Create: `ShaderGlassLinux/tests/test_texture_upload.cpp`
+- Create: `ShaderScope/src/render/Texture.{h,cpp}`
+- Create: `ShaderScope/tests/test_texture_upload.cpp`
 
 - [ ] **Step 7.1: Failing test first**
 
-`ShaderGlassLinux/tests/test_texture_upload.cpp`:
+`ShaderScope/tests/test_texture_upload.cpp`:
 ```cpp
 #include <gtest/gtest.h>
 #include "render/VulkanContext.h"
@@ -1637,7 +1637,7 @@ TEST(TextureUpload, RoundTrip4x4Rgba) {
 Add to `tests/CMakeLists.txt`:
 ```cmake
 add_executable(texture_upload_tests test_texture_upload.cpp)
-target_link_libraries(texture_upload_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(texture_upload_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(texture_upload_tests)
 ```
 
@@ -1896,7 +1896,7 @@ void Texture::downloadToCpu(void* dst, size_t size, size_t dstStride) {
 }
 ```
 
-Add `src/render/Texture.cpp` to `shaderglass_core` sources in `ShaderGlassLinux/CMakeLists.txt`.
+Add `src/render/Texture.cpp` to `shaderscope_core` sources in `ShaderScope/CMakeLists.txt`.
 
 - [ ] **Step 7.5: Run — passes**
 
@@ -1908,7 +1908,7 @@ Expected: PASS.
 - [ ] **Step 7.6: Commit**
 
 ```bash
-git add ShaderGlassLinux/{CMakeLists.txt,src/render/Texture.{h,cpp},tests/{CMakeLists.txt,test_texture_upload.cpp}}
+git add ShaderScope/{CMakeLists.txt,src/render/Texture.{h,cpp},tests/{CMakeLists.txt,test_texture_upload.cpp}}
 git commit -m "feat(linux): Texture helper with staging-buffer upload + readback"
 ```
 
@@ -1919,16 +1919,16 @@ git commit -m "feat(linux): Texture helper with staging-buffer upload + readback
 **Goal:** Run a fullscreen-triangle vertex shader + texture-sampling fragment shader against the PNG loaded by `StaticImageCapture`. The window now displays the image, not just a clear color.
 
 **Files:**
-- Create: `ShaderGlassLinux/shaders/fullscreen.vert.glsl`
-- Create: `ShaderGlassLinux/shaders/passthrough.frag.glsl`
-- Create: `ShaderGlassLinux/src/render/ShaderPipeline.{h,cpp}`
-- Modify: `ShaderGlassLinux/src/render/RenderEngine.{h,cpp}` — add `renderTexture(const Texture&)`
-- Modify: `ShaderGlassLinux/src/main.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` — compile GLSL → SPIR-V at build time, embed as binary resource
+- Create: `ShaderScope/shaders/fullscreen.vert.glsl`
+- Create: `ShaderScope/shaders/passthrough.frag.glsl`
+- Create: `ShaderScope/src/render/ShaderPipeline.{h,cpp}`
+- Modify: `ShaderScope/src/render/RenderEngine.{h,cpp}` — add `renderTexture(const Texture&)`
+- Modify: `ShaderScope/src/main.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` — compile GLSL → SPIR-V at build time, embed as binary resource
 
 - [ ] **Step 8.1: Built-in shader sources**
 
-`ShaderGlassLinux/shaders/fullscreen.vert.glsl`:
+`ShaderScope/shaders/fullscreen.vert.glsl`:
 ```glsl
 #version 450
 layout(location = 0) out vec2 vUV;
@@ -1939,7 +1939,7 @@ void main() {
 }
 ```
 
-`ShaderGlassLinux/shaders/passthrough.frag.glsl`:
+`ShaderScope/shaders/passthrough.frag.glsl`:
 ```glsl
 #version 450
 layout(location = 0) in  vec2 vUV;
@@ -1952,7 +1952,7 @@ void main() {
 
 - [ ] **Step 8.2: Compile shaders to SPIR-V at build time**
 
-Add to `ShaderGlassLinux/CMakeLists.txt`:
+Add to `ShaderScope/CMakeLists.txt`:
 ```cmake
 find_program(GLSLC NAMES glslc REQUIRED
     DOC "glslang/glslc compiler — install glslang-tools or glslang-devel")
@@ -1986,12 +1986,12 @@ add_custom_command(
     DEPENDS ${VERT_SPV} ${FRAG_SPV})
 add_custom_target(builtin_shaders_gen DEPENDS ${BUILTIN_HEADER})
 
-target_sources(shaderglass_core PRIVATE ${BUILTIN_HEADER})
-target_include_directories(shaderglass_core PUBLIC ${SHADER_OUT_DIR})
-add_dependencies(shaderglass_core builtin_shaders_gen)
+target_sources(shaderscope_core PRIVATE ${BUILTIN_HEADER})
+target_include_directories(shaderscope_core PUBLIC ${SHADER_OUT_DIR})
+add_dependencies(shaderscope_core builtin_shaders_gen)
 ```
 
-Create `ShaderGlassLinux/cmake/EmbedShaders.cmake`:
+Create `ShaderScope/cmake/EmbedShaders.cmake`:
 ```cmake
 function(embed_blob VAR FILE OUTSTR)
     file(READ ${FILE} HEX HEX)
@@ -2215,9 +2215,9 @@ In `RenderEngine.cpp` — same flow as `renderClear` but inside the `vkCmdBeginR
 #include "builtin_shaders.h"
 // ...
 int main(int argc, char** argv) {
-    if (argc < 2) { LOG_ERROR("usage: shaderglass <input.png>"); return 2; }
+    if (argc < 2) { LOG_ERROR("usage: shaderscope <input.png>"); return 2; }
     try {
-        SdlWindow window("ShaderGlass (Linux M1)", 1280, 720);
+        SdlWindow window("ShaderScope (Linux M1)", 1280, 720);
         VulkanContextOptions opts;
         opts.enableValidation        = true;
         opts.extraInstanceExtensions = window.requiredVulkanInstanceExtensions();
@@ -2255,14 +2255,14 @@ int main(int argc, char** argv) {
 
 ```bash
 cmake --build build -j
-./build/ShaderGlassLinux/shaderglass ShaderGlassLinux/tests/data/4x4_red.png
+./build/ShaderScope/shaderscope ShaderScope/tests/data/4x4_red.png
 ```
 Expected: a window filled with red. (Stretching the 4×4 across 1280×720 — that is the test.)
 
 - [ ] **Step 8.8: Commit**
 
 ```bash
-git add ShaderGlassLinux/{CMakeLists.txt,cmake/,shaders/,src/render/{ShaderPipeline.{h,cpp},RenderEngine.{h,cpp}},src/main.cpp}
+git add ShaderScope/{CMakeLists.txt,cmake/,shaders/,src/render/{ShaderPipeline.{h,cpp},RenderEngine.{h,cpp}},src/main.cpp}
 git commit -m "feat(linux): hardcoded passthrough pipeline — PNG renders to window"
 ```
 
@@ -2273,14 +2273,14 @@ git commit -m "feat(linux): hardcoded passthrough pipeline — PNG renders to wi
 **Goal:** A `--headless --input <png> --output <png>` CLI flag renders one frame to an offscreen `VkImage`, reads it back via staging buffer, writes a PNG, and exits. An integration test asserts deterministic output for a known input + known shader (the hardcoded passthrough).
 
 **Files:**
-- Create: `ShaderGlassLinux/src/render/HeadlessOutput.{h,cpp}`
-- Modify: `ShaderGlassLinux/src/main.cpp` — argument parser
-- Create: `ShaderGlassLinux/tests/test_headless_render.cpp`
-- Create: `ShaderGlassLinux/tests/data/reference_passthrough_4x4.png` (generated by Task 9.6)
+- Create: `ShaderScope/src/render/HeadlessOutput.{h,cpp}`
+- Modify: `ShaderScope/src/main.cpp` — argument parser
+- Create: `ShaderScope/tests/test_headless_render.cpp`
+- Create: `ShaderScope/tests/data/reference_passthrough_4x4.png` (generated by Task 9.6)
 
 - [ ] **Step 9.1: Failing test first**
 
-`ShaderGlassLinux/tests/test_headless_render.cpp`:
+`ShaderScope/tests/test_headless_render.cpp`:
 ```cpp
 #include <gtest/gtest.h>
 #include <cstdlib>
@@ -2297,9 +2297,9 @@ static std::vector<uint8_t> readFile(const fs::path& p) {
 }
 
 TEST(HeadlessRender, PassthroughOnKnown4x4ProducesReferenceOutput) {
-    fs::path bin = fs::path(SHADERGLASS_BIN);
+    fs::path bin = fs::path(SHADERSCOPE_BIN);
     fs::path in  = fs::path(TEST_DATA_DIR) / "4x4_red.png";
-    fs::path out = fs::temp_directory_path() / "shaderglass_headless_out.png";
+    fs::path out = fs::temp_directory_path() / "shaderscope_headless_out.png";
     fs::path ref = fs::path(TEST_DATA_DIR) / "reference_passthrough_4x4.png";
 
     fs::remove(out);
@@ -2325,8 +2325,8 @@ add_executable(headless_render_tests test_headless_render.cpp)
 target_link_libraries(headless_render_tests PRIVATE gtest_main)
 target_compile_definitions(headless_render_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
-    SHADERGLASS_BIN="$<TARGET_FILE:shaderglass>")
-add_dependencies(headless_render_tests shaderglass)
+    SHADERSCOPE_BIN="$<TARGET_FILE:shaderscope>")
+add_dependencies(headless_render_tests shaderscope)
 gtest_discover_tests(headless_render_tests)
 ```
 
@@ -2518,7 +2518,7 @@ std::vector<uint8_t> HeadlessOutput::renderToBytes(const Texture& src, ShaderPip
 }
 ```
 
-Add `src/render/HeadlessOutput.cpp` to `shaderglass_core` sources.
+Add `src/render/HeadlessOutput.cpp` to `shaderscope_core` sources.
 
 - [ ] **Step 9.5: CLI parsing in `main.cpp`**
 
@@ -2591,11 +2591,11 @@ Add `#include <stb_image_write.h>` at the top of `main.cpp`.
 Build, then run the binary itself once to produce the reference PNG, and commit it. This is the "snapshot" baseline:
 ```bash
 cmake --build build -j
-./build/ShaderGlassLinux/shaderglass --headless --passthrough \
-    --input ShaderGlassLinux/tests/data/4x4_red.png \
-    --output ShaderGlassLinux/tests/data/reference_passthrough_4x4.png \
+./build/ShaderScope/shaderscope --headless --passthrough \
+    --input ShaderScope/tests/data/4x4_red.png \
+    --output ShaderScope/tests/data/reference_passthrough_4x4.png \
     --width 4 --height 4
-file ShaderGlassLinux/tests/data/reference_passthrough_4x4.png
+file ShaderScope/tests/data/reference_passthrough_4x4.png
 ```
 Open `reference_passthrough_4x4.png` in an image viewer to confirm it is a 4×4 red square (the passthrough sampling at pixel centers gives uniform red).
 
@@ -2611,7 +2611,7 @@ Expected: PASS.
 - [ ] **Step 9.8: Commit**
 
 ```bash
-git add ShaderGlassLinux/{CMakeLists.txt,src/render/HeadlessOutput.{h,cpp},src/main.cpp,tests/{CMakeLists.txt,test_headless_render.cpp,data/reference_passthrough_4x4.png}}
+git add ShaderScope/{CMakeLists.txt,src/render/HeadlessOutput.{h,cpp},src/main.cpp,tests/{CMakeLists.txt,test_headless_render.cpp,data/reference_passthrough_4x4.png}}
 git commit -m "feat(linux): headless render mode + reference-output integration test"
 ```
 
@@ -2622,7 +2622,7 @@ git commit -m "feat(linux): headless render mode + reference-output integration 
 **Goal:** From the Linux app, call `ShaderGC::CompilePreset(".../stock.slangp")`, get a `PresetDef*` whose first `ShaderDef` contains valid SPIR-V vertex + fragment bytecode. Already validated in Task 2's unit test — this task wires it into the app's runtime path so Task 11 can replace the hardcoded shaders.
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp` — under a `--compile-preset` debug flag, run the compile and log shape
+- Modify: `ShaderScope/src/main.cpp` — under a `--compile-preset` debug flag, run the compile and log shape
 
 - [ ] **Step 10.1: Add `--compile-preset <slangp>` debug flag**
 
@@ -2656,15 +2656,15 @@ Add `#include "ShaderGC.h"`, `#include "ShaderCache.h"`, `<sstream>` to `main.cp
 
 ```bash
 cmake --build build -j
-./build/ShaderGlassLinux/shaderglass --compile-preset \
-    ShaderGlassLinux/tests/data/stock.slangp
+./build/ShaderScope/shaderscope --compile-preset \
+    ShaderScope/tests/data/stock.slangp
 ```
 Expected: `[INFO] compiled preset, 1 shader(s)` and a non-zero `vert N B, frag N B` line.
 
 - [ ] **Step 10.3: Commit**
 
 ```bash
-git add ShaderGlassLinux/src/main.cpp
+git add ShaderScope/src/main.cpp
 git commit -m "feat(linux): runtime ShaderGC integration via --compile-preset"
 ```
 
@@ -2675,13 +2675,13 @@ git commit -m "feat(linux): runtime ShaderGC integration via --compile-preset"
 **Goal:** Build a `ShaderPipeline` from the SPIR-V emitted by `ShaderGC::CompilePreset` and render through it. Add a headless integration test that mirrors Task 9's but with `--preset stock.slangp` instead of `--passthrough`.
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp` — add `--preset <slangp>` flag (paired with `--headless` and the windowed mode)
-- Create: `ShaderGlassLinux/tests/test_e2e_shadergc_render.cpp`
-- Create: `ShaderGlassLinux/tests/data/reference_stock_4x4.png`
+- Modify: `ShaderScope/src/main.cpp` — add `--preset <slangp>` flag (paired with `--headless` and the windowed mode)
+- Create: `ShaderScope/tests/test_e2e_shadergc_render.cpp`
+- Create: `ShaderScope/tests/data/reference_stock_4x4.png`
 
 - [ ] **Step 11.1: Failing test first**
 
-`ShaderGlassLinux/tests/test_e2e_shadergc_render.cpp`:
+`ShaderScope/tests/test_e2e_shadergc_render.cpp`:
 ```cpp
 #include <gtest/gtest.h>
 #include <cstdlib>
@@ -2698,10 +2698,10 @@ static std::vector<uint8_t> readFile(const fs::path& p) {
 }
 
 TEST(EndToEnd, ShaderGCStockPresetMatchesReference) {
-    fs::path bin = fs::path(SHADERGLASS_BIN);
+    fs::path bin = fs::path(SHADERSCOPE_BIN);
     fs::path in     = fs::path(TEST_DATA_DIR) / "4x4_red.png";
     fs::path preset = fs::path(TEST_DATA_DIR) / "stock.slangp";
-    fs::path out    = fs::temp_directory_path() / "shaderglass_e2e_out.png";
+    fs::path out    = fs::temp_directory_path() / "shaderscope_e2e_out.png";
     fs::path ref    = fs::path(TEST_DATA_DIR) / "reference_stock_4x4.png";
     fs::remove(out);
 
@@ -2726,8 +2726,8 @@ add_executable(e2e_shadergc_render_tests test_e2e_shadergc_render.cpp)
 target_link_libraries(e2e_shadergc_render_tests PRIVATE gtest_main)
 target_compile_definitions(e2e_shadergc_render_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
-    SHADERGLASS_BIN="$<TARGET_FILE:shaderglass>")
-add_dependencies(e2e_shadergc_render_tests shaderglass)
+    SHADERSCOPE_BIN="$<TARGET_FILE:shaderscope>")
+add_dependencies(e2e_shadergc_render_tests shaderscope)
 gtest_discover_tests(e2e_shadergc_render_tests)
 ```
 
@@ -2780,10 +2780,10 @@ delete ps.ownedPreset;
 The `tests/data/stock.slang` and `stock.slangp` from Task 2 implement a passthrough-equivalent shader. Generate the reference output once:
 ```bash
 cmake --build build -j
-./build/ShaderGlassLinux/shaderglass --headless \
-    --preset ShaderGlassLinux/tests/data/stock.slangp \
-    --input  ShaderGlassLinux/tests/data/4x4_red.png \
-    --output ShaderGlassLinux/tests/data/reference_stock_4x4.png \
+./build/ShaderScope/shaderscope --headless \
+    --preset ShaderScope/tests/data/stock.slangp \
+    --input  ShaderScope/tests/data/4x4_red.png \
+    --output ShaderScope/tests/data/reference_stock_4x4.png \
     --width 4 --height 4
 ```
 Open the file and verify it shows a 4×4 red square. Commit it.
@@ -2805,7 +2805,7 @@ Expected: every test PASSES.
 - [ ] **Step 11.6: Commit**
 
 ```bash
-git add ShaderGlassLinux/{src/main.cpp,tests/{CMakeLists.txt,test_e2e_shadergc_render.cpp,data/reference_stock_4x4.png}}
+git add ShaderScope/{src/main.cpp,tests/{CMakeLists.txt,test_e2e_shadergc_render.cpp,data/reference_stock_4x4.png}}
 git commit -m "feat(linux): end-to-end ShaderGC → Vulkan render with reference test"
 ```
 
@@ -2817,8 +2817,8 @@ The plan is complete when all of these hold:
 
 1. `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j` succeeds on a fresh Linux machine with the documented dependencies installed (`glslang-dev`, `glslang-tools`, `vulkan-sdk` or `libvulkan-dev` + `vulkan-validationlayers-dev`, `libsdl3-dev`).
 2. `ctest --test-dir build` reports all of: `ShaderGCPortability`, `ShaderGCSpirv`, `VulkanContext`, `StaticImageCapture`, `TextureUpload`, `HeadlessRender`, `EndToEnd` — all PASS.
-3. `./build/ShaderGlassLinux/shaderglass <some.png>` opens a window showing the image.
-4. `./build/ShaderGlassLinux/shaderglass --headless --preset <some.slangp> --input <in.png> --output out.png --width N --height M` produces an image deterministically.
+3. `./build/ShaderScope/shaderscope <some.png>` opens a window showing the image.
+4. `./build/ShaderScope/shaderscope --headless --preset <some.slangp> --input <in.png> --output out.png --width N --height M` produces an image deterministically.
 5. Vulkan validation layers produce zero errors during normal operation in a Debug build.
 
 ---
@@ -2853,7 +2853,7 @@ sudo dnf install gcc-c++ cmake ninja-build pkgconfig \
 - Real Wayland/PipeWire capture backend (M2)
 - ImGui dock layout, preset browser, parameter UI (M4)
 - Multi-pass preset rendering (currently single-pass; multi-pass arrives in M4 alongside the full preset library)
-- Shader cache on disk (`~/.cache/shaderglass/spirv/` — referenced in spec, implemented in M4)
+- Shader cache on disk (`~/.cache/shaderscope/spirv/` — referenced in spec, implemented in M4)
 - Window resize / swapchain recreation polish (currently swapchain is fixed at startup)
 - Runtime shader-import error UI (M5)
 - AppImage / Flatpak packaging (M6)

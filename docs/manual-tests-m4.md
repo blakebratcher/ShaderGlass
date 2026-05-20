@@ -1,24 +1,24 @@
-# ShaderGlass Linux M4 — manual test checklist
+# ShaderScope Linux M4 — manual test checklist
 
 Run on a real X11 or Wayland session (the nested agent X server is enough for
 the X11 entries; Wayland entries need the user's actual desktop).
 
 ## Phase A — ImGui scaffolding + source picker
 
-- [ ] `shaderglass --capture x11-screen --source monitor:root` opens a window
+- [ ] `shaderscope --capture x11-screen --source monitor:root` opens a window
       and the "Source" panel lists at least one source.
 - [ ] Clicking a different `monitor:*` row in the Source panel switches the
       visible capture within ~1 second.
 - [ ] Clicking "Refresh" re-enumerates sources (open a new window, click
       Refresh, the new window appears).
-- [ ] `shaderglass --capture wayland-screen` shows the "Open portal picker..."
+- [ ] `shaderscope --capture wayland-screen` shows the "Open portal picker..."
       button; clicking it re-triggers the portal dialog.
 - [ ] Closing the window (or pressing Esc) exits with code 0.
 - [ ] All Phase A automated tests (`ctest -R AppState`) pass.
 
 ## Phase B — Preset library + browser
 
-- [ ] `shaderglass --capture x11-screen --source monitor:root` shows a
+- [ ] `shaderscope --capture x11-screen --source monitor:root` shows a
       "Presets" panel listing the starter library grouped by category.
 - [ ] Clicking a preset (e.g. `crt-easymode`) visibly changes the rendered
       output within ~200ms (first compile) and instantly on revisit.
@@ -44,17 +44,17 @@ the X11 entries; Wayland entries need the user's actual desktop).
 
 ## Phase D — Config persistence + session restore
 
-- [ ] `shaderglass --reset-config` exits 0 with "removed ..." message;
-      ~/.config/shaderglass/config.json is gone afterwards.
+- [ ] `shaderscope --reset-config` exits 0 with "removed ..." message;
+      ~/.config/shaderscope/config.json is gone afterwards.
 - [ ] Launch with `--capture x11-screen --source monitor:root --preset
       .../crt-easymode.slangp`, tweak a few sliders, exit.
-- [ ] Re-launch `shaderglass --capture x11-screen --source monitor:root`
+- [ ] Re-launch `shaderscope --capture x11-screen --source monitor:root`
       (no --preset). crt-easymode is auto-restored with the tweaks intact.
-- [ ] Re-launch `shaderglass` (no flags). Window opens; same source +
+- [ ] Re-launch `shaderscope` (no flags). Window opens; same source +
       preset + params are restored.
 - [ ] Drag a panel to a new dock position, exit, re-launch. The new
       dock layout is restored (imgui.ini is the proof).
-- [ ] Hand-corrupt ~/.config/shaderglass/config.json (e.g. `echo "{"
+- [ ] Hand-corrupt ~/.config/shaderscope/config.json (e.g. `echo "{"
       > $_`); re-launch. App starts with defaults, logs a warning.
 
 ## M4 final integration
@@ -62,15 +62,15 @@ the X11 entries; Wayland entries need the user's actual desktop).
 - [ ] All Phase A/B/C/D automated tests pass (`ctest`).
 - [ ] All Phase A/B/C/D manual checks pass on the user's actual desktop
       (X11 *and* Wayland, where applicable).
-- [ ] `shaderglass --version` still reports a sensible commit hash + date.
-- [ ] `shaderglass --help` includes the `--reset-config` line.
+- [ ] `shaderscope --version` still reports a sensible commit hash + date.
+- [ ] `shaderscope --help` includes the `--reset-config` line.
 - [ ] No new validation-layer errors in `cmake --build` or `ctest`
       output beyond the M3 baseline.
 
 ## Known limitations (M4 → M5 follow-ups)
 
-- **Bare `shaderglass` requires a saved session.** On a fresh config
-  (after `--reset-config` or first install), `shaderglass` with no flags
+- **Bare `shaderscope` requires a saved session.** On a fresh config
+  (after `--reset-config` or first install), `shaderscope` with no flags
   infers the capture kind from env but still needs `--source` for X11.
   Once a session is saved, subsequent bare launches auto-resume the
   source. Fixing the first-run UX (deferred capture + GUI-only source

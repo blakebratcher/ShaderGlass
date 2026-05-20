@@ -1,12 +1,12 @@
-# ShaderGlass Linux M4 — ImGui UI (Design)
+# ShaderScope Linux M4 — ImGui UI (Design)
 
 **Date:** 2026-05-18
 **Status:** Design — pending implementation plan
-**Predecessors:** M1 (foundation), M2 (Wayland capture), M3 (X11 capture). The port-level design lives in `docs/superpowers/specs/2026-05-06-shaderglass-linux-port-design.md`.
+**Predecessors:** M1 (foundation), M2 (Wayland capture), M3 (X11 capture). The port-level design lives in `docs/superpowers/specs/2026-05-06-shaderscope-linux-port-design.md`.
 
 ## Goal
 
-Make ShaderGlass on Linux **interactive**. After M4, typing `shaderglass` (no flags) opens a dockable ImGui window with three panels — source picker, preset browser, parameter editor — and remembers the user's last session across restarts. The CLI continues to work unchanged so scripts and existing tests are unaffected.
+Make ShaderScope on Linux **interactive**. After M4, typing `shaderscope` (no flags) opens a dockable ImGui window with three panels — source picker, preset browser, parameter editor — and remembers the user's last session across restarts. The CLI continues to work unchanged so scripts and existing tests are unaffected.
 
 ## Non-goals
 
@@ -19,7 +19,7 @@ Also out of scope: the full ~1200-preset RetroArch library (M6 packaging concern
 | Decision | Choice |
 |---|---|
 | Entry flow | GUI-first; `--capture` + `--source` + `--preset` still bypass the picker. |
-| Preset library | Curated ~20 starter `.slangp` files installed under `~/.local/share/shaderglass/shaders/`; dev builds fall back to the build-dir staging path. |
+| Preset library | Curated ~20 starter `.slangp` files installed under `~/.local/share/shaderscope/shaders/`; dev builds fall back to the build-dir staging path. |
 | Param policy on preset switch | Reset to declared defaults. Prior preset's tweaks remain persisted so revisiting restores them. |
 | Session restore | Auto-resume `(lastSource, lastPreset, lastParams)` on launch; user can still switch. |
 | Threading | Single-threaded canonical ImGui+SDL3+Vulkan loop. Defer the port-design render-thread split. |
@@ -58,7 +58,7 @@ Panels are **immediate-mode**: they read `AppState`, write back intents into `pe
 
 ### File layout
 
-New files under `ShaderGlassLinux/src/`:
+New files under `ShaderScope/src/`:
 
 ```
 ui/
@@ -68,8 +68,8 @@ ui/
   PresetBrowserPanel.{h,cpp}
   ParamsPanel.{h,cpp}
 util/
-  ConfigStore.{h,cpp}         ~/.config/shaderglass/config.json load/save
-  PresetLibrary.{h,cpp}       scan ~/.local/share/shaderglass/shaders/ → list
+  ConfigStore.{h,cpp}         ~/.config/shaderscope/config.json load/save
+  PresetLibrary.{h,cpp}       scan ~/.local/share/shaderscope/shaders/ → list
 render/
   RenderEngine.cpp            extend with recordImGuiDraw() + ImGui render pass wiring
 ```
@@ -131,7 +131,7 @@ Writes back into `state.activeParams` in place — the next frame's UBO upload p
 
 ### `ConfigStore`
 
-Owns `~/.config/shaderglass/config.json`. Schema:
+Owns `~/.config/shaderscope/config.json`. Schema:
 
 ```json
 {
@@ -153,11 +153,11 @@ Two save entry points distinguished by call site:
 
 ### `PresetLibrary`
 
-Scans `~/.local/share/shaderglass/shaders/` (and the build-dir fallback `${CMAKE_BINARY_DIR}/ShaderGlassLinux/shaders-staging/` so dev runs work without `cmake --install`). Returns a sorted list of `(path, displayName, category)` where `category` is the immediate subdirectory name. The ~20 starter presets ship in-repo under `ShaderGlassLinux/shaders/starter/` for reproducible builds.
+Scans `~/.local/share/shaderscope/shaders/` (and the build-dir fallback `${CMAKE_BINARY_DIR}/ShaderScope/shaders-staging/` so dev runs work without `cmake --install`). Returns a sorted list of `(path, displayName, category)` where `category` is the immediate subdirectory name. The ~20 starter presets ship in-repo under `ShaderScope/shaders/starter/` for reproducible builds.
 
 ## Data flow
 
-### Launch (`shaderglass` with no args)
+### Launch (`shaderscope` with no args)
 
 ```
 1. ConfigStore::load()                        → { lastSource, lastPreset, params }
@@ -201,7 +201,7 @@ pendingPresetPath = "crt/crt-geom.slangp"
        config->setLastPreset(path);  config->saveAsync()
 ```
 
-`ShaderCache` is the existing on-disk SPIR-V cache (`~/.cache/shaderglass/spirv/`, content-hashed). First selection of a complex preset takes 50–200ms; subsequent selections are sub-millisecond.
+`ShaderCache` is the existing on-disk SPIR-V cache (`~/.cache/shaderscope/spirv/`, content-hashed). First selection of a complex preset takes 50–200ms; subsequent selections are sub-millisecond.
 
 ### On param edit
 
@@ -219,19 +219,19 @@ Each phase ends with manual smoke + automated tests green. Each phase is a sensi
 
 | # | Task |
 |---|---|
-| A1 | FetchContent Dear ImGui (pinned commit) + nlohmann/json (pinned tag); link `imgui_impl_sdl3` + `imgui_impl_vulkan` into `shaderglass_core` |
+| A1 | FetchContent Dear ImGui (pinned commit) + nlohmann/json (pinned tag); link `imgui_impl_sdl3` + `imgui_impl_vulkan` into `shaderscope_core` |
 | A2 | `ImGuiLayer`: init/shutdown, descriptor pool, font atlas upload, frame begin/end |
 | A3 | `RenderEngine::recordImGuiDraw()` — ImGui pass after the shader pass writes to the swapchain |
 | A4 | `AppState` skeleton (capture only, no preset/params yet) + `applyPending()` |
 | A5 | `SourcePickerPanel` — table view, click-to-switch, "Refresh", Wayland portal short-circuit |
-| A6 | Wire `shaderglass` (no args) → opens window with picker; CLI bypass still works |
+| A6 | Wire `shaderscope` (no args) → opens window with picker; CLI bypass still works |
 | A7 | Manual smoke + headless integration test per §Testing (drive `AppState` against a `FakeX11CaptureSession`; assert pending-source intent rebuilds capture). No live SDL/ImGui screenshot test. |
 
 ### Phase B — Preset library + browser (~5 tasks)
 
 | # | Task |
 |---|---|
-| B1 | Pick + commit ~20 curated starter `.slangp` files under `ShaderGlassLinux/shaders/starter/` |
+| B1 | Pick + commit ~20 curated starter `.slangp` files under `ShaderScope/shaders/starter/` |
 | B2 | CMake `install()` rule + dev-mode build-dir staging path |
 | B3 | `PresetLibrary::scan()` with sorting / categorisation |
 | B4 | `PresetBrowserPanel` — tree view by category + search filter + click-to-apply |
@@ -272,23 +272,23 @@ Each phase ends with manual smoke + automated tests green. Each phase is a sensi
 
 - **Unit tests** (no live X / Vulkan): `ConfigStore` round-trip + atomic write + malformed-file recovery; `PresetLibrary::scan()` against a fixture directory.
 - **Headless integration** (no SDL window): drive an `AppState` against a `FakeX11CaptureSession` + the existing headless render pipeline. Asserts: source-switch rebuilds capture; preset-switch swaps the active `Preset`; param edit changes the UBO upload payload.
-- **Live smoke** (manual, DISPLAY required): launch `shaderglass`, verify picker enumerates the current desktop, click-switching works, preset switch visibly changes output, config.json correct after exit. Documented in `docs/manual-tests-m4.md`.
+- **Live smoke** (manual, DISPLAY required): launch `shaderscope`, verify picker enumerates the current desktop, click-switching works, preset switch visibly changes output, config.json correct after exit. Documented in `docs/manual-tests-m4.md`.
 - **Skipped**: ImGui screenshot regression — too brittle, matches the port-design "no GUI snapshot tests in v1.0" stance.
 
 ## Build / dependency additions
 
 | Dep | Where | How |
 |---|---|---|
-| Dear ImGui (pinned commit) | `shaderglass_core` | FetchContent; compiles `imgui_impl_sdl3.cpp` + `imgui_impl_vulkan.cpp` directly into the core lib |
-| nlohmann/json (pinned tag) | `shaderglass_core` | FetchContent (single header) |
-| Starter `.slangp` set (~20 files) | `ShaderGlassLinux/shaders/starter/` | Committed in-repo so the build is reproducible without an internet fetch |
-| CMake `install()` rule | top-level | Copies starter shaders to `${CMAKE_INSTALL_DATADIR}/shaderglass/shaders/`; dev fallback at `${CMAKE_BINARY_DIR}/ShaderGlassLinux/shaders-staging/` populated at configure time |
+| Dear ImGui (pinned commit) | `shaderscope_core` | FetchContent; compiles `imgui_impl_sdl3.cpp` + `imgui_impl_vulkan.cpp` directly into the core lib |
+| nlohmann/json (pinned tag) | `shaderscope_core` | FetchContent (single header) |
+| Starter `.slangp` set (~20 files) | `ShaderScope/shaders/starter/` | Committed in-repo so the build is reproducible without an internet fetch |
+| CMake `install()` rule | top-level | Copies starter shaders to `${CMAKE_INSTALL_DATADIR}/shaderscope/shaders/`; dev fallback at `${CMAKE_BINARY_DIR}/ShaderScope/shaders-staging/` populated at configure time |
 
 ## Open questions / risks
 
 1. **Wayland source picker UX is half-portal-half-ours.** `wayland-screen`'s "Open portal picker…" button delegates to the OS portal dialog; the in-app picker only owns x11-screen. Acceptable mismatch, documented in the spec and in `docs/manual-tests-m4.md`. Not solved here.
 2. **Curated starter list selection.** Which 20 presets? Selected in B1, not in this spec; needs a sanity-check pass against actual visual output before committing.
-3. **AppImage / Flatpak interaction.** The `~/.local/share/shaderglass/shaders/` install target needs sandbox-aware path resolution under those formats. Out of scope for M4; flagged for M6 packaging.
+3. **AppImage / Flatpak interaction.** The `~/.local/share/shaderscope/shaders/` install target needs sandbox-aware path resolution under those formats. Out of scope for M4; flagged for M6 packaging.
 4. **Param-type coverage in M4.** Float, int, bool covered explicitly. Rare types (color, enum, string) render a "not editable" placeholder for now and are flagged for M5.
 5. **No render-thread separation.** The port-design's separate render thread stays deferred. If a future M5 ImGui param panel ends up costing >2ms/frame at 60Hz, the single-threaded loop may stutter under heavy shader load — re-evaluate then.
 

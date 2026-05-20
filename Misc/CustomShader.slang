@@ -1,4 +1,4 @@
-// This is a minimal example of a custom shader you can import into ShaderGlass
+// This is a minimal example of a custom shader you can import into ShaderScope
 // Full specification and examples can be found at https://github.com/libretro/slang-shaders/blob/master/README.md
 
 #version 450

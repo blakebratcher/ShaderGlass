@@ -1,4 +1,4 @@
-# ShaderGlass Linux M3 — X11 Capture Implementation Plan
+# ShaderScope Linux M3 — X11 Capture Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** C++20, libx11 + libxcomposite + libxext (MIT-SHM) + libxrandr, Vulkan 1.3, GoogleTest.
 
-**Reference spec:** `docs/superpowers/specs/2026-05-17-shaderglass-linux-m3-x11-capture-design.md`
+**Reference spec:** `docs/superpowers/specs/2026-05-17-shaderscope-linux-m3-x11-capture-design.md`
 
 **Branch:** `linux/main`
 
@@ -19,7 +19,7 @@
 Files this plan creates or modifies:
 
 ```
-ShaderGlassLinux/
+ShaderScope/
   CMakeLists.txt                                  MODIFY (add X11 deps + new sources)
   src/
     capture/
@@ -66,11 +66,11 @@ Built inside-out: pure-logic helpers first (easiest TDD), then session abstracti
 ### Task 1: Add X11 deps to CMake
 
 **Files:**
-- Modify: `ShaderGlassLinux/CMakeLists.txt`
+- Modify: `ShaderScope/CMakeLists.txt`
 
 - [ ] **Step 1: Add the pkg-config line**
 
-Open `ShaderGlassLinux/CMakeLists.txt` and locate the existing `pkg_check_modules` block (around lines 4-6, after `find_package(PkgConfig REQUIRED)`):
+Open `ShaderScope/CMakeLists.txt` and locate the existing `pkg_check_modules` block (around lines 4-6, after `find_package(PkgConfig REQUIRED)`):
 
 Current:
 ```cmake
@@ -86,12 +86,12 @@ pkg_check_modules(X11      REQUIRED IMPORTED_TARGET x11 xcomposite xext xrandr)
 
 (`xext` carries the MIT-SHM extension headers; `xrandr` carries the output enumeration.)
 
-- [ ] **Step 2: Link `PkgConfig::X11` into `shaderglass_core`**
+- [ ] **Step 2: Link `PkgConfig::X11` into `shaderscope_core`**
 
-Locate the `target_link_libraries(shaderglass_core PUBLIC ...)` block (around lines 67-73). Add `PkgConfig::X11` to the list:
+Locate the `target_link_libraries(shaderscope_core PUBLIC ...)` block (around lines 67-73). Add `PkgConfig::X11` to the list:
 
 ```cmake
-target_link_libraries(shaderglass_core PUBLIC
+target_link_libraries(shaderscope_core PUBLIC
     SDL3::SDL3
     Vulkan::Vulkan
     shadergc
@@ -113,7 +113,7 @@ Expected: build succeeds with no errors. No new sources yet, just confirming the
 - [ ] **Step 4: Commit**
 
 ```
-git add ShaderGlassLinux/CMakeLists.txt
+git add ShaderScope/CMakeLists.txt
 git commit -m "build(linux): add X11 + XComposite + XExt + XRandR for M3"
 ```
 
@@ -122,15 +122,15 @@ git commit -m "build(linux): add X11 + XComposite + XExt + XRandR for M3"
 ### Task 2: `fourcc_to_vk` helper + test
 
 **Files:**
-- Create: `ShaderGlassLinux/src/util/FourccToVk.h`
-- Create: `ShaderGlassLinux/src/util/FourccToVk.cpp`
-- Create: `ShaderGlassLinux/tests/test_fourcc_to_vk.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add source)
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt` (add test target)
+- Create: `ShaderScope/src/util/FourccToVk.h`
+- Create: `ShaderScope/src/util/FourccToVk.cpp`
+- Create: `ShaderScope/tests/test_fourcc_to_vk.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add source)
+- Modify: `ShaderScope/tests/CMakeLists.txt` (add test target)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `ShaderGlassLinux/tests/test_fourcc_to_vk.cpp`:
+Create `ShaderScope/tests/test_fourcc_to_vk.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -166,11 +166,11 @@ TEST(FourccToVk, UnknownFourccReturnsUndefined) {
 
 - [ ] **Step 2: Wire the test target so the failure shows up**
 
-In `ShaderGlassLinux/tests/CMakeLists.txt`, add at the end:
+In `ShaderScope/tests/CMakeLists.txt`, add at the end:
 
 ```cmake
 add_executable(fourcc_to_vk_tests test_fourcc_to_vk.cpp)
-target_link_libraries(fourcc_to_vk_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(fourcc_to_vk_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(fourcc_to_vk_tests)
 ```
 
@@ -184,7 +184,7 @@ Expected: build fails with `fatal error: util/FourccToVk.h: No such file or dire
 
 - [ ] **Step 4: Implement the header**
 
-Create `ShaderGlassLinux/src/util/FourccToVk.h`:
+Create `ShaderScope/src/util/FourccToVk.h`:
 
 ```cpp
 #pragma once
@@ -199,7 +199,7 @@ VkFormat fourcc_to_vk(uint32_t fourcc);
 
 - [ ] **Step 5: Implement the source**
 
-Create `ShaderGlassLinux/src/util/FourccToVk.cpp`:
+Create `ShaderScope/src/util/FourccToVk.cpp`:
 
 ```cpp
 #include "FourccToVk.h"
@@ -220,12 +220,12 @@ VkFormat fourcc_to_vk(uint32_t fourcc) {
 }
 ```
 
-- [ ] **Step 6: Add the source to `shaderglass_core`**
+- [ ] **Step 6: Add the source to `shaderscope_core`**
 
-In `ShaderGlassLinux/CMakeLists.txt`, in the `add_library(shaderglass_core STATIC ...)` block, add `src/util/FourccToVk.cpp` next to `src/util/XdgConfig.cpp`:
+In `ShaderScope/CMakeLists.txt`, in the `add_library(shaderscope_core STATIC ...)` block, add `src/util/FourccToVk.cpp` next to `src/util/XdgConfig.cpp`:
 
 ```cmake
-add_library(shaderglass_core STATIC
+add_library(shaderscope_core STATIC
     src/output/SdlWindow.cpp
     src/util/Logging.cpp
     src/util/XdgConfig.cpp
@@ -246,11 +246,11 @@ Expected: 5/5 tests pass.
 - [ ] **Step 8: Commit**
 
 ```
-git add ShaderGlassLinux/src/util/FourccToVk.h \
-        ShaderGlassLinux/src/util/FourccToVk.cpp \
-        ShaderGlassLinux/tests/test_fourcc_to_vk.cpp \
-        ShaderGlassLinux/CMakeLists.txt \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/src/util/FourccToVk.h \
+        ShaderScope/src/util/FourccToVk.cpp \
+        ShaderScope/tests/test_fourcc_to_vk.cpp \
+        ShaderScope/CMakeLists.txt \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "feat(util): fourcc_to_vk maps DRM fourcc → VkFormat"
 ```
 
@@ -259,15 +259,15 @@ git commit -m "feat(util): fourcc_to_vk maps DRM fourcc → VkFormat"
 ### Task 3: `SourceMatcher` helper + test
 
 **Files:**
-- Create: `ShaderGlassLinux/src/util/SourceMatcher.h`
-- Create: `ShaderGlassLinux/src/util/SourceMatcher.cpp`
-- Create: `ShaderGlassLinux/tests/test_source_matcher.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add source)
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt` (add test target)
+- Create: `ShaderScope/src/util/SourceMatcher.h`
+- Create: `ShaderScope/src/util/SourceMatcher.cpp`
+- Create: `ShaderScope/tests/test_source_matcher.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add source)
+- Modify: `ShaderScope/tests/CMakeLists.txt` (add test target)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `ShaderGlassLinux/tests/test_source_matcher.cpp`:
+Create `ShaderScope/tests/test_source_matcher.cpp`:
 
 ```cpp
 #include <gtest/gtest.h>
@@ -330,11 +330,11 @@ TEST(SourceMatcher, EmptyQueryIsNoMatch) {
 
 - [ ] **Step 2: Wire the test target**
 
-In `ShaderGlassLinux/tests/CMakeLists.txt`, add at the end:
+In `ShaderScope/tests/CMakeLists.txt`, add at the end:
 
 ```cmake
 add_executable(source_matcher_tests test_source_matcher.cpp)
-target_link_libraries(source_matcher_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(source_matcher_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(source_matcher_tests)
 ```
 
@@ -348,7 +348,7 @@ Expected: build fails with missing `util/SourceMatcher.h`.
 
 - [ ] **Step 4: Implement the header**
 
-Create `ShaderGlassLinux/src/util/SourceMatcher.h`:
+Create `ShaderScope/src/util/SourceMatcher.h`:
 
 ```cpp
 #pragma once
@@ -381,7 +381,7 @@ std::vector<SourceInfo> collectSubstringMatches(const std::vector<SourceInfo>& s
 
 - [ ] **Step 5: Implement the source**
 
-Create `ShaderGlassLinux/src/util/SourceMatcher.cpp`:
+Create `ShaderScope/src/util/SourceMatcher.cpp`:
 
 ```cpp
 #include "SourceMatcher.h"
@@ -423,9 +423,9 @@ SourceMatchResult matchSource(const std::vector<SourceInfo>& sources,
 }
 ```
 
-- [ ] **Step 6: Add to `shaderglass_core`**
+- [ ] **Step 6: Add to `shaderscope_core`**
 
-In `ShaderGlassLinux/CMakeLists.txt`, add to the library source list:
+In `ShaderScope/CMakeLists.txt`, add to the library source list:
 
 ```cmake
     src/util/SourceMatcher.cpp
@@ -443,11 +443,11 @@ Expected: 6/6 tests pass.
 - [ ] **Step 8: Commit**
 
 ```
-git add ShaderGlassLinux/src/util/SourceMatcher.h \
-        ShaderGlassLinux/src/util/SourceMatcher.cpp \
-        ShaderGlassLinux/tests/test_source_matcher.cpp \
-        ShaderGlassLinux/CMakeLists.txt \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/src/util/SourceMatcher.h \
+        ShaderScope/src/util/SourceMatcher.cpp \
+        ShaderScope/tests/test_source_matcher.cpp \
+        ShaderScope/CMakeLists.txt \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "feat(util): SourceMatcher — exact-id then substring-displayName"
 ```
 
@@ -458,7 +458,7 @@ git commit -m "feat(util): SourceMatcher — exact-id then substring-displayName
 ### Task 4: `X11CaptureSession` interface header
 
 **Files:**
-- Create: `ShaderGlassLinux/src/capture/X11CaptureSession.h`
+- Create: `ShaderScope/src/capture/X11CaptureSession.h`
 
 This is interface-only; no test of its own. It will be covered by the Fake/Real sessions and the integration test.
 
@@ -508,7 +508,7 @@ public:
 The header has no .cpp pair yet. We verify it by getting it included when we add the Fake session in the next task. For now:
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: still builds; no new source is consumed yet.
@@ -516,7 +516,7 @@ Expected: still builds; no new source is consumed yet.
 - [ ] **Step 3: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/X11CaptureSession.h
+git add ShaderScope/src/capture/X11CaptureSession.h
 git commit -m "feat(capture): X11CaptureSession interface + X11SessionFrame"
 ```
 
@@ -525,15 +525,15 @@ git commit -m "feat(capture): X11CaptureSession interface + X11SessionFrame"
 ### Task 5: `FakeX11CaptureSession` + smoke test
 
 **Files:**
-- Create: `ShaderGlassLinux/src/capture/FakeX11CaptureSession.h`
-- Create: `ShaderGlassLinux/src/capture/FakeX11CaptureSession.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add source)
+- Create: `ShaderScope/src/capture/FakeX11CaptureSession.h`
+- Create: `ShaderScope/src/capture/FakeX11CaptureSession.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add source)
 
 The Fake session has no test of its own — it gets covered by the `X11Capture` integration test in Task 7. We just compile it now and confirm it links.
 
 - [ ] **Step 1: Create the header**
 
-`ShaderGlassLinux/src/capture/FakeX11CaptureSession.h`:
+`ShaderScope/src/capture/FakeX11CaptureSession.h`:
 
 ```cpp
 #pragma once
@@ -567,7 +567,7 @@ private:
 
 - [ ] **Step 2: Create the source**
 
-`ShaderGlassLinux/src/capture/FakeX11CaptureSession.cpp`:
+`ShaderScope/src/capture/FakeX11CaptureSession.cpp`:
 
 ```cpp
 #include "FakeX11CaptureSession.h"
@@ -609,9 +609,9 @@ std::optional<X11SessionFrame> FakeX11CaptureSession::grab() {
 }
 ```
 
-- [ ] **Step 3: Add to `shaderglass_core`**
+- [ ] **Step 3: Add to `shaderscope_core`**
 
-In `ShaderGlassLinux/CMakeLists.txt`, add to the library sources:
+In `ShaderScope/CMakeLists.txt`, add to the library sources:
 
 ```cmake
     src/capture/FakeX11CaptureSession.cpp
@@ -620,7 +620,7 @@ In `ShaderGlassLinux/CMakeLists.txt`, add to the library sources:
 - [ ] **Step 4: Build, confirm it links**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: build succeeds.
@@ -628,9 +628,9 @@ Expected: build succeeds.
 - [ ] **Step 5: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/FakeX11CaptureSession.h \
-        ShaderGlassLinux/src/capture/FakeX11CaptureSession.cpp \
-        ShaderGlassLinux/CMakeLists.txt
+git add ShaderScope/src/capture/FakeX11CaptureSession.h \
+        ShaderScope/src/capture/FakeX11CaptureSession.cpp \
+        ShaderScope/CMakeLists.txt
 git commit -m "feat(capture): FakeX11CaptureSession synthetic frame producer"
 ```
 
@@ -641,16 +641,16 @@ git commit -m "feat(capture): FakeX11CaptureSession synthetic frame producer"
 ### Task 6: `X11Capture` + headless integration test
 
 **Files:**
-- Create: `ShaderGlassLinux/src/capture/X11Capture.h`
-- Create: `ShaderGlassLinux/src/capture/X11Capture.cpp`
-- Create: `ShaderGlassLinux/tests/test_x11_capture_fake_session.cpp`
-- Create: `ShaderGlassLinux/tests/data/reference_x11_fake_4x4.png` (committed)
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add source)
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt` (add test target)
+- Create: `ShaderScope/src/capture/X11Capture.h`
+- Create: `ShaderScope/src/capture/X11Capture.cpp`
+- Create: `ShaderScope/tests/test_x11_capture_fake_session.cpp`
+- Create: `ShaderScope/tests/data/reference_x11_fake_4x4.png` (committed)
+- Modify: `ShaderScope/CMakeLists.txt` (add source)
+- Modify: `ShaderScope/tests/CMakeLists.txt` (add test target)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `ShaderGlassLinux/tests/test_x11_capture_fake_session.cpp`:
+Create `ShaderScope/tests/test_x11_capture_fake_session.cpp`:
 
 ```cpp
 // Drives X11Capture end-to-end against a FakeX11CaptureSession.
@@ -723,7 +723,7 @@ TEST(X11CaptureWithFakeSession, RendersBgraFrameToReferencePng) {
     HeadlessOutput out(ctx, 4, 4, fmt);
     auto bytes = out.renderToBytes(src, pipeline);
 
-    fs::path tmp = fs::temp_directory_path() / "shaderglass_x11_fake_out.png";
+    fs::path tmp = fs::temp_directory_path() / "shaderscope_x11_fake_out.png";
     fs::remove(tmp);
     ASSERT_TRUE(stbi_write_png(tmp.string().c_str(), 4, 4, 4,
                                bytes.data(), 4 * 4));
@@ -738,11 +738,11 @@ TEST(X11CaptureWithFakeSession, RendersBgraFrameToReferencePng) {
 
 - [ ] **Step 2: Wire the test target**
 
-In `ShaderGlassLinux/tests/CMakeLists.txt`, append:
+In `ShaderScope/tests/CMakeLists.txt`, append:
 
 ```cmake
 add_executable(x11_capture_fake_tests test_x11_capture_fake_session.cpp)
-target_link_libraries(x11_capture_fake_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(x11_capture_fake_tests PRIVATE shaderscope_core gtest_main)
 target_compile_definitions(x11_capture_fake_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_include_directories(x11_capture_fake_tests PRIVATE ${stb_SOURCE_DIR})
@@ -837,9 +837,9 @@ void X11Capture::release(CapturedFrame& f) {
 }
 ```
 
-- [ ] **Step 6: Add the source to `shaderglass_core`**
+- [ ] **Step 6: Add the source to `shaderscope_core`**
 
-In `ShaderGlassLinux/CMakeLists.txt`:
+In `ShaderScope/CMakeLists.txt`:
 
 ```cmake
     src/capture/X11Capture.cpp
@@ -856,11 +856,11 @@ Expected: test runs but fails on `ASSERT_EQ(a.size(), b.size())` because the ref
 
 - [ ] **Step 8: Generate the reference PNG from the test's own output**
 
-The test writes `/tmp/shaderglass_x11_fake_out.png`. Copy that file to the data dir as the reference:
+The test writes `/tmp/shaderscope_x11_fake_out.png`. Copy that file to the data dir as the reference:
 
 ```
-cp /tmp/shaderglass_x11_fake_out.png \
-   ShaderGlassLinux/tests/data/reference_x11_fake_4x4.png
+cp /tmp/shaderscope_x11_fake_out.png \
+   ShaderScope/tests/data/reference_x11_fake_4x4.png
 ```
 
 - [ ] **Step 9: Re-run, confirm it passes**
@@ -874,12 +874,12 @@ Expected: PASS.
 - [ ] **Step 10: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/X11Capture.h \
-        ShaderGlassLinux/src/capture/X11Capture.cpp \
-        ShaderGlassLinux/tests/test_x11_capture_fake_session.cpp \
-        ShaderGlassLinux/tests/data/reference_x11_fake_4x4.png \
-        ShaderGlassLinux/CMakeLists.txt \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/src/capture/X11Capture.h \
+        ShaderScope/src/capture/X11Capture.cpp \
+        ShaderScope/tests/test_x11_capture_fake_session.cpp \
+        ShaderScope/tests/data/reference_x11_fake_4x4.png \
+        ShaderScope/CMakeLists.txt \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "feat(capture): X11Capture adapter + headless fake-session test"
 ```
 
@@ -890,15 +890,15 @@ git commit -m "feat(capture): X11Capture adapter + headless fake-session test"
 ### Task 7: `RealX11CaptureSession` skeleton (open/close Display, extension checks)
 
 **Files:**
-- Create: `ShaderGlassLinux/src/capture/RealX11CaptureSession.h`
-- Create: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
-- Modify: `ShaderGlassLinux/CMakeLists.txt` (add source)
+- Create: `ShaderScope/src/capture/RealX11CaptureSession.h`
+- Create: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/CMakeLists.txt` (add source)
 
 No test in this task — the next four tasks layer functionality on top and end with the real-session smoke test. We only verify it builds + the destructor doesn't crash here.
 
 - [ ] **Step 1: Header skeleton**
 
-`ShaderGlassLinux/src/capture/RealX11CaptureSession.h`:
+`ShaderScope/src/capture/RealX11CaptureSession.h`:
 
 ```cpp
 #pragma once
@@ -953,7 +953,7 @@ private:
 
 - [ ] **Step 2: Source skeleton — open Display + destructor + extension checks**
 
-`ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`:
+`ShaderScope/src/capture/RealX11CaptureSession.cpp`:
 
 ```cpp
 #include "RealX11CaptureSession.h"
@@ -1014,9 +1014,9 @@ bool RealX11CaptureSession::reallocIfDimsChanged(uint32_t, uint32_t) { return tr
 Drawable RealX11CaptureSession::targetDrawable() const { return m_root; }
 ```
 
-- [ ] **Step 3: Add to `shaderglass_core`**
+- [ ] **Step 3: Add to `shaderscope_core`**
 
-In `ShaderGlassLinux/CMakeLists.txt`:
+In `ShaderScope/CMakeLists.txt`:
 
 ```cmake
     src/capture/RealX11CaptureSession.cpp
@@ -1025,7 +1025,7 @@ In `ShaderGlassLinux/CMakeLists.txt`:
 - [ ] **Step 4: Build, confirm core links**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: build succeeds. The X11 link is now exercised.
@@ -1033,9 +1033,9 @@ Expected: build succeeds. The X11 link is now exercised.
 - [ ] **Step 5: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.h \
-        ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp \
-        ShaderGlassLinux/CMakeLists.txt
+git add ShaderScope/src/capture/RealX11CaptureSession.h \
+        ShaderScope/src/capture/RealX11CaptureSession.cpp \
+        ShaderScope/CMakeLists.txt
 git commit -m "feat(capture): RealX11CaptureSession skeleton — open Display + extension probes"
 ```
 
@@ -1044,7 +1044,7 @@ git commit -m "feat(capture): RealX11CaptureSession skeleton — open Display + 
 ### Task 8: Monitor source enumeration (XRandR)
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 No test of its own — covered by Task 16's real-session smoke.
 
@@ -1106,7 +1106,7 @@ std::vector<SourceInfo> RealX11CaptureSession::enumerateSources() {
 - [ ] **Step 2: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1114,7 +1114,7 @@ Expected: success.
 - [ ] **Step 3: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): enumerate monitors via XRandR (root + per-output)"
 ```
 
@@ -1123,7 +1123,7 @@ git commit -m "feat(capture): enumerate monitors via XRandR (root + per-output)"
 ### Task 9: Monitor source: `start` / `stop` + SHM segment alloc
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 - [ ] **Step 1: Implement `start()` for monitor sources, `stop()`, and the alloc/free helpers**
 
@@ -1251,7 +1251,7 @@ Also add `#include <cstring>` at the top if not already present (for `strlen`).
 - [ ] **Step 2: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1259,7 +1259,7 @@ Expected: success.
 - [ ] **Step 3: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): monitor source start/stop + XShm segment lifecycle"
 ```
 
@@ -1268,7 +1268,7 @@ git commit -m "feat(capture): monitor source start/stop + XShm segment lifecycle
 ### Task 10: Monitor grab via XShmGetImage
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 - [ ] **Step 1: Implement `grab()` for the XShm path (XGetImage fallback in Task 14)**
 
@@ -1314,7 +1314,7 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
 - [ ] **Step 2: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1322,7 +1322,7 @@ Expected: success.
 - [ ] **Step 3: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): monitor grab via XShmGetImage (BGRA → fourcc ARGB8888)"
 ```
 
@@ -1333,7 +1333,7 @@ git commit -m "feat(capture): monitor grab via XShmGetImage (BGRA → fourcc ARG
 ### Task 11: Window source enumeration
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 - [ ] **Step 1: Add the window-enumeration tail of `enumerateSources()`**
 
@@ -1436,7 +1436,7 @@ Then, in `enumerateSources()`, replace the "// Windows are appended in Task 11."
 - [ ] **Step 2: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1444,7 +1444,7 @@ Expected: success.
 - [ ] **Step 3: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): enumerate top-level windows via XQueryTree + _NET_WM_NAME"
 ```
 
@@ -1453,7 +1453,7 @@ git commit -m "feat(capture): enumerate top-level windows via XQueryTree + _NET_
 ### Task 12: Window source: composite redirect + NameWindowPixmap
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 - [ ] **Step 1: Replace the window-branch body inside `start()`**
 
@@ -1529,7 +1529,7 @@ void RealX11CaptureSession::stop() {
 - [ ] **Step 3: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1537,7 +1537,7 @@ Expected: success.
 - [ ] **Step 4: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): window source via XCompositeRedirectWindow + NameWindowPixmap"
 ```
 
@@ -1546,7 +1546,7 @@ git commit -m "feat(capture): window source via XCompositeRedirectWindow + NameW
 ### Task 13: Resize detection in `grab()`
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 - [ ] **Step 1: Implement `reallocIfDimsChanged()` and call it at the top of `grab()`**
 
@@ -1593,7 +1593,7 @@ In `grab()`, immediately after `if (m_sourceKind == SourceKind::None) return std
 - [ ] **Step 2: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1601,7 +1601,7 @@ Expected: success.
 - [ ] **Step 3: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): detect source resize in grab(); rebuild SHM + pixmap"
 ```
 
@@ -1612,7 +1612,7 @@ git commit -m "feat(capture): detect source resize in grab(); rebuild SHM + pixm
 ### Task 14: `XGetImage` fallback for missing MIT-SHM
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 - [ ] **Step 1: Allocate a heap buffer in `allocSharedImage()` when SHM is missing**
 
@@ -1674,7 +1674,7 @@ Replace the entire block (all 4 lines including the comment) with:
 - [ ] **Step 3: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1682,7 +1682,7 @@ Expected: success.
 - [ ] **Step 4: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): XGetImage fallback when MIT-SHM unavailable"
 ```
 
@@ -1691,7 +1691,7 @@ git commit -m "feat(capture): XGetImage fallback when MIT-SHM unavailable"
 ### Task 15: BadWindow error handler for destroyed source windows
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp`
+- Modify: `ShaderScope/src/capture/RealX11CaptureSession.cpp`
 
 - [ ] **Step 1: Install a process-wide X error handler that flags BadWindow**
 
@@ -1737,7 +1737,7 @@ In `grab()`, immediately after the resize-check block, add (for window sources o
 - [ ] **Step 3: Build, confirm it compiles**
 
 ```
-cmake --build build -j shaderglass_core
+cmake --build build -j shaderscope_core
 ```
 
 Expected: success.
@@ -1745,7 +1745,7 @@ Expected: success.
 - [ ] **Step 4: Commit**
 
 ```
-git add ShaderGlassLinux/src/capture/RealX11CaptureSession.cpp
+git add ShaderScope/src/capture/RealX11CaptureSession.cpp
 git commit -m "feat(capture): swallow BadWindow + signal grab() to exit cleanly"
 ```
 
@@ -1754,12 +1754,12 @@ git commit -m "feat(capture): swallow BadWindow + signal grab() to exit cleanly"
 ### Task 16: Real-session smoke test (skips without DISPLAY)
 
 **Files:**
-- Create: `ShaderGlassLinux/tests/test_x11_capture_real_session.cpp`
-- Modify: `ShaderGlassLinux/tests/CMakeLists.txt`
+- Create: `ShaderScope/tests/test_x11_capture_real_session.cpp`
+- Modify: `ShaderScope/tests/CMakeLists.txt`
 
 - [ ] **Step 1: Write the test**
 
-`ShaderGlassLinux/tests/test_x11_capture_real_session.cpp`:
+`ShaderScope/tests/test_x11_capture_real_session.cpp`:
 
 ```cpp
 // Real-X11 smoke test: opens the actual Display, enumerates monitors,
@@ -1820,11 +1820,11 @@ TEST(X11CaptureRealSession, EnumeratesAndGrabsRoot) {
 
 - [ ] **Step 2: Wire the test target**
 
-In `ShaderGlassLinux/tests/CMakeLists.txt`, append:
+In `ShaderScope/tests/CMakeLists.txt`, append:
 
 ```cmake
 add_executable(x11_capture_real_tests test_x11_capture_real_session.cpp)
-target_link_libraries(x11_capture_real_tests PRIVATE shaderglass_core gtest_main)
+target_link_libraries(x11_capture_real_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(x11_capture_real_tests)
 ```
 
@@ -1842,8 +1842,8 @@ If running on a headless CI without `DISPLAY`: **SKIPPED**.
 - [ ] **Step 4: Commit**
 
 ```
-git add ShaderGlassLinux/tests/test_x11_capture_real_session.cpp \
-        ShaderGlassLinux/tests/CMakeLists.txt
+git add ShaderScope/tests/test_x11_capture_real_session.cpp \
+        ShaderScope/tests/CMakeLists.txt
 git commit -m "test(capture): real-X11 smoke; skips when DISPLAY unset"
 ```
 
@@ -1854,11 +1854,11 @@ git commit -m "test(capture): real-X11 smoke; skips when DISPLAY unset"
 ### Task 17: `--capture x11-screen` + `--source` parsing + enum-and-exit
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp`
+- Modify: `ShaderScope/src/main.cpp`
 
 - [ ] **Step 1: Add `source` to the `Args` struct + parse `--source`**
 
-In `ShaderGlassLinux/src/main.cpp`, locate the `Args` struct (~line 25) and add a field:
+In `ShaderScope/src/main.cpp`, locate the `Args` struct (~line 25) and add a field:
 
 ```cpp
     std::string source;          // --source value for x11-screen
@@ -1934,7 +1934,7 @@ In `runWindowed()`, find the `if (a.captureKind == "wayland-screen") { ... } els
 - [ ] **Step 4: Build**
 
 ```
-cmake --build build -j shaderglass
+cmake --build build -j shaderscope
 ```
 
 Expected: success.
@@ -1944,7 +1944,7 @@ Expected: success.
 In the agent shell with `DISPLAY=:0` (or whatever):
 
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen
+./build/ShaderScope/shaderscope --capture x11-screen
 ```
 
 Expected: prints `no --source given; pick one with --source <id-or-name>:` followed by `monitor:root`, plus any monitor outputs and named windows. Exit code 2.
@@ -1952,7 +1952,7 @@ Expected: prints `no --source given; pick one with --source <id-or-name>:` follo
 - [ ] **Step 6: Manual smoke — bogus source**
 
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source bogus-12345
+./build/ShaderScope/shaderscope --capture x11-screen --source bogus-12345
 ```
 
 Expected: prints `no source matched 'bogus-12345'; available:` + the list. Exit code 4.
@@ -1960,7 +1960,7 @@ Expected: prints `no source matched 'bogus-12345'; available:` + the list. Exit 
 - [ ] **Step 7: Commit**
 
 ```
-git add ShaderGlassLinux/src/main.cpp
+git add ShaderScope/src/main.cpp
 git commit -m "feat(linux): --capture x11-screen with --source matching + enum-on-omit"
 ```
 
@@ -1969,7 +1969,7 @@ git commit -m "feat(linux): --capture x11-screen with --source matching + enum-o
 ### Task 18: Fourcc-driven texture format in `main.cpp`
 
 **Files:**
-- Modify: `ShaderGlassLinux/src/main.cpp`
+- Modify: `ShaderScope/src/main.cpp`
 
 - [ ] **Step 1: Add the FourccToVk include**
 
@@ -2011,7 +2011,7 @@ Replace with:
 - [ ] **Step 3: Build**
 
 ```
-cmake --build build -j shaderglass
+cmake --build build -j shaderscope
 ```
 
 Expected: success.
@@ -2027,7 +2027,7 @@ Expected: all M1 + M2 tests still pass; the new M3 tests pass.
 - [ ] **Step 5: Commit**
 
 ```
-git add ShaderGlassLinux/src/main.cpp
+git add ShaderScope/src/main.cpp
 git commit -m "fix(linux): derive texture VkFormat from CapturedFrame::fourcc"
 ```
 
@@ -2074,9 +2074,9 @@ sudo dnf install gcc-c++ cmake ninja-build pkgconfig \
 Append:
 
 ```
-- `./build/ShaderGlassLinux/shaderglass --capture x11-screen` — list X11 sources and exit (M3).
-- `./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root` — capture the X11 desktop (M3).
-- `./build/ShaderGlassLinux/shaderglass --capture x11-screen --source <substring>` — capture a window by name (M3).
+- `./build/ShaderScope/shaderscope --capture x11-screen` — list X11 sources and exit (M3).
+- `./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root` — capture the X11 desktop (M3).
+- `./build/ShaderScope/shaderscope --capture x11-screen --source <substring>` — capture a window by name (M3).
 ```
 
 - [ ] **Step 3: Update the `## Status` section**
@@ -2123,51 +2123,51 @@ Run these on a real X11 session before signing off on M3. Any X11 desktop
 
 ### 1. Enumeration on omission
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen
+./build/ShaderScope/shaderscope --capture x11-screen
 ```
 - Expect: prints `no --source given; pick one with --source <id-or-name>:` followed by a list including `monitor:root` and any connected outputs / named windows. Exit code 2.
 
 ### 2. Capture the full desktop
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root
 ```
-- Expect: ShaderGlass window opens; rendered content matches the desktop. Move things on the desktop — rendered content follows. Esc / close exits cleanly.
+- Expect: ShaderScope window opens; rendered content matches the desktop. Move things on the desktop — rendered content follows. Esc / close exits cleanly.
 
 ### 3. Capture a specific output (multi-monitor)
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:<OUTPUT>
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:<OUTPUT>
 ```
 (e.g. `--source monitor:DP-1`. Use `xrandr | grep ' connected'` for output names.)
 - Expect: only that output's contents render.
 
 ### 4a. Capture a specific window by xid
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source window:0x<XID>
+./build/ShaderScope/shaderscope --capture x11-screen --source window:0x<XID>
 ```
 (Use `wmctrl -l` or `xdotool search` for xids. xids change per launch.)
 - Expect: just that window's contents render. Move the source window — rendered content follows.
 
 ### 4b. Capture a specific window by name substring
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source firefox
+./build/ShaderScope/shaderscope --capture x11-screen --source firefox
 ```
 - Expect: matched window renders. Minimize the source — rendering continues from the last composited backing (XComposite redirection).
 
 ### 5. Ambiguous source error
 Open two Firefox windows, then:
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source firefox
+./build/ShaderScope/shaderscope --capture x11-screen --source firefox
 ```
 - Expect: `'firefox' matched more than one source:` followed by the matched list. Exit code 3.
 
 ### 6. No-match source error
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source bogus-name-12345
+./build/ShaderScope/shaderscope --capture x11-screen --source bogus-name-12345
 ```
 - Expect: `no source matched 'bogus-name-12345'; available:` followed by the full list. Exit code 4.
 
 ### 7. Resize the source
-While running test 4b, resize the source window. Expect: ShaderGlass keeps rendering at the new size after a single dropped frame. No crash.
+While running test 4b, resize the source window. Expect: ShaderScope keeps rendering at the new size after a single dropped frame. No crash.
 
 ### 8. Smoke result
 
@@ -2218,7 +2218,7 @@ Expected: all tests pass or skip with documented reasons (the M2 `DmaBufImport` 
 - [ ] **Step 3: Manual smoke — root**
 
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root
 ```
 
 Expected: window opens; desktop renders inside; ESC / close exits cleanly.
@@ -2228,7 +2228,7 @@ Expected: window opens; desktop renders inside; ESC / close exits cleanly.
 Pick a real window (xterm, browser, anything with a name) and:
 
 ```
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source <name-substring>
+./build/ShaderScope/shaderscope --capture x11-screen --source <name-substring>
 ```
 
 Expected: just that window renders.

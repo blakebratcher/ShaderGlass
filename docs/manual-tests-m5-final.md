@@ -1,4 +1,4 @@
-# ShaderGlass Linux M5 feature-complete — manual test checklist
+# ShaderScope Linux M5 feature-complete — manual test checklist
 
 Run these on your real Plasma Wayland + X11 sessions. Agent CI cannot
 drive the ImGui inputs or test transparent overlay behaviour.
@@ -35,7 +35,7 @@ drive the ImGui inputs or test transparent overlay behaviour.
 ## Hotkeys
 
 - [ ] `F11` (no focus in a text field) → screenshot saved to
-      `$XDG_PICTURES_DIR/shaderglass-*.png`. Verify toast.
+      `$XDG_PICTURES_DIR/shaderscope-*.png`. Verify toast.
 - [ ] `B` toggles active preset ⇄ passthrough; second press restores
       the prior preset. Verify toasts.
 - [ ] `]` cycles next preset; `[` cycles previous. Wraps at the ends.

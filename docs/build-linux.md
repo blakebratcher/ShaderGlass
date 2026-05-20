@@ -1,4 +1,4 @@
-# Building ShaderGlass on Linux (M5 UX-polish status)
+# Building ShaderScope on Linux (M5 UX-polish status)
 
 ## Dependencies (Arch / CachyOS)
 ```
@@ -41,35 +41,35 @@ ctest --test-dir build --output-on-failure
 ```bash
 # GUI-first launch (no flags) — auto-resumes the last session, or opens
 # the picker if there's no saved state.
-./build/ShaderGlassLinux/shaderglass
+./build/ShaderScope/shaderscope
 
 # Reset a bad config:
-./build/ShaderGlassLinux/shaderglass --reset-config
+./build/ShaderScope/shaderscope --reset-config
 
 # Override the log verbosity:
-SHADERGLASS_LOG=debug ./build/ShaderGlassLinux/shaderglass
+SHADERSCOPE_LOG=debug ./build/ShaderScope/shaderscope
 
 # Windowed passthrough on a static image (M1):
-./build/ShaderGlassLinux/shaderglass <some.png>
+./build/ShaderScope/shaderscope <some.png>
 
 # Capture a screen / window via the Wayland portal (M2):
-./build/ShaderGlassLinux/shaderglass --capture wayland-screen
+./build/ShaderScope/shaderscope --capture wayland-screen
 
 # Exercise just the portal handshake:
-./build/ShaderGlassLinux/shaderglass --debug-portal
+./build/ShaderScope/shaderscope --debug-portal
 
 # List X11 sources and exit (M3):
-./build/ShaderGlassLinux/shaderglass --capture x11-screen
+./build/ShaderScope/shaderscope --capture x11-screen
 
 # Capture the X11 desktop (M3):
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source monitor:root
+./build/ShaderScope/shaderscope --capture x11-screen --source monitor:root
 
 # Capture a window by name substring (M3):
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --source <substring>
+./build/ShaderScope/shaderscope --capture x11-screen --source <substring>
 
 # List sources for the current backend and exit (M5 — scripted use):
-./build/ShaderGlassLinux/shaderglass --list-sources
-./build/ShaderGlassLinux/shaderglass --capture x11-screen --list-sources
+./build/ShaderScope/shaderscope --list-sources
+./build/ShaderScope/shaderscope --capture x11-screen --list-sources
 ```
 
 ## Status

@@ -1,4 +1,4 @@
-# ShaderGlass Linux M5 — UX Polish (Design)
+# ShaderScope Linux M5 — UX Polish (Design)
 
 Date: 2026-05-18
 Branch: `linux/main`
@@ -16,7 +16,7 @@ experience:
 
 1. **Toast UI** — surface errors and success events in the GUI instead of
    only stderr.
-2. **First-run UX** — let bare `shaderglass` open a usable window even with
+2. **First-run UX** — let bare `shaderscope` open a usable window even with
    no saved session and no `--source`.
 3. **Region/crop** — let the user crop the capture source to a sub-rectangle
    via interactive drag, persisted per source.
@@ -56,7 +56,7 @@ experience:
   the existing single-quad pass. Per-source persistence in `ConfigStore`.
 - **Screenshot** captures the post-pipeline render output (cropped if a crop
   is set), excludes ImGui chrome, saves PNG to
-  `$XDG_PICTURES_DIR/shaderglass-YYYY-MM-DD-HH-MM-SS.png` via a worker
+  `$XDG_PICTURES_DIR/shaderscope-YYYY-MM-DD-HH-MM-SS.png` via a worker
   thread. Triggered by a button in the Source panel; the implementation is
   hotkey-ready (single flag on AppState).
 
@@ -109,7 +109,7 @@ that an expected state.
 
 ### File layout
 
-New files (under `ShaderGlassLinux/src/`):
+New files (under `ShaderScope/src/`):
 
 ```
 ui/
@@ -404,7 +404,7 @@ Concurrency invariants:
   GPU/CPU race because the fence guarantees the copy completed.
 - Toast is posted from the worker thread; ToastQueue.post() is thread-safe.
 
-Filename: `shaderglass-YYYY-MM-DD-HH-MM-SS.png`. If the file already
+Filename: `shaderscope-YYYY-MM-DD-HH-MM-SS.png`. If the file already
 exists (clock collision), append `-001`, `-002`, ... before the extension.
 
 Save path resolution:
@@ -614,10 +614,10 @@ To live at `docs/manual-tests-m5-ux-polish.md` (created at end of milestone).
 - [ ] Click a toast → it disappears
 
 **First-run**
-- [ ] `--reset-config && shaderglass` → window opens, splash visible, can
+- [ ] `--reset-config && shaderscope` → window opens, splash visible, can
       pick a source from the Source panel and capture starts
-- [ ] `shaderglass --list-sources` prints sources and exits 0
-- [ ] `shaderglass --capture x11-screen` (no `--source`) opens GUI now
+- [ ] `shaderscope --list-sources` prints sources and exits 0
+- [ ] `shaderscope --capture x11-screen` (no `--source`) opens GUI now
       (does NOT print and exit)
 
 **Crop**
@@ -632,7 +632,7 @@ To live at `docs/manual-tests-m5-ux-polish.md` (created at end of milestone).
 
 **Screenshot**
 - [ ] Click "📷 Screenshot" → file appears at
-      `$XDG_PICTURES_DIR/shaderglass-...png`
+      `$XDG_PICTURES_DIR/shaderscope-...png`
 - [ ] Open the PNG → it shows the post-pipeline render (preset applied),
       cropped if applicable, no ImGui chrome
 - [ ] Read-only Pictures dir → red error toast with the attempted path
@@ -671,7 +671,7 @@ O(N≤5) per frame, no allocations in steady state).
 ## Build system
 
 No new external deps. No new CMake targets — additional translation units
-slot into the existing `shaderglass` and `shaderglass_tests` targets.
+slot into the existing `shaderscope` and `shaderscope_tests` targets.
 
 `stb_image_write.h` is already vendored via `stb_image_impl.cpp` (M1).
 ScreenshotWriter just `#include`s it directly; no separate build step.

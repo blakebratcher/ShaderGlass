@@ -1,4 +1,4 @@
-# ShaderGlass Linux M5 UX polish — manual test checklist
+# ShaderScope Linux M5 UX polish — manual test checklist
 
 Run these on your actual desktop session (Plasma Wayland + X11). The
 nested-XFCE agent shell that does CI smoke can't cover portal flows,
@@ -12,11 +12,11 @@ the system XDG_PICTURES_DIR, or interactive ImGui widgets.
 - [ ] Click a toast — it disappears immediately
 
 ## First-run
-- [ ] `--reset-config && shaderglass` — window opens with splash; picking
+- [ ] `--reset-config && shaderscope` — window opens with splash; picking
       a source begins capture
-- [ ] `shaderglass --list-sources` prints sources, exits 0
-- [ ] `shaderglass --capture x11-screen --list-sources` lists X11 sources, exits 0
-- [ ] `shaderglass --capture x11-screen` (no source) opens GUI (no longer
+- [ ] `shaderscope --list-sources` prints sources, exits 0
+- [ ] `shaderscope --capture x11-screen --list-sources` lists X11 sources, exits 0
+- [ ] `shaderscope --capture x11-screen` (no source) opens GUI (no longer
       exits)
 
 ## Region/crop
@@ -29,7 +29,7 @@ the system XDG_PICTURES_DIR, or interactive ImGui widgets.
 - [ ] Restart app — crop restored for the active source
 
 ## Screenshot
-- [ ] Click "Screenshot" — file appears at `$XDG_PICTURES_DIR/shaderglass-*.png`
+- [ ] Click "Screenshot" — file appears at `$XDG_PICTURES_DIR/shaderscope-*.png`
 - [ ] Open the PNG — post-pipeline render (preset applied, cropped if
       applicable, no ImGui chrome)
 - [ ] Read-only `$XDG_PICTURES_DIR` — red error toast with the path
