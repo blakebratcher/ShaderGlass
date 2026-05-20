@@ -319,6 +319,18 @@ static int runWindowed(Args& a) {
     }
 
     SdlWindow window("ShaderScope", 1280, 720);
+    // Restore prior window geometry before the swapchain is built, so
+    // the swapchain extent matches what the user expects on first frame.
+    {
+        ConfigStore probe;
+        probe.load();
+        if (auto g = probe.windowGeometry()) {
+            if (g->w > 0 && g->h > 0) {
+                SDL_SetWindowSize(window.handle(), g->w, g->h);
+                SDL_SetWindowPosition(window.handle(), g->x, g->y);
+            }
+        }
+    }
 
     VulkanContextOptions opts;
     opts.enableValidation        = true;
@@ -868,6 +880,16 @@ static int runWindowed(Args& a) {
                 engine.renderEmpty(imguiBody);
             }
             screenshotWriter.tick();
+        }
+    }
+    // Capture geometry before teardown — SDL keeps the values until the
+    // window is destroyed.
+    {
+        int x = 0, y = 0, w = 0, h = 0;
+        SDL_GetWindowPosition(window.handle(), &x, &y);
+        SDL_GetWindowSize(window.handle(), &w, &h);
+        if (w > 0 && h > 0) {
+            config.setWindowGeometry({x, y, w, h});
         }
     }
     config.saveSync();

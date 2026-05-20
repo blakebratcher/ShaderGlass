@@ -30,6 +30,7 @@ void ConfigStore::load() {
     m_lastSource.reset();
     m_lastPreset.clear();
     m_recentPresets.clear();
+    m_windowGeometry.reset();
     m_presetParams.clear();
     m_crops.clear();
 
@@ -57,6 +58,17 @@ void ConfigStore::load() {
             if (!s.kind.empty()) m_lastSource = s;
         }
         m_lastPreset = j.value("lastPreset", "");
+        if (j.contains("windowGeometry") && j["windowGeometry"].is_object()) {
+            const auto& g = j["windowGeometry"];
+            if (g.contains("x") && g.contains("y") && g.contains("w") && g.contains("h")) {
+                m_windowGeometry = WindowGeometry{
+                    g["x"].get<int>(),
+                    g["y"].get<int>(),
+                    g["w"].get<int>(),
+                    g["h"].get<int>(),
+                };
+            }
+        }
         if (j.contains("recentPresets") && j["recentPresets"].is_array()) {
             for (auto& v : j["recentPresets"]) {
                 if (v.is_string()) {
@@ -105,6 +117,12 @@ void ConfigStore::saveSync() {
                             {"id",   m_lastSource->id   } };
     }
     j["lastPreset"] = m_lastPreset;
+    if (m_windowGeometry) {
+        j["windowGeometry"] = {{"x", m_windowGeometry->x},
+                               {"y", m_windowGeometry->y},
+                               {"w", m_windowGeometry->w},
+                               {"h", m_windowGeometry->h}};
+    }
     json recent = json::array();
     for (const auto& p : m_recentPresets) recent.push_back(p);
     j["recentPresets"] = std::move(recent);
@@ -161,6 +179,11 @@ void ConfigStore::setLastSource(std::string kind, std::string id) {
 
 void ConfigStore::setLastPreset(std::string p) {
     m_lastPreset = std::move(p);
+    saveAsync();
+}
+
+void ConfigStore::setWindowGeometry(WindowGeometry g) {
+    m_windowGeometry = g;
     saveAsync();
 }
 

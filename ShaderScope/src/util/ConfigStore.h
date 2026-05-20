@@ -14,6 +14,10 @@ struct CropRect {
     int x, y, w, h;
 };
 
+struct WindowGeometry {
+    int x, y, w, h;
+};
+
 class ConfigStore {
 public:
     // Default path: $XDG_CONFIG_HOME/shaderscope/config.json
@@ -51,6 +55,10 @@ public:
     const std::vector<std::string>& recentPresets() const { return m_recentPresets; }
     void pushRecentPreset(std::string path);
 
+    // Window geometry — captured at shutdown, restored on next launch.
+    std::optional<WindowGeometry> windowGeometry() const { return m_windowGeometry; }
+    void setWindowGeometry(WindowGeometry g);
+
     // Returns a copy. Empty map if no entry for `presetPath`.
     std::unordered_map<std::string, float> paramsFor(const std::string& presetPath) const;
     void setPresetParams(const std::string& presetPath,
@@ -70,6 +78,7 @@ private:
     std::optional<LastSource>                            m_lastSource;
     std::string                                          m_lastPreset;
     std::vector<std::string>                             m_recentPresets;
+    std::optional<WindowGeometry>                        m_windowGeometry;
     std::unordered_map<std::string,
         std::unordered_map<std::string, float>>          m_presetParams;
     std::unordered_map<std::string, CropRect>            m_crops;   // key = kind + "|" + id
