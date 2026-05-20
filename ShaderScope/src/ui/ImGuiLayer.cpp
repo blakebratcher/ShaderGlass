@@ -47,6 +47,48 @@ ImGuiLayer::ImGuiLayer(VulkanContext& ctx, Swapchain& sc, SDL_Window* window)
     io.IniFilename = m_iniPath.c_str();
 
     ImGui::StyleColorsDark();
+    {
+        // ShaderScope theme tweaks: rounded corners + a blue→purple accent
+        // matching the app icon. Subtle, but the difference between 'default
+        // ImGui' and 'looks like a product' lives here.
+        ImGuiStyle& s = ImGui::GetStyle();
+        s.WindowRounding        = 6.0f;
+        s.ChildRounding         = 4.0f;
+        s.FrameRounding         = 4.0f;
+        s.PopupRounding         = 4.0f;
+        s.ScrollbarRounding     = 4.0f;
+        s.GrabRounding          = 4.0f;
+        s.TabRounding           = 4.0f;
+        s.WindowPadding         = ImVec2(10, 8);
+        s.FramePadding          = ImVec2(8, 4);
+        s.ItemSpacing           = ImVec2(8, 5);
+        s.GrabMinSize           = 12.0f;
+        s.WindowTitleAlign      = ImVec2(0.0f, 0.5f);
+
+        ImVec4* c = s.Colors;
+        const ImVec4 accent       = ImVec4(0.37f, 0.70f, 1.00f, 1.0f);   // #5fb3ff
+        const ImVec4 accentHover  = ImVec4(0.55f, 0.81f, 1.00f, 1.0f);
+        const ImVec4 accentActive = ImVec4(0.65f, 0.30f, 1.00f, 1.0f);   // #a64dff
+        c[ImGuiCol_FrameBgActive]     = ImVec4(accent.x*0.4f, accent.y*0.4f, accent.z*0.4f, 0.7f);
+        c[ImGuiCol_FrameBgHovered]    = ImVec4(accent.x*0.3f, accent.y*0.3f, accent.z*0.3f, 0.5f);
+        c[ImGuiCol_TitleBgActive]     = ImVec4(0.10f, 0.13f, 0.18f, 1.0f);
+        c[ImGuiCol_CheckMark]         = accent;
+        c[ImGuiCol_SliderGrab]        = accent;
+        c[ImGuiCol_SliderGrabActive]  = accentActive;
+        c[ImGuiCol_Button]            = ImVec4(0.18f, 0.21f, 0.27f, 1.0f);
+        c[ImGuiCol_ButtonHovered]     = ImVec4(accent.x*0.4f, accent.y*0.4f, accent.z*0.4f, 1.0f);
+        c[ImGuiCol_ButtonActive]      = accentActive;
+        c[ImGuiCol_Header]            = ImVec4(0.20f, 0.23f, 0.30f, 1.0f);
+        c[ImGuiCol_HeaderHovered]     = ImVec4(accent.x*0.5f, accent.y*0.5f, accent.z*0.5f, 0.8f);
+        c[ImGuiCol_HeaderActive]      = accent;
+        c[ImGuiCol_Tab]               = ImVec4(0.14f, 0.16f, 0.21f, 1.0f);
+        c[ImGuiCol_TabHovered]        = accentHover;
+        c[ImGuiCol_TabActive]         = ImVec4(0.22f, 0.34f, 0.50f, 1.0f);
+        c[ImGuiCol_TabUnfocused]      = ImVec4(0.10f, 0.12f, 0.16f, 1.0f);
+        c[ImGuiCol_TabUnfocusedActive]= ImVec4(0.15f, 0.20f, 0.30f, 1.0f);
+        c[ImGuiCol_DockingPreview]    = ImVec4(accent.x, accent.y, accent.z, 0.4f);
+        c[ImGuiCol_TextSelectedBg]    = ImVec4(accent.x, accent.y, accent.z, 0.35f);
+    }
 
     if (!ImGui_ImplSDL3_InitForVulkan(m_window)) {
         throw std::runtime_error("ImGuiLayer: ImGui_ImplSDL3_InitForVulkan failed");

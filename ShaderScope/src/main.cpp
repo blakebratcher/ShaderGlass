@@ -260,6 +260,9 @@ static void releasePipelineSource(PipelineSource& ps) {
 // Set by the one-shot migration in main() when it actually copied something;
 // runWindowed() reads it after state.toasts exists so the user sees a toast.
 static bool g_migratedLegacyConfig = false;
+// True when this launch is the user's first ever — no ~/.config/shaderscope/
+// directory existed before this run and no legacy migration happened either.
+static bool g_isFreshInstall       = false;
 
 static int runHeadless(const Args& a) {
     if (a.input.empty() || a.output.empty()) {
@@ -335,6 +338,9 @@ static int runWindowed(Args& a) {
     if (g_migratedLegacyConfig) {
         Logging::infoToast(state,
             "Imported settings from ~/.config/shaderglass/ — welcome to ShaderScope.");
+    } else if (g_isFreshInstall) {
+        Logging::infoToast(state,
+            "Welcome to ShaderScope. Press F1 for hotkeys; drag a .slangp here to import.");
     }
 
     PresetLibrary library;
@@ -601,6 +607,23 @@ static int runWindowed(Args& a) {
             }
 
             state.applyPending();
+
+            // Dynamic window title: append the preset stem when one is loaded
+            // so the user can identify the window at a glance. Updates only on
+            // change to avoid hammering SDL each frame.
+            {
+                static std::string lastTitleSuffix;
+                std::string suffix;
+                if (!state.activePresetPath.empty()) {
+                    suffix = " — " + std::filesystem::path(state.activePresetPath).stem().string();
+                }
+                if (suffix != lastTitleSuffix) {
+                    const std::string title = "ShaderScope" + suffix;
+                    SDL_SetWindowTitle(window.handle(), title.c_str());
+                    lastTitleSuffix = suffix;
+                }
+            }
+
             config.tick();
             if (state.preset) state.preset->updateUbo();
 
@@ -751,6 +774,12 @@ static int runDebugPortal(const Args&) {
 }
 
 int main(int argc, char** argv) {
+    // Capture whether ~/.config/shaderscope/ existed BEFORE we touch
+    // anything — first-run detection hinges on this.
+    const std::filesystem::path scopeDir =
+        ConfigStore::defaultPath().parent_path();
+    const bool scopeDirExisted = std::filesystem::exists(scopeDir);
+
     // One-shot legacy-config migration runs before EVERY subcommand so that
     // --list-sources / --headless / --compile-preset all see the migrated
     // tree too. Idempotent — no-op once ~/.config/shaderscope/ exists.
@@ -760,6 +789,7 @@ int main(int argc, char** argv) {
             "shaderscope: imported settings from ~/.config/shaderglass/ to "
             "~/.config/shaderscope/\n");
     }
+    g_isFreshInstall = !scopeDirExisted && !g_migratedLegacyConfig;
 
     ParseResult pr = parseArgs(argc, argv);
     if (pr.wantHelp) {
