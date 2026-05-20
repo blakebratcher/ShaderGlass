@@ -115,6 +115,16 @@ thing under the name ShaderScope.
 
 ### Known limitations / deferred work
 
+- **Slang shaders that declare `layout(location=0) in vec4 Position;` (RetroArch
+  convention) render all-black on Linux ShaderScope.** The runtime currently
+  doesn't bind a vertex buffer or write the standard semantic uniforms
+  (MVP, SourceSize, OriginalSize, OutputSize, FrameCount) that those shaders
+  read from their UBO. Shaders that use `gl_VertexIndex` and don't depend on
+  semantic UBO fields (e.g. the bundled `stock.slang`, `passthrough.slang`)
+  render correctly. The fix needs SPIR-V struct-member reflection on the
+  Linux ShaderGC path so the runtime knows where to write each semantic; an
+  attempted naive fix in the wave-4 polish branch silently broke the simple
+  cases too, so the work is parked. Tracked for a follow-up milestone.
 - LUTs declared by a preset's `TextureDef`s are not bound (warned at load).
 - Per-pass scale factors and explicit pass formats from `.slangp` are
   ignored; intermediates use `VK_FORMAT_R8G8B8A8_UNORM` at source extent.

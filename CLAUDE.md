@@ -186,6 +186,25 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
 `docs/superpowers/plans/`. Per-milestone manual smoke checklists live at
 `docs/manual-tests-m{1..5}*.md`.
 
+## Known runtime bug
+
+Slang shaders that declare RetroArch-style vertex inputs (`layout(location=0)
+in vec4 Position; layout(location=1) in vec2 TexCoord;`) AND read semantic
+UBO fields (`global.MVP * Position`, `global.SourceSize`, etc.) render
+all-black on Linux. `ShaderPipeline` doesn't allocate a vertex buffer or
+write MVP/SourceSize/OutputSize/OriginalSize/FrameCount into the UBO, so
+the vertex shader multiplies an undefined `Position` by an undefined
+`MVP` and produces a degenerate triangle.
+
+The bundled `stock.slang` / `passthrough.slang` use `gl_VertexIndex` and
+synthesize their own positions, so they render correctly — every CRT
+preset under `shaders/starter/` (`crt-easymode`, `crt-aperture`, `crt-geom`,
+etc.) belongs to the broken family. A real fix needs SPIR-V struct-member
+reflection (`OpMemberName` + `OpMemberDecorate Offset`) so the runtime
+can write semantics at their declared offsets; a naive "always bind a
+fullscreen-quad vertex buffer" attempt broke the `gl_VertexIndex` shaders
+too, so the work is parked for a future milestone.
+
 ## Code gotchas
 
 - **Include order around `ShaderGC/ShaderDef.h`** — it's a Windows-style
