@@ -52,9 +52,13 @@ public:
     // that own one. Cheap; safe to call every frame.
     void updateUbo();
 
-    // Allocate / resize intermediates to match the source extent. No-op
-    // on single-pass presets. Idempotent — rebuilds only on size change.
-    void ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight);
+    // Allocate / resize intermediates per the .slangp's scale_type/scale.
+    // No-op on single-pass presets. Rebuilds only when source OR viewport
+    // dimensions change. `viewport` is the swapchain extent — needed
+    // because `scale_type = viewport` and `scale_type_x = viewport`
+    // multiply against it.
+    void ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
+                          uint32_t viewportWidth, uint32_t viewportHeight);
 
     // Records passes 0..N-2 into the intermediates. Must be called BEFORE
     // any vkCmdBeginRendering on the swapchain. No-op for single-pass.
@@ -83,6 +87,8 @@ private:
     VkFormat         m_swapFormat         = VK_FORMAT_UNDEFINED;
     uint32_t         m_srcWidth           = 0;
     uint32_t         m_srcHeight          = 0;
+    uint32_t         m_vpWidth            = 0;
+    uint32_t         m_vpHeight           = 0;
     VkImageView      m_finalInputView     = VK_NULL_HANDLE;
     VkExtent2D       m_finalInputExtent   = {};
 };

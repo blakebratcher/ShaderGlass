@@ -791,7 +791,9 @@ static int runWindowed(Args& a) {
                     if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
                         auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
                         if (multiPass) {
-                            state.preset->ensureSourceSize(f->width, f->height);
+                            state.preset->ensureSourceSize(f->width, f->height,
+                                                            swapchain.extent().width,
+                                                            swapchain.extent().height);
                             const VkExtent2D srcExt{f->width, f->height};
                             auto prePassBody = [&, view = imp->view, srcExt](VkCommandBuffer cb) {
                                 state.preset->recordIntermediatePasses(cb, view, srcExt);
@@ -839,7 +841,9 @@ static int runWindowed(Args& a) {
 
                 if (sourceTex) {
                     if (multiPass) {
-                        state.preset->ensureSourceSize(sourceTex->width(), sourceTex->height());
+                        state.preset->ensureSourceSize(sourceTex->width(), sourceTex->height(),
+                                                       swapchain.extent().width,
+                                                       swapchain.extent().height);
                         const VkImageView srcView = sourceTex->view();
                         const VkExtent2D  srcExt{sourceTex->width(), sourceTex->height()};
                         auto prePassBody = [&, srcView, srcExt](VkCommandBuffer cb) {

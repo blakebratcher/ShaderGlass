@@ -126,9 +126,10 @@ TEST(Preset, MultiPassCompilesAndExposesNPipelines) {
     // ensureSourceSize allocates intermediates; recordIntermediatePasses is a
     // command-buffer-level operation we don't exercise here, but the size hook
     // must be idempotent and not throw.
-    p.ensureSourceSize(640, 480);
-    p.ensureSourceSize(640, 480);  // no-op repeat
-    p.ensureSourceSize(800, 600);  // resize
+    p.ensureSourceSize(640, 480, 1280, 720);
+    p.ensureSourceSize(640, 480, 1280, 720);  // no-op repeat
+    p.ensureSourceSize(800, 600, 1280, 720);  // resize on source change
+    p.ensureSourceSize(800, 600, 1920, 1080); // resize on viewport change
 }
 
 TEST(AppState, PresetSwitchResetsActiveParamsToDefaults) {

@@ -9,6 +9,54 @@
 #include <stdexcept>
 
 namespace {
+
+// RetroArch slang per-pass scaling.
+struct PassScale {
+    enum class Type : int { Source = 0, Viewport, Absolute };
+    Type  type   = Type::Source;
+    float factor = 1.0f;
+};
+
+PassScale parseScale(const std::map<std::string, std::string>& pp, char axis) {
+    PassScale s;
+    auto find = [&](const std::string& key) -> const std::string* {
+        auto it = pp.find(key);
+        return (it == pp.end()) ? nullptr : &it->second;
+    };
+    std::string ax;
+    ax += axis;
+    const std::string* typeStr = find("scale_type_" + ax);
+    if (!typeStr) typeStr = find("scale_type");
+    if (typeStr) {
+        if      (*typeStr == "viewport") s.type = PassScale::Type::Viewport;
+        else if (*typeStr == "absolute") s.type = PassScale::Type::Absolute;
+        else                              s.type = PassScale::Type::Source;
+    }
+    const std::string* scaleStr = find("scale_" + ax);
+    if (!scaleStr) scaleStr = find("scale");
+    if (scaleStr) {
+        try { s.factor = std::stof(*scaleStr); } catch (...) {}
+    }
+    return s;
+}
+
+VkExtent2D applyScale(const PassScale& sx, const PassScale& sy,
+                      VkExtent2D prev, VkExtent2D viewport) {
+    auto axisExtent = [](const PassScale& s, uint32_t prevDim, uint32_t vpDim) -> uint32_t {
+        float v = 1.0f;
+        switch (s.type) {
+            case PassScale::Type::Source:   v = s.factor * float(prevDim); break;
+            case PassScale::Type::Viewport: v = s.factor * float(vpDim);   break;
+            case PassScale::Type::Absolute: v = s.factor;                   break;
+        }
+        if (v < 1.0f)      v = 1.0f;
+        if (v > 16384.0f)  v = 16384.0f;
+        return static_cast<uint32_t>(v + 0.5f);
+    };
+    return { axisExtent(sx, prev.width,  viewport.width),
+             axisExtent(sy, prev.height, viewport.height) };
+}
+
 void transitionImage(VkCommandBuffer cb, VkImage img,
                      VkImageLayout oldL, VkImageLayout newL,
                      VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess,
@@ -114,25 +162,44 @@ void Preset::updateUbo() {
     }
 }
 
-void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight) {
+void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
+                              uint32_t viewportWidth, uint32_t viewportHeight) {
     if (!isMultiPass() || srcWidth == 0 || srcHeight == 0) {
         m_srcWidth  = srcWidth;
         m_srcHeight = srcHeight;
+        m_vpWidth   = viewportWidth;
+        m_vpHeight  = viewportHeight;
         return;
     }
+    // Viewport-relative scales require a viewport; fall back to source
+    // for callers (e.g. tests) that don't have a swapchain.
+    if (viewportWidth  == 0) viewportWidth  = srcWidth;
+    if (viewportHeight == 0) viewportHeight = srcHeight;
+
     if (srcWidth == m_srcWidth && srcHeight == m_srcHeight
+        && viewportWidth  == m_vpWidth && viewportHeight == m_vpHeight
         && !m_intermediates.empty()) return;
 
     vkDeviceWaitIdle(m_ctx->device());
     m_intermediates.clear();
     const size_t passCount = m_pipelines.size();
     m_intermediates.reserve(passCount - 1);
+
+    VkExtent2D prev{srcWidth, srcHeight};
+    const VkExtent2D viewport{viewportWidth, viewportHeight};
     for (size_t i = 0; i + 1 < passCount; ++i) {
+        const auto& sd = m_def->ShaderDefs[i];
+        const PassScale sx = parseScale(sd.PresetParams, 'x');
+        const PassScale sy = parseScale(sd.PresetParams, 'y');
+        const VkExtent2D out = applyScale(sx, sy, prev, viewport);
         m_intermediates.push_back(std::make_unique<OffscreenTarget>(
-            *m_ctx, srcWidth, srcHeight, m_intermediateFormat));
+            *m_ctx, out.width, out.height, m_intermediateFormat));
+        prev = out;
     }
     m_srcWidth  = srcWidth;
     m_srcHeight = srcHeight;
+    m_vpWidth   = viewportWidth;
+    m_vpHeight  = viewportHeight;
 }
 
 void Preset::recordIntermediatePasses(VkCommandBuffer cb,
