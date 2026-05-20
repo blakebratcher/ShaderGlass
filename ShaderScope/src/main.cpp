@@ -25,6 +25,7 @@
 #include "util/ScreenshotWriter.h"
 #include "util/SourceMatcher.h"
 #include "util/Time.h"
+#include "util/XdgConfig.h"
 #include "util/Logging.h"
 #include <imgui.h>
 #include "builtin_shaders.h"
@@ -256,6 +257,10 @@ static void releasePipelineSource(PipelineSource& ps) {
     }
 }
 
+// Set by the one-shot migration in main() when it actually copied something;
+// runWindowed() reads it after state.toasts exists so the user sees a toast.
+static bool g_migratedLegacyConfig = false;
+
 static int runHeadless(const Args& a) {
     if (a.input.empty() || a.output.empty()) {
         LOG_ERROR("--headless requires --input and --output");
@@ -326,6 +331,11 @@ static int runWindowed(Args& a) {
 
     AppState state;
     state.toasts = std::make_unique<ToastQueue>();
+
+    if (g_migratedLegacyConfig) {
+        Logging::infoToast(state,
+            "Imported settings from ~/.config/shaderglass/ — welcome to ShaderScope.");
+    }
 
     PresetLibrary library;
     PresetBrowserPanel presetPanel;
@@ -741,6 +751,16 @@ static int runDebugPortal(const Args&) {
 }
 
 int main(int argc, char** argv) {
+    // One-shot legacy-config migration runs before EVERY subcommand so that
+    // --list-sources / --headless / --compile-preset all see the migrated
+    // tree too. Idempotent — no-op once ~/.config/shaderscope/ exists.
+    g_migratedLegacyConfig = XdgConfig::migrateLegacyShaderGlassConfig();
+    if (g_migratedLegacyConfig) {
+        std::fprintf(stderr,
+            "shaderscope: imported settings from ~/.config/shaderglass/ to "
+            "~/.config/shaderscope/\n");
+    }
+
     ParseResult pr = parseArgs(argc, argv);
     if (pr.wantHelp) {
         printUsage(stdout);
