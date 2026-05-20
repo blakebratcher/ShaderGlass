@@ -146,6 +146,16 @@ endforeach()
 install(DIRECTORY ${SHADERSCOPE_STARTER_SRC}/
         DESTINATION ${CMAKE_INSTALL_DATADIR}/shaderscope/shaders)
 
+# Productization — install the binary + XDG desktop entry + scalable icon
+# + man page so the app is discoverable in launchers and via `man`.
+install(TARGETS shaderscope RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES ${CMAKE_SOURCE_DIR}/packaging/shaderscope.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES ${CMAKE_SOURCE_DIR}/packaging/shaderscope.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+install(FILES ${CMAKE_SOURCE_DIR}/packaging/shaderscope.1
+        DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+
 # Inject the staging path into shaderscope so PresetLibrary can find it
 # without an installed copy. (Production binaries also probe XDG paths.)
 target_compile_definitions(shaderscope PRIVATE

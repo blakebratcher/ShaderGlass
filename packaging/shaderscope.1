@@ -1,0 +1,203 @@
+.TH SHADERSCOPE 1 "2026-05-19" "ShaderScope" "User Commands"
+.SH NAME
+shaderscope \- GPU shader overlay using Vulkan + SDL3
+.SH SYNOPSIS
+.B shaderscope
+.RB [ --capture
+.IR kind ]
+.RB [ --source
+.IR id ]
+.RB [ --preset
+.IR preset.slangp ]
+.RI [ image.png ]
+.br
+.B shaderscope
+.B --list-sources
+.RB [ --capture
+.IR kind ]
+.br
+.B shaderscope
+.B --headless --input
+.I file.png
+.B --output
+.I file.png
+.RB [ --preset
+.IR preset.slangp ]
+.RB [ --width
+.IR N ]
+.RB [ --height
+.IR N ]
+.br
+.B shaderscope
+.B --compile-preset
+.I preset.slangp
+.SH DESCRIPTION
+.B shaderscope
+applies RetroArch
+.I slang
+shaders as a real-time overlay over captured desktop content. Capture sources
+include the X11 root window or composited child windows via XComposite+XShm,
+and Wayland screens via xdg-desktop-portal screencast + PipeWire (with
+DMA-BUF zero-copy when available).
+.PP
+The renderer uses Vulkan 1.3 dynamic rendering with SDL3 for window
+management. The UI is Dear ImGui — source picker, preset browser,
+per-shader parameter editor, drag-and-drop preset import, crop overlay,
+toast notifications, screenshot capture.
+.SH OPTIONS
+.TP
+.BI --capture " kind"
+Capture backend. One of
+.BR x11-screen ", " wayland-screen .
+If omitted on a bare launch, the GUI source picker selects.
+.TP
+.BI --source " id"
+Source identifier (e.g.
+.BR monitor:root )
+or substring match against window names. Use
+.B --list-sources
+to enumerate.
+.TP
+.BI --preset " preset.slangp"
+Path to a RetroArch
+.I .slangp
+preset file. Loaded at startup; multi-pass presets supported.
+.TP
+.B --list-sources
+List sources for the current capture backend and exit (script-friendly).
+.TP
+.B --headless
+Render a single frame to a PNG and exit. Requires
+.B --input
+and
+.BR --output ;
+ignores everything else GUI-related.
+.TP
+.BI --input " file.png"
+Headless input image (PNG).
+.TP
+.BI --output " file.png"
+Headless output image (PNG).
+.TP
+.BI --width " N" ", " --height " N"
+Override the headless output dimensions.
+.TP
+.BI --compile-preset " preset.slangp"
+Parse and compile the preset, print pass info, exit. No render.
+.TP
+.B --reset-config
+Delete
+.I ~/.config/shaderscope/config.json
+before launch (resets session restore).
+.TP
+.B --debug-portal
+Probe the xdg-desktop-portal screencast interface, print the resulting
+PipeWire fd, and exit.
+.TP
+.B -h ", " --help
+Show usage and exit.
+.TP
+.B -V ", " --version
+Print version + commit + build date and exit.
+.SH HOTKEYS
+Bound in the window when ImGui does not have keyboard focus.
+.TP
+.B F11
+Take a screenshot (saved under
+.IR $XDG_PICTURES_DIR ", " $HOME/Pictures ", or " $HOME ).
+.TP
+.B B
+Toggle bypass (active preset ⇄ passthrough). Second press restores the prior preset.
+.TP
+.B "[ , ]"
+Cycle to the previous / next preset in the library scan order. PageUp/PageDown also work.
+.TP
+.B F1
+Show a hotkey-help toast.
+.TP
+.B F2
+Hide / show ImGui chrome — useful for overlay-style use.
+.TP
+.B F3
+Toggle window always-on-top.
+.TP
+.B F4
+Toggle borderless (no window decorations).
+.TP
+.B Esc
+Close the window.
+.PP
+Dropping a
+.I .slangp
+file onto the window imports it (case-insensitive).
+.SH ENVIRONMENT
+.TP
+.B SHADERSCOPE_LOG
+Threshold for stderr logging. One of
+.BR debug ", " info ", " warn ", " error ", " off .
+Defaults to
+.BR info .
+.TP
+.B XDG_CONFIG_HOME
+If set, ShaderScope reads/writes
+.IB $XDG_CONFIG_HOME /shaderscope/
+instead of
+.IR $HOME/.config/shaderscope/ .
+.TP
+.B XDG_PICTURES_DIR
+Override directory for screenshots. ShaderScope also reads
+.I ~/.config/user-dirs.dirs
+to find this value.
+.SH FILES
+.TP
+.I ~/.config/shaderscope/config.json
+Session state — last source, last preset, per-source crop rectangles,
+parameter overrides. Migrated automatically from
+.I ~/.config/shaderglass/
+on first launch if the legacy directory exists.
+.TP
+.I ~/.config/shaderscope/imgui.ini
+ImGui window layout.
+.TP
+.IR $XDG_DATA_DIRS /shaderscope/shaders/
+Installed starter shader presets. The dev binary also probes the build
+tree's
+.I shaders-staging/
+directory first.
+.SH EXAMPLES
+.PP
+Auto-launch GUI (resumes last session):
+.RS
+.EX
+$ shaderscope
+.EE
+.RE
+.PP
+Capture the X11 root window with a CRT preset:
+.RS
+.EX
+$ shaderscope --capture x11-screen --source monitor:root \\
+    --preset /usr/share/shaderscope/shaders/crt-easymode.slangp
+.EE
+.RE
+.PP
+Headless one-shot render:
+.RS
+.EX
+$ shaderscope --headless --input in.png --output out.png \\
+    --preset some-preset.slangp
+.EE
+.RE
+.SH AUTHORS
+ShaderScope is a Linux-only fork of
+.UR https://github.com/mausimus/ShaderGlass
+ShaderGlass
+.UE
+by mausimus.
+.SH COPYRIGHT
+Licensed under the GNU General Public License v3.0. See the
+.B LICENSE
+file in the source tree for details.
+.SH SEE ALSO
+.BR retroarch (1),
+.BR vulkaninfo (1)

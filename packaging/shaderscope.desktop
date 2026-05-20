@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ShaderScope
+GenericName=Shader Overlay
+Comment=Apply RetroArch slang shaders to desktop capture (Vulkan + SDL3)
+Exec=shaderscope
+Icon=shaderscope
+Terminal=false
+Categories=Graphics;Video;
+Keywords=shader;overlay;crt;retroarch;vulkan;slang;capture;
+StartupNotify=true
+StartupWMClass=ShaderScope
