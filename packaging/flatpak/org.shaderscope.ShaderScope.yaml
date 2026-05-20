@@ -1,0 +1,80 @@
+# Flatpak manifest — produces an `org.shaderscope.ShaderScope` bundle.
+#
+# Local build:
+#   flatpak-builder --user --install build-flatpak \
+#       packaging/flatpak/org.shaderscope.ShaderScope.yaml
+#
+# Run the installed bundle:
+#   flatpak run org.shaderscope.ShaderScope
+#
+# Note: PipeWire / xdg-desktop-portal screencast permission flows through
+# Flatpak's portal automatically once the sandbox has the right finish-args.
+
+app-id: org.shaderscope.ShaderScope
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: shaderscope
+
+finish-args:
+  # Vulkan + native rendering.
+  - --device=dri
+  - --share=ipc
+
+  # X11 capture path.
+  - --socket=fallback-x11
+
+  # Wayland capture path goes through xdg-desktop-portal screencast.
+  - --socket=wayland
+
+  # PipeWire is required for the portal's pw-fd transfer.
+  - --filesystem=xdg-run/pipewire-0
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.ScreenCast
+
+  # Screenshots land under ~/Pictures.
+  - --filesystem=xdg-pictures
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/man
+  - '*.la'
+  - '*.a'
+
+modules:
+  - name: sdl3
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSDL_TESTS=OFF
+      - -DSDL_INSTALL_TESTS=OFF
+      - -DSDL_SHARED=ON
+      - -DSDL_STATIC=OFF
+    sources:
+      - type: git
+        url: https://github.com/libsdl-org/SDL.git
+        tag: release-3.2.16
+
+  - name: glslang
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=ON
+      - -DGLSLANG_TESTS=OFF
+      - -DENABLE_GLSLANG_BINARIES=ON
+    sources:
+      - type: git
+        url: https://github.com/KhronosGroup/glslang.git
+        tag: 15.0.0
+
+  - name: shaderscope
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DSHADERGLASS_TESTS=OFF
+    sources:
+      - type: dir
+        path: ../..
