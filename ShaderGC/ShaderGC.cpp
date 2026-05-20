@@ -154,7 +154,76 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
     if(vSize) std::memcpy(vb, vertexSPIRV.data(),   vSize);
     if(fSize) std::memcpy(fb, fragmentSPIRV.data(), fSize);
 
-    std::vector<SourceShaderSampler> textures; // populated by reflection in M4
+    // Reflect the fragment SPIR-V to find sampler/image bindings. The
+    // slang convention (RetroArch) is that user-declared LUTs land in
+    // descriptor set 0 alongside the built-in Source / UBO bindings.
+    // We extract `name -> binding` for every UniformConstant variable
+    // in set 0; the runtime matches names against .slangp TextureDefs
+    // and binds each LUT image to its slot.
+    std::vector<SourceShaderSampler> textures;
+    {
+        auto reflectSamplers = [](const std::vector<uint32_t>& spv,
+                                   std::vector<SourceShaderSampler>& out) {
+            if(spv.size() < 5 || spv[0] != 0x07230203) return; // SPIR-V magic
+            std::map<uint32_t, std::string> names;
+            std::map<uint32_t, uint32_t>    bindings;
+            std::map<uint32_t, uint32_t>    sets;
+            std::map<uint32_t, uint32_t>    storage; // result_id -> storage_class
+            size_t i = 5;
+            while(i < spv.size())
+            {
+                const uint32_t header    = spv[i];
+                const uint32_t wordCount = header >> 16;
+                const uint32_t opcode    = header & 0xFFFFu;
+                if(wordCount == 0 || i + wordCount > spv.size()) break;
+                switch(opcode)
+                {
+                    case 5: // OpName id, name…
+                        if(wordCount >= 3)
+                        {
+                            const uint32_t id = spv[i + 1];
+                            const char* str =
+                                reinterpret_cast<const char*>(&spv[i + 2]);
+                            names[id] = std::string(str);
+                        }
+                        break;
+                    case 71: // OpDecorate id, decoration, value
+                        if(wordCount >= 4)
+                        {
+                            const uint32_t id    = spv[i + 1];
+                            const uint32_t deco  = spv[i + 2];
+                            const uint32_t value = spv[i + 3];
+                            if(deco == 33) bindings[id] = value;     // Binding
+                            else if(deco == 34) sets[id] = value;    // DescriptorSet
+                        }
+                        break;
+                    case 59: // OpVariable result_type, result_id, storage_class
+                        if(wordCount >= 4)
+                        {
+                            const uint32_t resultId    = spv[i + 2];
+                            const uint32_t storageCls  = spv[i + 3];
+                            storage[resultId] = storageCls;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                i += wordCount;
+            }
+            for(const auto& [id, storageCls] : storage)
+            {
+                if(storageCls != 0) continue;            // UniformConstant only
+                auto bit = bindings.find(id);
+                if(bit == bindings.end()) continue;
+                auto sit = sets.find(id);
+                if(sit != sets.end() && sit->second != 0) continue;
+                auto nit = names.find(id);
+                if(nit == names.end()) continue;
+                out.emplace_back(nit->second, static_cast<int>(bit->second));
+            }
+        };
+        reflectSamplers(fragmentSPIRV, textures);
+    }
 
     ShaderDef sd;
     sd.Format           = CopyString(def.format);
