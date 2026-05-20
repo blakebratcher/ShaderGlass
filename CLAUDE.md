@@ -180,7 +180,7 @@ never touch GPU state from a panel.
 | M4 | Dear ImGui UI (source picker, preset browser, params, session restore) | shipped |
 | M5 UX-polish | Toast UI, first-run UX, region/crop, screenshot capture | shipped |
 | M5 feature-complete | Multi-pass shaders, runtime `.slangp` import (DnD + path input), hotkeys (F11/B/[/]/F1/F2/F3/F4) | shipped |
-| Future | True click-through X11 overlay (XShape + 32-bit visual), LUT (lookup texture) support, per-pass scale factors, multi-buffer UBOs, M3.5 DMA-BUF fast path | pending |
+| Future | True click-through X11 overlay (XShape + 32-bit visual), multi-buffer UBOs, M3.5 DMA-BUF fast path | pending |
 
 Per-milestone specs and plans live under `docs/superpowers/specs/` and
 `docs/superpowers/plans/`. Per-milestone manual smoke checklists live at

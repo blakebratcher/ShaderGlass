@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 class VulkanContext;
 class Texture;
@@ -17,6 +18,15 @@ struct ShaderPipelineSampler {
         MirroredRepeat,
         ClampToBorder,
     } wrap = Wrap::ClampToEdge;
+};
+
+// A LUT or other extra sampler bound at a non-default descriptor slot.
+// view + sampler are owned by the caller (typically LutTexture), and
+// must outlive the ShaderPipeline.
+struct ShaderPipelineLutBinding {
+    uint32_t    binding = 0;
+    VkImageView view    = VK_NULL_HANDLE;
+    VkSampler   sampler = VK_NULL_HANDLE;
 };
 
 class ShaderPipeline {
@@ -38,7 +48,8 @@ public:
                    VkFormat colorFormat,
                    uint32_t uboSize,
                    WithParamsTag,
-                   ShaderPipelineSampler sampler = {});
+                   ShaderPipelineSampler sampler = {},
+                   std::vector<ShaderPipelineLutBinding> luts = {});
 
     ~ShaderPipeline();
 
@@ -73,6 +84,7 @@ private:
 
     VulkanContext& m_ctx;
     ShaderPipelineSampler m_samplerOpts{};
+    std::vector<ShaderPipelineLutBinding> m_luts;
     VkPipelineLayout      m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline            m_pipeline       = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_dsl            = VK_NULL_HANDLE;

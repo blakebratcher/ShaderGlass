@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "LutTexture.h"
 #include "OffscreenTarget.h"
 #include "ShaderDef.h"
 #include "ShaderPipeline.h"
@@ -79,6 +80,7 @@ private:
     std::unique_ptr<PresetDef>                     m_def;
     std::vector<std::unique_ptr<ShaderPipeline>>   m_pipelines;
     std::vector<std::unique_ptr<OffscreenTarget>>  m_intermediates;
+    std::vector<std::unique_ptr<LutTexture>>       m_luts;
     std::vector<uint32_t>                          m_uboSizes;
     std::vector<ShaderParam>                       m_params;
 

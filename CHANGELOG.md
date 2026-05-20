@@ -8,6 +8,14 @@ Semantic Versioning starting from `0.1.0-preview`.
 
 ### Added
 
+- LUT (lookup-texture) support — `.slangp` `textures = …` declarations
+  load PNG data into `LutTexture` instances at preset construction;
+  `ShaderGC` reflects fragment SPIR-V to extract sampler names + their
+  descriptor bindings; `Preset` matches reflected sampler names against
+  TextureDef logical names and hands the {binding, view, sampler}
+  triples to `ShaderPipeline`; the pipeline's descriptor set layout +
+  pool grow to include them, and descriptors are written once at
+  construction (LUTs are static for the preset's lifetime).
 - Per-pass `scale_type` / `scale_x` / `scale_y` parsing — multi-pass
   intermediates now allocate at correct dimensions (`source` × prev,
   `viewport` × swapchain, or `absolute` px). Was previously hardcoded

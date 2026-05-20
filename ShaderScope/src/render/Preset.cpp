@@ -1,4 +1,5 @@
 #include "Preset.h"
+#include "TextureDef.h"
 #include "VulkanContext.h"
 #include "ShaderGC.h"
 #include "ShaderCache.h"
@@ -7,6 +8,7 @@
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace {
 
@@ -96,10 +98,35 @@ Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
         LOG_WARN("Preset: '%s' compiled with warnings:\n%s",
                  path.string().c_str(), log.str().c_str());
     }
-    if (!m_def->TextureDefs.empty()) {
-        LOG_WARN("Preset: '%s' declares %zu lookup texture(s); LUTs are not "
-                 "yet implemented on Linux — expect visual artifacts.",
-                 path.string().c_str(), m_def->TextureDefs.size());
+    // Load each .slangp TextureDef into a GPU LutTexture before pipeline
+    // construction — pipelines need the views/samplers at descriptor-set
+    // creation time.
+    auto parseLutSampler = [](const std::map<std::string, std::string>& pp) {
+        ShaderPipelineSampler s;
+        auto fit = pp.find("linear");
+        if (fit != pp.end()) {
+            s.linearFilter = (fit->second == "true" || fit->second == "1");
+        }
+        auto wit = pp.find("wrap_mode");
+        if (wit != pp.end()) {
+            const std::string& w = wit->second;
+            if      (w == "repeat")          s.wrap = ShaderPipelineSampler::Wrap::Repeat;
+            else if (w == "mirrored_repeat") s.wrap = ShaderPipelineSampler::Wrap::MirroredRepeat;
+            else if (w == "clamp_to_border") s.wrap = ShaderPipelineSampler::Wrap::ClampToBorder;
+            else                              s.wrap = ShaderPipelineSampler::Wrap::ClampToEdge;
+        }
+        return s;
+    };
+    m_luts.reserve(m_def->TextureDefs.size());
+    for (const auto& td : m_def->TextureDefs) {
+        try {
+            m_luts.push_back(std::make_unique<LutTexture>(
+                ctx, td.Data, td.DataLength, parseLutSampler(td.PresetParams)));
+        } catch (const std::exception& e) {
+            LOG_WARN("Preset: '%s' LUT '%s' failed to load: %s",
+                     path.string().c_str(), td.Name.c_str(), e.what());
+            m_luts.push_back(nullptr);
+        }
     }
 
     buildPipelines(ctx, swapchainFormat);
@@ -139,6 +166,16 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
         return s;
     };
 
+    // Build a quick lookup: slangp-logical-name → LutTexture*.
+    std::unordered_map<std::string, LutTexture*> lutByName;
+    for (size_t li = 0; li < m_def->TextureDefs.size(); ++li) {
+        if (!m_luts[li]) continue;
+        const auto& td = m_def->TextureDefs[li];
+        auto nit = td.PresetParams.find("name");
+        const std::string& key = (nit != td.PresetParams.end()) ? nit->second : td.Name;
+        lutByName[key] = m_luts[li].get();
+    }
+
     for (size_t i = 0; i < N; ++i) {
         auto& sd = m_def->ShaderDefs[i];
         const VkFormat passFmt = (i + 1 == N) ? swapFmt : m_intermediateFormat;
@@ -149,6 +186,21 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
                      "only buffer 0 is bound — expect visual artifacts",
                      m_path.string().c_str(), i, sd.ParamsSize(1));
         }
+        // Walk reflected samplers; for each whose name matches a LUT,
+        // record the binding so the pipeline can wire it at the right slot.
+        // "Source" / built-in sampler names are skipped — they're handled
+        // by the pipeline's hardcoded binding 2.
+        std::vector<ShaderPipelineLutBinding> lutBindings;
+        for (const auto& smp : sd.Samplers) {
+            auto it = lutByName.find(smp.name);
+            if (it == lutByName.end()) continue;
+            ShaderPipelineLutBinding lb;
+            lb.binding = static_cast<uint32_t>(smp.binding);
+            lb.view    = it->second->view();
+            lb.sampler = it->second->sampler();
+            lutBindings.push_back(lb);
+        }
+
         if (uboSize == 0) {
             m_pipelines.push_back(std::make_unique<ShaderPipeline>(
                 ctx, sd.VertexByteCode,   sd.VertexLength,
@@ -158,7 +210,8 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
             m_pipelines.push_back(std::make_unique<ShaderPipeline>(
                 ctx, sd.VertexByteCode,   sd.VertexLength,
                      sd.FragmentByteCode, sd.FragmentLength,
-                passFmt, uboSize, ShaderPipeline::WithParamsTag{}, so));
+                passFmt, uboSize, ShaderPipeline::WithParamsTag{}, so,
+                std::move(lutBindings)));
         }
         m_uboSizes.push_back(uboSize);
     }

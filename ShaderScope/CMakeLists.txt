@@ -63,6 +63,7 @@ add_library(shaderscope_core STATIC
     src/render/ShaderPipeline.cpp
     src/render/HeadlessOutput.cpp
     src/render/DmaBufImport.cpp
+    src/render/LutTexture.cpp
     src/render/OffscreenTarget.cpp
     src/render/Preset.cpp
     src/capture/StaticImageCapture.cpp

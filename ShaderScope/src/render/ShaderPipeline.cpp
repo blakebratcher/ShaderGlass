@@ -30,8 +30,9 @@ ShaderPipeline::ShaderPipeline(VulkanContext& ctx,
                                VkFormat colorFormat,
                                uint32_t uboSize,
                                WithParamsTag,
-                               ShaderPipelineSampler sampler)
-    : m_ctx(ctx), m_samplerOpts(sampler) {
+                               ShaderPipelineSampler sampler,
+                               std::vector<ShaderPipelineLutBinding> luts)
+    : m_ctx(ctx), m_samplerOpts(sampler), m_luts(std::move(luts)) {
     createPipeline(ctx, vertSpv, vertSize, fragSpv, fragSize, colorFormat, uboSize);
 }
 
@@ -79,19 +80,38 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
 
     // ── Descriptor set layout ────────────────────────────────────────────────
     // Passthrough (uboSize == 0): one binding — combined image sampler at 0.
-    // Slang (uboSize > 0):        two bindings — UBO at 0, sampler at 2.
+    // Slang (uboSize > 0):        UBO at 0, Source sampler at 2, plus a
+    // COMBINED_IMAGE_SAMPLER per LUT at the binding reflected from SPIR-V.
     VkDescriptorSetLayoutCreateInfo dsli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     if (uboSize > 0) {
-        VkDescriptorSetLayoutBinding bindings[2]{};
-        bindings[0].binding         = 0;
-        bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        bindings[1].binding         = 2;
-        bindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
-        dsli.bindingCount = 2; dsli.pBindings = bindings;
+        std::vector<VkDescriptorSetLayoutBinding> bindings;
+        bindings.reserve(2 + m_luts.size());
+        {
+            VkDescriptorSetLayoutBinding b{};
+            b.binding         = 0;
+            b.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            b.descriptorCount = 1;
+            b.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+            bindings.push_back(b);
+        }
+        {
+            VkDescriptorSetLayoutBinding b{};
+            b.binding         = 2;
+            b.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b.descriptorCount = 1;
+            b.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+            bindings.push_back(b);
+        }
+        for (const auto& lut : m_luts) {
+            VkDescriptorSetLayoutBinding b{};
+            b.binding         = lut.binding;
+            b.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b.descriptorCount = 1;
+            b.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+            bindings.push_back(b);
+        }
+        dsli.bindingCount = static_cast<uint32_t>(bindings.size());
+        dsli.pBindings    = bindings.data();
         VK_CHECK(vkCreateDescriptorSetLayout(ctx.device(), &dsli, nullptr, &m_dsl));
     } else {
         VkDescriptorSetLayoutBinding b{};
@@ -119,8 +139,9 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
     // ── Descriptor pool ──────────────────────────────────────────────────────
     if (uboSize > 0) {
         VkDescriptorPoolSize ps[2]{};
-        ps[0] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,          1 };
-        ps[1] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  1 };
+        ps[0] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         1 };
+        ps[1] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                  static_cast<uint32_t>(1 + m_luts.size()) };
         VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         dpi.maxSets = 1; dpi.poolSizeCount = 2; dpi.pPoolSizes = ps;
         VK_CHECK(vkCreateDescriptorPool(ctx.device(), &dpi, nullptr, &m_dsp));
@@ -170,6 +191,25 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
         wUbo.descriptorCount = 1;
         wUbo.pBufferInfo     = &bi;
         vkUpdateDescriptorSets(ctx.device(), 1, &wUbo, 0, nullptr);
+
+        // LUTs are static for the preset's lifetime — bind once here.
+        if (!m_luts.empty()) {
+            std::vector<VkDescriptorImageInfo> ii(m_luts.size());
+            std::vector<VkWriteDescriptorSet>  writes(m_luts.size(),
+                VkWriteDescriptorSet{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+            for (size_t i = 0; i < m_luts.size(); ++i) {
+                ii[i].imageView   = m_luts[i].view;
+                ii[i].sampler     = m_luts[i].sampler;
+                ii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                writes[i].dstSet          = m_ds;
+                writes[i].dstBinding      = m_luts[i].binding;
+                writes[i].descriptorCount = 1;
+                writes[i].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                writes[i].pImageInfo      = &ii[i];
+            }
+            vkUpdateDescriptorSets(ctx.device(),
+                static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
     }
 
     // ── Graphics pipeline ─────────────────────────────────────────────────────
