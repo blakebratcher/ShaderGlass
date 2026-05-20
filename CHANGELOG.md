@@ -8,6 +8,14 @@ Semantic Versioning starting from `0.1.0-preview`.
 
 ### Added
 
+- Window geometry persistence — `~/.config/shaderscope/config.json`
+  remembers `{x, y, w, h}` and restores on next launch.
+- Per-pass `srgb_framebuffer` / `float_framebuffer` parsing — multi-pass
+  intermediates can opt into sRGB (`R8G8B8A8_SRGB`) or HDR
+  (`R16G16B16A16_SFLOAT`) attachments per the .slangp keys.
+- Per-pass parameter exposure — multi-pass presets now surface params
+  from every pass to the ParamsPanel (grouped under per-pass collapsing
+  headers). Previously only the final pass was editable.
 - LUT (lookup-texture) support — `.slangp` `textures = …` declarations
   load PNG data into `LutTexture` instances at preset construction;
   `ShaderGC` reflects fragment SPIR-V to extract sampler names + their
