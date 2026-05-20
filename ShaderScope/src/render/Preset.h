@@ -42,10 +42,15 @@ public:
     bool            isMultiPass()    const { return m_pipelines.size() > 1; }
     ShaderPipeline& finalPipeline()        { return *m_pipelines.back(); }
 
-    // Mutable list of params for the LAST pass (where user-facing UI
-    // attaches). updateUbo() walks all passes that have a UBO.
+    // Mutable list of params aggregated across ALL passes. updateUbo()
+    // walks m_params + m_paramPass to write each value to the right
+    // pipeline's UBO at the declared offset.
     std::vector<ShaderParam>&       params()       { return m_params; }
     const std::vector<ShaderParam>& params() const { return m_params; }
+
+    // Per-entry pass index — parallel to params(). Used by the UI to
+    // group/label by pass when a preset is multi-pass.
+    const std::vector<int>&         paramPasses() const { return m_paramPass; }
 
     void resetParamsToDefaults();
 
@@ -83,6 +88,7 @@ private:
     std::vector<std::unique_ptr<LutTexture>>       m_luts;
     std::vector<uint32_t>                          m_uboSizes;
     std::vector<ShaderParam>                       m_params;
+    std::vector<int>                               m_paramPass;
 
     VulkanContext*   m_ctx                = nullptr;
     VkFormat         m_intermediateFormat = VK_FORMAT_R8G8B8A8_UNORM;

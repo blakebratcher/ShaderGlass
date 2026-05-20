@@ -69,8 +69,39 @@ void ParamsPanel::draw(AppState& state) {
     ImGui::Separator();
 
     bool edited = false;
-    for (auto& p : params) {
-        drawOneParam(p, edited);
+    // Multi-pass presets get a per-pass collapsible header so the panel
+    // doesn't become an unstructured slog. Single-pass uses the flat
+    // layout — identical to before.
+    const auto& passes = state.preset->paramPasses();
+    const bool grouped = !passes.empty()
+                       && (state.preset->passCount() > 1);
+    if (grouped) {
+        int currentPass = -1;
+        bool open = false;
+        for (size_t i = 0; i < params.size(); ++i) {
+            const int passIdx = passes[i];
+            if (passIdx != currentPass) {
+                if (currentPass >= 0 && open) ImGui::Unindent();
+                currentPass = passIdx;
+                char hdr[32];
+                std::snprintf(hdr, sizeof(hdr), "Pass %d", passIdx);
+                open = ImGui::CollapsingHeader(hdr,
+                    ImGuiTreeNodeFlags_DefaultOpen);
+                if (open) ImGui::Indent();
+            }
+            if (open) {
+                ImGui::PushID(static_cast<int>(i));
+                drawOneParam(params[i], edited);
+                ImGui::PopID();
+            }
+        }
+        if (currentPass >= 0 && open) ImGui::Unindent();
+    } else {
+        for (size_t i = 0; i < params.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            drawOneParam(params[i], edited);
+            ImGui::PopID();
+        }
     }
     if (edited) {
         state.preset->updateUbo();

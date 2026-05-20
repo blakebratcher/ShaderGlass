@@ -131,9 +131,15 @@ Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
 
     buildPipelines(ctx, swapchainFormat);
 
-    // UI surfaces params from the LAST pass.
-    auto& finalDef = m_def->ShaderDefs.back();
-    m_params = finalDef.Params;
+    // Aggregate params from EVERY pass for the UI. Each entry's pass
+    // index is stored in m_paramPass (parallel vector) so updateUbo()
+    // writes back to the right pipeline's UBO at the right offset.
+    for (size_t i = 0; i < m_def->ShaderDefs.size(); ++i) {
+        for (const auto& p : m_def->ShaderDefs[i].Params) {
+            m_params.push_back(p);
+            m_paramPass.push_back(static_cast<int>(i));
+        }
+    }
     updateUbo();
 }
 
@@ -223,16 +229,17 @@ void Preset::resetParamsToDefaults() {
 }
 
 void Preset::updateUbo() {
-    const size_t N = m_pipelines.size();
-    for (size_t i = 0; i < N; ++i) {
-        void* ubo = m_pipelines[i]->mappedUbo();
-        if (!ubo || m_uboSizes[i] == 0) continue;
-        const auto& srcParams = (i + 1 == N) ? m_params : m_def->ShaderDefs[i].Params;
-        for (const auto& p : srcParams) {
-            if (p.buffer != 0) continue;
-            std::memcpy(static_cast<uint8_t*>(ubo) + p.offset, &p.currentValue,
-                        sizeof(float));
-        }
+    // Walk the aggregated params; m_paramPass tells us which pipeline's
+    // UBO to write each entry into.
+    for (size_t i = 0; i < m_params.size(); ++i) {
+        const int passIdx = m_paramPass[i];
+        if (passIdx < 0 || passIdx >= static_cast<int>(m_pipelines.size())) continue;
+        void* ubo = m_pipelines[passIdx]->mappedUbo();
+        if (!ubo || m_uboSizes[passIdx] == 0) continue;
+        const auto& p = m_params[i];
+        if (p.buffer != 0) continue;
+        std::memcpy(static_cast<uint8_t*>(ubo) + p.offset, &p.currentValue,
+                    sizeof(float));
     }
 }
 
