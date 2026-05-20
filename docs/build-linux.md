@@ -1,4 +1,4 @@
-# Building ShaderScope on Linux (M5 UX-polish status)
+# Building ShaderScope on Linux
 
 ## Dependencies (Arch / CachyOS)
 ```
@@ -36,6 +36,36 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
+
+## Install (system-wide)
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+sudo cmake --install build      # default prefix /usr/local
+```
+
+Installs:
+- `/usr/local/bin/shaderscope` — the binary
+- `/usr/local/share/applications/shaderscope.desktop` — launcher entry
+- `/usr/local/share/icons/hicolor/scalable/apps/shaderscope.svg` — icon
+- `/usr/local/share/man/man1/shaderscope.1` — `man shaderscope`
+- `/usr/local/share/shaderscope/shaders/` — starter `.slangp` presets
+
+To uninstall, `sudo xargs rm < build/install_manifest.txt`.
+
+## Package (AppImage)
+
+```
+./packaging/build-appimage.sh
+```
+
+Produces `ShaderScope-<commit>-x86_64.AppImage` at the repo root. The
+script does a clean Release build with `CMAKE_INSTALL_PREFIX=/usr`,
+installs into an `AppDir/` staging tree, then uses `linuxdeploy` (fetched
+automatically into `build-appimage/` on first run) to bundle the
+dependent shared libraries. The resulting AppImage runs on most modern
+x86_64 distros with no further install.
 
 ## Run
 ```bash
