@@ -86,6 +86,10 @@ private:
     std::vector<std::unique_ptr<ShaderPipeline>>   m_pipelines;
     std::vector<std::unique_ptr<OffscreenTarget>>  m_intermediates;
     std::vector<std::unique_ptr<LutTexture>>       m_luts;
+    // Per-pass color attachment format. m_passOutputFormats[N-1] is the
+    // swapchain format; the rest are intermediate formats (R8G8B8A8_UNORM
+    // by default; sRGB or R16G16B16A16_SFLOAT when the .slangp opts in).
+    std::vector<VkFormat>                          m_passOutputFormats;
     std::vector<uint32_t>                          m_uboSizes;
     std::vector<ShaderParam>                       m_params;
     std::vector<int>                               m_paramPass;

@@ -182,9 +182,28 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
         lutByName[key] = m_luts[li].get();
     }
 
+    auto parsePassFormat = [this](const std::map<std::string, std::string>& pp) -> VkFormat {
+        auto find = [&](const char* k) -> const std::string* {
+            auto it = pp.find(k);
+            return (it == pp.end()) ? nullptr : &it->second;
+        };
+        const std::string* f = find("float_framebuffer");
+        if (f && (*f == "true" || *f == "1")) return VK_FORMAT_R16G16B16A16_SFLOAT;
+        const std::string* s = find("srgb_framebuffer");
+        if (s && (*s == "true" || *s == "1")) return VK_FORMAT_R8G8B8A8_SRGB;
+        return m_intermediateFormat;
+    };
+
+    m_passOutputFormats.assign(N, VK_FORMAT_UNDEFINED);
+    for (size_t i = 0; i < N; ++i) {
+        m_passOutputFormats[i] = (i + 1 == N)
+            ? swapFmt
+            : parsePassFormat(m_def->ShaderDefs[i].PresetParams);
+    }
+
     for (size_t i = 0; i < N; ++i) {
         auto& sd = m_def->ShaderDefs[i];
-        const VkFormat passFmt = (i + 1 == N) ? swapFmt : m_intermediateFormat;
+        const VkFormat passFmt = m_passOutputFormats[i];
         const uint32_t uboSize = static_cast<uint32_t>(sd.ParamsSize(0));
         const ShaderPipelineSampler so = parseSampler(sd.PresetParams);
         if (sd.ParamsSize(1) > 0) {
@@ -273,8 +292,11 @@ void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
         const PassScale sx = parseScale(sd.PresetParams, 'x');
         const PassScale sy = parseScale(sd.PresetParams, 'y');
         const VkExtent2D out = applyScale(sx, sy, prev, viewport);
+        const VkFormat   fmt = (i < m_passOutputFormats.size())
+                                   ? m_passOutputFormats[i]
+                                   : m_intermediateFormat;
         m_intermediates.push_back(std::make_unique<OffscreenTarget>(
-            *m_ctx, out.width, out.height, m_intermediateFormat));
+            *m_ctx, out.width, out.height, fmt));
         prev = out;
     }
     m_srcWidth  = srcWidth;
