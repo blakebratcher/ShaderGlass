@@ -356,7 +356,11 @@ static int runWindowed(Args& a) {
     // user can still type in text inputs without triggering a preset
     // cycle). Escape is consumed by SdlWindow itself (closes the window).
     window.setKeyDownHandler([&](SDL_Scancode sc, SDL_Keymod /*mod*/) {
-        if (ImGui::GetIO().WantCaptureKeyboard) return;
+        // If ImGui wants keyboard input (text fields, open modal popup),
+        // forward Esc to it (closes the popup) and ignore everything else.
+        // Otherwise Esc closes the window and the other keys do their thing.
+        if (ImGui::GetIO().WantCaptureKeyboard || ImGui::IsAnyItemActive()) return;
+        if (sc == SDL_SCANCODE_ESCAPE) { window.requestClose(); return; }
         auto cyclePreset = [&](int dir) {
             auto presets = library.scan();
             if (presets.empty()) {

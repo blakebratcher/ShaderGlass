@@ -24,6 +24,10 @@ public:
     // Returns false when the user requested close.
     bool pollEvents();
 
+    // External close request (used by the F-key handler in main.cpp so it
+    // can route Esc to ImGui modals first instead of always closing).
+    void requestClose() noexcept { m_open = false; }
+
     void getDrawableSize(uint32_t& w, uint32_t& h) const;
 
     std::vector<const char*> requiredVulkanInstanceExtensions() const;

@@ -233,7 +233,30 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
 - **F2 chrome toggle** — `state.hideChrome` gates panel draws in
   `main.cpp` but `CropOverlay::draw` is intentionally always called.
   When you add a new panel, place it inside the same `if
-  (!state.hideChrome)` block.
+  (!state.hideChrome)` block. The status bar and About-modal triggers
+  also live inside that block.
+- **Bottom status bar uses raw `Begin`** — not `BeginViewportSideBar`
+  (that's a newer ImGui API, not in 1.92.8). The block in
+  `main.cpp` does `SetNextWindowPos`/`SetNextWindowSize`/`SetNextWindowViewport`
+  before `Begin("##status_bar", …, NoTitleBar|NoResize|NoMove|…)`. If
+  you upgrade ImGui, BeginViewportSideBar is a drop-in.
+- **About modal** — opened via `state.showAbout` (one-shot). The
+  trigger and consumer are both in `main.cpp` — clicking the button
+  sets the bool; the next iteration of the frame loop calls
+  `ImGui::OpenPopup("About ShaderScope")` and resets the bool. F12
+  hotkey routes through the same path.
+- **Legacy-config migration** — `XdgConfig::migrateLegacyShaderGlassConfig()`
+  runs in `main()` BEFORE arg parsing so every subcommand sees the
+  migrated tree. Idempotent — no-op once `~/.config/shaderscope/`
+  exists. `g_migratedLegacyConfig` (file-scope static) carries the
+  result into `runWindowed` so the toast can be posted after the
+  ToastQueue is constructed. Don't add side effects to the shim — it
+  must remain safe to run unconditionally on every launch.
+- **ShaderScope ImGui theme** — `ImGuiLayer`'s constructor calls
+  `StyleColorsDark()` and then tweaks ~20 colors + spacing/rounding.
+  If you add new ImGui widgets that look out of place, check whether
+  you're using a color category that isn't overridden (Tab/Header/
+  Frame/Button/Slider/CheckMark are; tooltip background isn't).
 
 ## Conventions
 

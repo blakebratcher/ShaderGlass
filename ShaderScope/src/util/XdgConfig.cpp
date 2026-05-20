@@ -54,21 +54,30 @@ bool XdgConfig::migrateLegacyShaderGlassConfig() {
     std::error_code ec;
     if (!fs::exists(oldDir, ec) || !fs::is_directory(oldDir, ec)) return false;
 
-    // Best-effort recursive copy. If anything goes wrong, swallow it — the
-    // user can still start fresh; migration is opportunistic.
+    // Best-effort recursive copy. We only return true if at least one file
+    // actually transferred — partial create_directories without any copies
+    // would mislead the welcome toast into claiming success.
     fs::create_directories(newDir, ec);
     if (ec) return false;
+    bool copiedAny = false;
     for (const auto& entry : fs::recursive_directory_iterator(oldDir, ec)) {
-        if (ec) return false;
+        if (ec) break;
         const fs::path rel = fs::relative(entry.path(), oldDir, ec);
-        if (ec) continue;
+        if (ec) { ec.clear(); continue; }
         const fs::path dst = newDir / rel;
         if (entry.is_directory()) {
             fs::create_directories(dst, ec);
+            if (ec) ec.clear();
         } else if (entry.is_regular_file()) {
             fs::create_directories(dst.parent_path(), ec);
-            fs::copy_file(entry.path(), dst, fs::copy_options::overwrite_existing, ec);
+            if (ec) { ec.clear(); continue; }
+            if (fs::copy_file(entry.path(), dst,
+                              fs::copy_options::overwrite_existing, ec)) {
+                copiedAny = true;
+            } else {
+                ec.clear();
+            }
         }
     }
-    return true;
+    return copiedAny;
 }

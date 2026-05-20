@@ -34,9 +34,11 @@ bool SdlWindow::pollEvents() {
                    e.window.windowID == SDL_GetWindowID(m_window)) {
             m_open = false;
         } else if (e.type == SDL_EVENT_KEY_DOWN) {
-            if (e.key.scancode == SDL_SCANCODE_ESCAPE) {
-                m_open = false;
-            } else if (m_keyHandler) {
+            // No special-case for Escape here. The key handler in main.cpp
+            // checks ImGui::WantCaptureKeyboard / IsAnyItemActive and only
+            // closes the window when neither claims the key — so Escape can
+            // dismiss popups + clear text-input focus cleanly.
+            if (m_keyHandler) {
                 m_keyHandler(e.key.scancode, e.key.mod);
             }
         } else if (e.type == SDL_EVENT_DROP_FILE) {
