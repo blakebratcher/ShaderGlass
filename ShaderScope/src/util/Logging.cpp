@@ -1,8 +1,10 @@
 #include "Logging.h"
 #include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 
 namespace {
@@ -53,6 +55,25 @@ LogLevel parse(const char* s, LogLevel fallback) noexcept {
 void resetThresholdForTesting() noexcept {
     g_initialized.store(false, std::memory_order_release);
     g_threshold.store(LogLevel::Info, std::memory_order_release);
+}
+
+std::FILE* logFile() {
+    // call_once guards both the env read and fopen so concurrent loggers
+    // can't race. After init, g_file is a stable pointer for the program
+    // lifetime — the OS closes it on exit.
+    static std::FILE*   g_file = nullptr;
+    static std::once_flag g_once;
+    std::call_once(g_once, [] {
+        const char* path = std::getenv("SHADERSCOPE_LOG_FILE");
+        if (!path || !*path) return;
+        g_file = std::fopen(path, "a");
+        if (!g_file) {
+            std::fprintf(stderr,
+                "shaderscope: SHADERSCOPE_LOG_FILE=%s could not be opened (%s)\n",
+                path, std::strerror(errno));
+        }
+    });
+    return g_file;
 }
 
 } // namespace LoggingDetail

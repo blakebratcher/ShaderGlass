@@ -667,8 +667,34 @@ static int runWindowed(Args& a) {
                 ImGui::Spacing();
                 ImGui::Separator();
                 ImGui::Spacing();
-                ImGui::TextDisabled("Forked from mausimus/ShaderGlass (Windows). GPL v3.");
-                ImGui::TextDisabled("Shaders: libretro/slang-shaders.");
+
+                // Clickable links — open in the user's default browser via
+                // SDL_OpenURL. Falls back to a silent no-op on platforms
+                // without a registered URL handler (none on a typical Linux).
+                auto link = [](const char* label, const char* url) {
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.37f, 0.70f, 1.00f, 1.0f));
+                    ImGui::TextUnformatted(label);
+                    ImGui::PopStyleColor();
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                        ImGui::SetTooltip("%s", url);
+                    }
+                    if (ImGui::IsItemClicked()) SDL_OpenURL(url);
+                };
+                ImGui::TextUnformatted("Forked from");
+                ImGui::SameLine();
+                link("mausimus/ShaderGlass", "https://github.com/mausimus/ShaderGlass");
+                ImGui::SameLine();
+                ImGui::TextUnformatted("(Windows). GPL v3.");
+
+                ImGui::TextUnformatted("Shaders from");
+                ImGui::SameLine();
+                link("libretro/slang-shaders",
+                     "https://github.com/libretro/slang-shaders");
+                ImGui::SameLine();
+                ImGui::TextUnformatted(".");
+
                 ImGui::Spacing();
                 ImGui::Spacing();
                 const float btnW = 80.0f;

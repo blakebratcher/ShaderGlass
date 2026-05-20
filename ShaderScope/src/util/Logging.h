@@ -30,11 +30,20 @@ LogLevel parse(const char* s, LogLevel fallback) noexcept;
 // Test-only: drop the cached threshold so the next call re-reads the env.
 void resetThresholdForTesting() noexcept;
 
+// Lazily-opened mirror sink. If $SHADERSCOPE_LOG_FILE is set, returns an
+// appending FILE* that the LOG_AT macro tees lines into; otherwise null.
+// Opens at most once per process. Thread-safe.
+std::FILE* logFile();
+
 } // namespace LoggingDetail
 
 #define LOG_AT(level_, prefix_, fmt_, ...) do {                              \
         if (::LoggingDetail::shouldLog(level_)) {                            \
             std::fprintf(stderr, prefix_ fmt_ "\n", ##__VA_ARGS__);          \
+            if (std::FILE* _ssLogF = ::LoggingDetail::logFile()) {           \
+                std::fprintf(_ssLogF, prefix_ fmt_ "\n", ##__VA_ARGS__);     \
+                std::fflush(_ssLogF);                                        \
+            }                                                                \
         }                                                                    \
     } while (0)
 

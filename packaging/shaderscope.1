@@ -138,6 +138,12 @@ Threshold for stderr logging. One of
 Defaults to
 .BR info .
 .TP
+.B SHADERSCOPE_LOG_FILE
+If set, every log line that passes the SHADERSCOPE_LOG threshold is
+also appended to this file (in addition to stderr). The file is opened
+once on first log call, flushed after every write. Useful for
+attaching to bug reports.
+.TP
 .B XDG_CONFIG_HOME
 If set, ShaderScope reads/writes
 .IB $XDG_CONFIG_HOME /shaderscope/

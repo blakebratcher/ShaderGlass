@@ -59,6 +59,9 @@ Useful flags:
 
 Env:
 - `SHADERSCOPE_LOG=debug|info|warn|error|off` (default `info`)
+- `SHADERSCOPE_LOG_FILE=/path/to/log` — mirror every log line that passes
+  the threshold to this file (appended, flushed per line). Opens on
+  first log call.
 
 In-window hotkeys (active only when ImGui doesn't have keyboard focus):
 - `F11` — screenshot to `$XDG_PICTURES_DIR/shaderscope-*.png`
