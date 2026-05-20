@@ -6,13 +6,27 @@
 class VulkanContext;
 class Texture;
 
+// Sampler config for the pipeline's input texture. Mirrors the slangp
+// filter_linear / wrap_mode keys. Defaults match RetroArch's defaults
+// for a no-key preset.
+struct ShaderPipelineSampler {
+    bool linearFilter = true;
+    enum class Wrap : int {
+        ClampToEdge,
+        Repeat,
+        MirroredRepeat,
+        ClampToBorder,
+    } wrap = Wrap::ClampToEdge;
+};
+
 class ShaderPipeline {
 public:
     // Passthrough/builtin path: sampler at descriptor binding 0.
     ShaderPipeline(VulkanContext& ctx,
                    const void* vertSpv, size_t vertSize,
                    const void* fragSpv, size_t fragSize,
-                   VkFormat colorFormat);
+                   VkFormat colorFormat,
+                   ShaderPipelineSampler sampler = {});
 
     // Slang-shader path: UBO at binding 0 (uboSize bytes), sampler at
     // binding 2. The UBO is host-visible + persistently mapped; call
@@ -23,7 +37,8 @@ public:
                    const void* fragSpv, size_t fragSize,
                    VkFormat colorFormat,
                    uint32_t uboSize,
-                   WithParamsTag);
+                   WithParamsTag,
+                   ShaderPipelineSampler sampler = {});
 
     ~ShaderPipeline();
 
@@ -57,6 +72,7 @@ private:
                         uint32_t uboSize);
 
     VulkanContext& m_ctx;
+    ShaderPipelineSampler m_samplerOpts{};
     VkPipelineLayout      m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline            m_pipeline       = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_dsl            = VK_NULL_HANDLE;

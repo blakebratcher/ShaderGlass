@@ -18,8 +18,9 @@ static VkShaderModule makeModule(VkDevice dev, const void* code, size_t size) {
 ShaderPipeline::ShaderPipeline(VulkanContext& ctx,
                                const void* vertSpv, size_t vertSize,
                                const void* fragSpv, size_t fragSize,
-                               VkFormat colorFormat)
-    : m_ctx(ctx) {
+                               VkFormat colorFormat,
+                               ShaderPipelineSampler sampler)
+    : m_ctx(ctx), m_samplerOpts(sampler) {
     createPipeline(ctx, vertSpv, vertSize, fragSpv, fragSize, colorFormat, 0);
 }
 
@@ -28,8 +29,9 @@ ShaderPipeline::ShaderPipeline(VulkanContext& ctx,
                                const void* fragSpv, size_t fragSize,
                                VkFormat colorFormat,
                                uint32_t uboSize,
-                               WithParamsTag)
-    : m_ctx(ctx) {
+                               WithParamsTag,
+                               ShaderPipelineSampler sampler)
+    : m_ctx(ctx), m_samplerOpts(sampler) {
     createPipeline(ctx, vertSpv, vertSize, fragSpv, fragSize, colorFormat, uboSize);
 }
 
@@ -55,10 +57,24 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
                                     VkFormat colorFormat,
                                     uint32_t uboSize) {
     // ── Sampler ──────────────────────────────────────────────────────────────
+    // filter_linear / wrap_mode from the .slangp settle here.
     VkSamplerCreateInfo samp{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-    samp.magFilter    = VK_FILTER_LINEAR;
-    samp.minFilter    = VK_FILTER_LINEAR;
-    samp.addressModeU = samp.addressModeV = samp.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    const VkFilter filter = m_samplerOpts.linearFilter
+                                ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+    samp.magFilter = filter;
+    samp.minFilter = filter;
+    VkSamplerAddressMode wrap = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    switch (m_samplerOpts.wrap) {
+        case ShaderPipelineSampler::Wrap::Repeat:
+            wrap = VK_SAMPLER_ADDRESS_MODE_REPEAT;          break;
+        case ShaderPipelineSampler::Wrap::MirroredRepeat:
+            wrap = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT; break;
+        case ShaderPipelineSampler::Wrap::ClampToBorder:
+            wrap = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER; break;
+        case ShaderPipelineSampler::Wrap::ClampToEdge:
+        default: break;
+    }
+    samp.addressModeU = samp.addressModeV = samp.addressModeW = wrap;
     VK_CHECK(vkCreateSampler(ctx.device(), &samp, nullptr, &m_sampler));
 
     // ── Descriptor set layout ────────────────────────────────────────────────

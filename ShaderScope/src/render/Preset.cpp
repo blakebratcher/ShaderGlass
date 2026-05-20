@@ -119,10 +119,31 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
     m_pipelines.reserve(N);
     m_uboSizes.reserve(N);
 
+    auto parseSampler = [](const std::map<std::string, std::string>& pp) {
+        ShaderPipelineSampler s;
+        auto fit = pp.find("filter_linear");
+        if (fit != pp.end()) {
+            // RetroArch accepts "true"/"false"; some shader packs ship the
+            // literal string with mixed case or "1"/"0".
+            const std::string& v = fit->second;
+            s.linearFilter = (v == "true" || v == "TRUE" || v == "1");
+        }
+        auto wit = pp.find("wrap_mode");
+        if (wit != pp.end()) {
+            const std::string& w = wit->second;
+            if      (w == "repeat")          s.wrap = ShaderPipelineSampler::Wrap::Repeat;
+            else if (w == "mirrored_repeat") s.wrap = ShaderPipelineSampler::Wrap::MirroredRepeat;
+            else if (w == "clamp_to_border") s.wrap = ShaderPipelineSampler::Wrap::ClampToBorder;
+            else                              s.wrap = ShaderPipelineSampler::Wrap::ClampToEdge;
+        }
+        return s;
+    };
+
     for (size_t i = 0; i < N; ++i) {
         auto& sd = m_def->ShaderDefs[i];
         const VkFormat passFmt = (i + 1 == N) ? swapFmt : m_intermediateFormat;
         const uint32_t uboSize = static_cast<uint32_t>(sd.ParamsSize(0));
+        const ShaderPipelineSampler so = parseSampler(sd.PresetParams);
         if (sd.ParamsSize(1) > 0) {
             LOG_WARN("Preset: '%s' pass %zu uses uniform buffer 1 (%zu bytes); "
                      "only buffer 0 is bound — expect visual artifacts",
@@ -132,12 +153,12 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
             m_pipelines.push_back(std::make_unique<ShaderPipeline>(
                 ctx, sd.VertexByteCode,   sd.VertexLength,
                      sd.FragmentByteCode, sd.FragmentLength,
-                passFmt));
+                passFmt, so));
         } else {
             m_pipelines.push_back(std::make_unique<ShaderPipeline>(
                 ctx, sd.VertexByteCode,   sd.VertexLength,
                      sd.FragmentByteCode, sd.FragmentLength,
-                passFmt, uboSize, ShaderPipeline::WithParamsTag{}));
+                passFmt, uboSize, ShaderPipeline::WithParamsTag{}, so));
         }
         m_uboSizes.push_back(uboSize);
     }
