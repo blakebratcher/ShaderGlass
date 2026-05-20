@@ -67,6 +67,9 @@ void SourcePickerPanel::draw(AppState& state) {
         state.screenshotPending = true;
     }
     ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    if (ImGui::SmallButton("About")) state.showAbout = true;
     if (ImGui::IsItemHovered() && canShot) {
         ImGui::SetTooltip("Save the rendered output to %s/shaderscope-*.png",
                           std::getenv("XDG_PICTURES_DIR")

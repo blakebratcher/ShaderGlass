@@ -58,6 +58,10 @@ struct AppState {
     bool                            borderless     = false;
     bool                            alwaysOnTop    = false;
 
+    // Set by the SourcePickerPanel 'About' button (or F12); main.cpp draws
+    // the About modal in the same frame it's set.
+    bool                            showAbout      = false;
+
     // Re-enumerate from the current capture backend.
     void refreshSources();
 

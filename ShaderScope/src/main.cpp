@@ -420,6 +420,9 @@ static int runWindowed(Args& a) {
                 SDL_SetWindowBordered(window.handle(), !state.borderless);
                 Logging::infoToast(state, state.borderless ? "Borderless on" : "Borderless off");
                 break;
+            case SDL_SCANCODE_F12:
+                state.showAbout = true;
+                break;
             default:
                 break;
         }
@@ -574,8 +577,105 @@ static int runWindowed(Args& a) {
                 sourcePanel.draw(state);
                 presetPanel.draw(state);
                 paramsPanel.draw(state);
+
+                // Bottom status bar — FPS, source, resolution, preset, hotkey hint.
+                // Pinned to the bottom edge of the main viewport; gone when chrome is hidden.
+                {
+                    const ImGuiViewport* svp = ImGui::GetMainViewport();
+                    const float kStatusH = 24.0f;
+                    ImGui::SetNextWindowPos (ImVec2(svp->WorkPos.x,
+                                                    svp->WorkPos.y + svp->WorkSize.y - kStatusH));
+                    ImGui::SetNextWindowSize(ImVec2(svp->WorkSize.x, kStatusH));
+                    ImGui::SetNextWindowViewport(svp->ID);
+                }
+                if (ImGui::Begin("##status_bar", nullptr,
+                        ImGuiWindowFlags_NoTitleBar |
+                        ImGuiWindowFlags_NoResize |
+                        ImGuiWindowFlags_NoMove |
+                        ImGuiWindowFlags_NoScrollbar |
+                        ImGuiWindowFlags_NoSavedSettings |
+                        ImGuiWindowFlags_NoDocking |
+                        ImGuiWindowFlags_NoFocusOnAppearing |
+                        ImGuiWindowFlags_NoNav |
+                        ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::Text("FPS %5.1f", ImGui::GetIO().Framerate);
+
+                    ImGui::SameLine(0, 16);
+                    if (state.capture && !state.activeSourceId.empty()) {
+                        auto sz = state.capture->size();
+                        if (sz.width > 0 && sz.height > 0) {
+                            ImGui::Text("\xef\x83\xa8 %s  %ux%u",
+                                        state.activeSourceId.c_str(), sz.width, sz.height);
+                        } else {
+                            ImGui::Text("\xef\x83\xa8 %s", state.activeSourceId.c_str());
+                        }
+                    } else {
+                        ImGui::TextDisabled("no source");
+                    }
+
+                    ImGui::SameLine(0, 16);
+                    if (state.preset && !state.activePresetPath.empty()) {
+                        const std::string stem =
+                            std::filesystem::path(state.activePresetPath).stem().string();
+                        const char* badge = state.preset->isMultiPass() ? " [MP]" : "";
+                        ImGui::Text("preset: %s%s", stem.c_str(), badge);
+                    } else {
+                        ImGui::TextDisabled("preset: passthrough");
+                    }
+
+                    const char* hint = "F1 help \xc2\xb7 Esc quit";
+                    const float hintWidth = ImGui::CalcTextSize(hint).x;
+                    ImGui::SameLine(ImGui::GetWindowWidth() - hintWidth - 12);
+                    ImGui::TextDisabled("%s", hint);
+                }
+                ImGui::End();
             }
             cropOverlay.draw(state);   // crop drag overlay must still work in chrome-hidden mode
+
+            // About modal — triggered by SourcePickerPanel button or F12.
+            if (state.showAbout) {
+                ImGui::OpenPopup("About ShaderScope");
+                state.showAbout = false;
+            }
+            {
+                const ImGuiViewport* vp = ImGui::GetMainViewport();
+                ImGui::SetNextWindowPos(
+                    ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f,
+                           vp->WorkPos.y + vp->WorkSize.y * 0.5f),
+                    ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+                ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_Appearing);
+            }
+            if (ImGui::BeginPopupModal("About ShaderScope", nullptr,
+                    ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::TextColored(ImVec4(0.37f, 0.70f, 1.00f, 1.0f),
+                    "ShaderScope");
+                ImGui::SameLine();
+                ImGui::TextDisabled("(Linux preview)");
+                ImGui::Separator();
+                ImGui::Spacing();
+                ImGui::TextWrapped(
+                    "GPU shader overlay using Vulkan and SDL3. Applies RetroArch "
+                    "slang shaders to captured X11 or Wayland desktop content.");
+                ImGui::Spacing();
+                ImGui::Text("Commit: %s", SHADERSCOPE_GIT_COMMIT);
+                ImGui::Text("Built:  %s", SHADERSCOPE_BUILD_DATE);
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+                ImGui::TextDisabled("Forked from mausimus/ShaderGlass (Windows). GPL v3.");
+                ImGui::TextDisabled("Shaders: libretro/slang-shaders.");
+                ImGui::Spacing();
+                ImGui::Spacing();
+                const float btnW = 80.0f;
+                ImGui::SetCursorPosX(ImGui::GetWindowWidth() - btnW - 12);
+                if (ImGui::Button("Close", ImVec2(btnW, 0))
+                    || ImGui::IsKeyPressed(ImGuiKey_Escape)
+                    || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
 
             // Centered splash text in the viewport when no capture is active.
             if (!state.capture || state.activeSourceId.empty()) {
