@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 struct LastSource {
     std::string kind;   // "x11-screen", "wayland-screen"
@@ -45,6 +46,11 @@ public:
     const std::string& lastPreset() const { return m_lastPreset; }
     void setLastPreset(std::string path);
 
+    // Recent presets — MRU order, oldest at the back. Capped at 10.
+    // Empty path is silently ignored (passthrough doesn't count).
+    const std::vector<std::string>& recentPresets() const { return m_recentPresets; }
+    void pushRecentPreset(std::string path);
+
     // Returns a copy. Empty map if no entry for `presetPath`.
     std::unordered_map<std::string, float> paramsFor(const std::string& presetPath) const;
     void setPresetParams(const std::string& presetPath,
@@ -63,6 +69,7 @@ private:
     std::filesystem::path                                m_path;
     std::optional<LastSource>                            m_lastSource;
     std::string                                          m_lastPreset;
+    std::vector<std::string>                             m_recentPresets;
     std::unordered_map<std::string,
         std::unordered_map<std::string, float>>          m_presetParams;
     std::unordered_map<std::string, CropRect>            m_crops;   // key = kind + "|" + id

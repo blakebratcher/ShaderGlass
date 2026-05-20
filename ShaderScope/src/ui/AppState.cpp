@@ -60,8 +60,9 @@ void AppState::applyPending() {
                 auto next = std::make_unique<Preset>(*ctx, want, fmt);
                 preset = std::move(next);
                 activePresetPath = want;
-                if (config) config->setLastPreset(activePresetPath);
                 if (config) {
+                    config->setLastPreset(activePresetPath);
+                    config->pushRecentPreset(activePresetPath);
                     auto saved = config->paramsFor(activePresetPath);
                     if (!saved.empty()) {
                         for (auto& p : preset->params()) {

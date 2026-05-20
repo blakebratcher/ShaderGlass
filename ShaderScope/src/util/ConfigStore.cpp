@@ -29,6 +29,7 @@ ConfigStore::ConfigStore(fs::path path) : m_path(std::move(path)) {}
 void ConfigStore::load() {
     m_lastSource.reset();
     m_lastPreset.clear();
+    m_recentPresets.clear();
     m_presetParams.clear();
     m_crops.clear();
 
@@ -56,6 +57,15 @@ void ConfigStore::load() {
             if (!s.kind.empty()) m_lastSource = s;
         }
         m_lastPreset = j.value("lastPreset", "");
+        if (j.contains("recentPresets") && j["recentPresets"].is_array()) {
+            for (auto& v : j["recentPresets"]) {
+                if (v.is_string()) {
+                    std::string s = v.get<std::string>();
+                    if (!s.empty()) m_recentPresets.push_back(std::move(s));
+                }
+                if (m_recentPresets.size() >= 10) break;
+            }
+        }
         if (j.contains("presetParams") && j["presetParams"].is_object()) {
             for (auto& [k, v] : j["presetParams"].items()) {
                 if (!v.is_object()) continue;
@@ -95,6 +105,9 @@ void ConfigStore::saveSync() {
                             {"id",   m_lastSource->id   } };
     }
     j["lastPreset"] = m_lastPreset;
+    json recent = json::array();
+    for (const auto& p : m_recentPresets) recent.push_back(p);
+    j["recentPresets"] = std::move(recent);
     json params = json::object();
     for (auto& [presetPath, values] : m_presetParams) {
         json entry = json::object();
@@ -148,6 +161,20 @@ void ConfigStore::setLastSource(std::string kind, std::string id) {
 
 void ConfigStore::setLastPreset(std::string p) {
     m_lastPreset = std::move(p);
+    saveAsync();
+}
+
+void ConfigStore::pushRecentPreset(std::string path) {
+    if (path.empty()) return;
+    // Remove any existing entry to dedupe before push-to-front.
+    for (auto it = m_recentPresets.begin(); it != m_recentPresets.end(); ) {
+        if (*it == path) it = m_recentPresets.erase(it);
+        else             ++it;
+    }
+    m_recentPresets.insert(m_recentPresets.begin(), std::move(path));
+    if (m_recentPresets.size() > 10) {
+        m_recentPresets.resize(10);
+    }
     saveAsync();
 }
 

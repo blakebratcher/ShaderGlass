@@ -1,6 +1,8 @@
 #include "PresetBrowserPanel.h"
 #include "AppState.h"
+#include "util/ConfigStore.h"
 #include "util/PresetLibrary.h"
+#include <filesystem>
 #include <imgui.h>
 #include <algorithm>
 #include <cctype>
@@ -51,6 +53,24 @@ void PresetBrowserPanel::draw(AppState& state) {
             }
         }
         ImGui::TreePop();
+    }
+
+    // Recent — the last 10 loaded presets, MRU order. Only shown when
+    // the config store has any (skips on fresh installs).
+    if (state.config && !state.config->recentPresets().empty()) {
+        if (ImGui::TreeNodeEx("Recent", ImGuiTreeNodeFlags_DefaultOpen)) {
+            for (const auto& p : state.config->recentPresets()) {
+                bool isActive = (p == state.activePresetPath);
+                const std::string label = std::filesystem::path(p).stem().string();
+                ImGui::PushID(p.c_str());
+                if (ImGui::Selectable(label.c_str(), isActive)) {
+                    state.pendingPresetPath = p;
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.c_str());
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
+        }
     }
 
     ImGui::Separator();
