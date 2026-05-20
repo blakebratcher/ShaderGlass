@@ -6,6 +6,38 @@ Semantic Versioning starting from `0.1.0-preview`.
 
 ## [Unreleased]
 
+### Added
+
+- Per-pass `scale_type` / `scale_x` / `scale_y` parsing — multi-pass
+  intermediates now allocate at correct dimensions (`source` × prev,
+  `viewport` × swapchain, or `absolute` px). Was previously hardcoded
+  to source extent for every intermediate.
+- Per-pass `filter_linear` (linear vs nearest) and `wrap_mode`
+  (clamp_to_edge / repeat / mirrored_repeat / clamp_to_border) parsing.
+  CRT / scanline shaders that depend on nearest sampling at the
+  source stage now look correct.
+- Help panel (F1 toggles a real window with a hotkeys table and
+  imports/capture/CLI sections — replaces the F1 toast).
+- File logging via `SHADERSCOPE_LOG_FILE=/path` — tees every log line
+  to the file in addition to stderr. Lazy-opened, thread-safe.
+- Clickable links in the About dialog (opens in default browser via
+  `SDL_OpenURL`).
+- Flatpak manifest at `packaging/flatpak/org.shaderscope.ShaderScope.yaml`
+  (Flathub-ready, freedesktop 24.08 runtime).
+- Community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, GitHub
+  issue and PR templates.
+
+### Fixed
+
+- `XdgConfig::migrateLegacyShaderGlassConfig` only returns `true` when
+  at least one file was actually copied (was unconditionally true
+  even on partial failure — gave the user a misleading "Imported
+  settings" toast on a fresh-ish install).
+- Escape key with the About modal open now dismisses the modal
+  instead of closing the entire app. `SdlWindow` no longer
+  special-cases Esc; the key handler in `main.cpp` only closes the
+  window when ImGui isn't claiming the keyboard.
+
 ## [0.1.0-preview] — 2026-05-19
 
 First public preview. The project has been a Linux fork of
