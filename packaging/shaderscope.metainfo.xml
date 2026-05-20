@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.shaderscope.ShaderScope</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>ShaderScope</name>
+  <summary>GPU shader overlay using Vulkan and SDL3</summary>
+  <description>
+    <p>
+      ShaderScope applies RetroArch slang shaders as a live overlay on
+      Linux desktops, with capture backends for both X11 (XComposite +
+      XShm) and Wayland (xdg-desktop-portal + PipeWire, with DMA-BUF
+      zero-copy where available).
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Vulkan 1.3 dynamic rendering pipeline.</li>
+      <li>Single- and multi-pass slang shader support.</li>
+      <li>Drag-and-drop <code>.slangp</code> import; real-time parameter editing.</li>
+      <li>Region crop with persistence per source.</li>
+      <li>Screenshot capture to PNG (post-shader, no UI chrome).</li>
+      <li>Hotkeys for cycling presets, bypass toggle, overlay-style window modes.</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">shaderscope.desktop</launchable>
+  <categories>
+    <category>Graphics</category>
+    <category>Video</category>
+  </categories>
+  <keywords>
+    <keyword>shader</keyword>
+    <keyword>overlay</keyword>
+    <keyword>crt</keyword>
+    <keyword>retroarch</keyword>
+    <keyword>vulkan</keyword>
+    <keyword>slang</keyword>
+    <keyword>capture</keyword>
+  </keywords>
+  <url type="homepage">https://github.com/mausimus/ShaderGlass</url>
+  <provides>
+    <binary>shaderscope</binary>
+  </provides>
+  <developer_name>ShaderScope contributors</developer_name>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0-preview" date="2026-05-19">
+      <description>
+        <p>
+          First preview release of ShaderScope: multi-pass shader support,
+          runtime preset import, hotkeys, status bar, About dialog, AppImage
+          and system-install packaging. Migrates configuration from the legacy
+          ShaderGlass Linux fork on first run.
+        </p>
+      </description>
+    </release>
+  </releases>
+</component>

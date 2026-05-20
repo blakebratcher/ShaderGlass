@@ -153,6 +153,17 @@ install(FILES ${CMAKE_SOURCE_DIR}/packaging/shaderscope.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES ${CMAKE_SOURCE_DIR}/packaging/shaderscope.svg
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+# Multi-size raster icons for launchers/taskbars that don't render SVG well.
+foreach(SIZE 16 32 48 64 128 256)
+    set(_ICON ${CMAKE_SOURCE_DIR}/packaging/icons/shaderscope-${SIZE}.png)
+    if(EXISTS ${_ICON})
+        install(FILES ${_ICON}
+                DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${SIZE}x${SIZE}/apps
+                RENAME shaderscope.png)
+    endif()
+endforeach()
+install(FILES ${CMAKE_SOURCE_DIR}/packaging/shaderscope.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES ${CMAKE_SOURCE_DIR}/packaging/shaderscope.1
         DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
