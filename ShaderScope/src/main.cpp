@@ -21,6 +21,7 @@
 #include "ui/ToastQueue.h"
 #include "ui/ToastPanel.h"
 #include "ui/CropOverlay.h"
+#include "ui/HelpPanel.h"
 #include "util/FourccToVk.h"
 #include "util/ScreenshotWriter.h"
 #include "util/SourceMatcher.h"
@@ -347,6 +348,7 @@ static int runWindowed(Args& a) {
     PresetBrowserPanel presetPanel;
     ParamsPanel paramsPanel;
     CropOverlay cropOverlay;
+    HelpPanel helpPanel;
     ToastPanel toastPanel;
 
     // Last preset path captured before a bypass toggle, so 'B' can restore it.
@@ -407,8 +409,7 @@ static int runWindowed(Args& a) {
                 cyclePreset(-1);
                 break;
             case SDL_SCANCODE_F1:
-                Logging::infoToast(state,
-                    "Hotkeys: F11 shot | B bypass | [ ] cycle | F2 chrome | F3 top | F4 borderless");
+                state.showHelp = !state.showHelp;
                 break;
             case SDL_SCANCODE_F2:
                 state.hideChrome = !state.hideChrome;
@@ -581,6 +582,7 @@ static int runWindowed(Args& a) {
                 sourcePanel.draw(state);
                 presetPanel.draw(state);
                 paramsPanel.draw(state);
+                helpPanel.draw(state);
 
                 // Bottom status bar — FPS, source, resolution, preset, hotkey hint.
                 // Pinned to the bottom edge of the main viewport; gone when chrome is hidden.

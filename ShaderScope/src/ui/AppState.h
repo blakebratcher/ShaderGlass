@@ -62,6 +62,10 @@ struct AppState {
     // the About modal in the same frame it's set.
     bool                            showAbout      = false;
 
+    // Help panel — toggled by F1. Lives in the dockspace alongside the
+    // source/preset/params panels when visible.
+    bool                            showHelp       = false;
+
     // Re-enumerate from the current capture backend.
     void refreshSources();
 

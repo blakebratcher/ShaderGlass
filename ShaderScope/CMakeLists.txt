@@ -75,6 +75,7 @@ add_library(shaderscope_core STATIC
     src/capture/X11Capture.cpp
     src/ui/AppState.cpp
     src/ui/CropOverlay.cpp
+    src/ui/HelpPanel.cpp
     src/ui/ImGuiLayer.cpp
     src/ui/ParamsPanel.cpp
     src/ui/PresetBrowserPanel.cpp
