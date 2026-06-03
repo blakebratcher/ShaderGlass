@@ -19,6 +19,16 @@ public:
     Swapchain(Swapchain&&)                 = delete;
     Swapchain& operator=(Swapchain&&)      = delete;
 
+    // Rebuild the swapchain (and its image views) at a new size. Waits for the
+    // device to go idle first, then destroys the old views and recreates the
+    // swapchain via VkSwapchainCreateInfoKHR::oldSwapchain so the driver can
+    // hand back the old presentable images. Call this when a present/acquire
+    // reports VK_ERROR_OUT_OF_DATE_KHR (or proactively on a resize event).
+    // `width`/`height` are only consulted when the surface reports
+    // currentExtent == UINT32_MAX (the platform lets the app choose); otherwise
+    // the surface's current extent wins.
+    void recreate(uint32_t width, uint32_t height);
+
     VkSwapchainKHR handle()         const { return m_swapchain; }
     VkFormat       format()         const { return m_format; }
     VkExtent2D     extent()         const { return m_extent; }
@@ -27,6 +37,11 @@ public:
     VkImageView    view (uint32_t i) const { return m_views[i]; }
 
 private:
+    // Shared swapchain + image-view creation used by both the constructor and
+    // recreate(). When `oldSwapchain` is non-null it is passed to
+    // VkSwapchainCreateInfoKHR::oldSwapchain and destroyed afterwards.
+    void create(uint32_t width, uint32_t height, VkSwapchainKHR oldSwapchain);
+
     VulkanContext&             m_ctx;
     VkSurfaceKHR               m_surface;
     VkSwapchainKHR             m_swapchain = VK_NULL_HANDLE;

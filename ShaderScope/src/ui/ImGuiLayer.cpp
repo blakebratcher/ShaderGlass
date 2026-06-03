@@ -117,6 +117,8 @@ ImGuiLayer::ImGuiLayer(VulkanContext& ctx, Swapchain& sc, SDL_Window* window)
     if (!ImGui_ImplVulkan_Init(&init)) {
         throw std::runtime_error("ImGuiLayer: ImGui_ImplVulkan_Init failed");
     }
+    m_initImageCount = m_sc.imageCount();
+    m_initFormat     = m_sc.format();
     LOG_INFO("ImGui %s initialised (Vulkan + SDL3, docking enabled)",
              IMGUI_VERSION);
 }
@@ -134,6 +136,24 @@ ImGuiLayer::~ImGuiLayer() {
 
 void ImGuiLayer::processSdlEvent(const SDL_Event& e) {
     ImGui_ImplSDL3_ProcessEvent(&e);
+}
+
+void ImGuiLayer::onSwapchainRecreated() {
+    // Common case: a resize keeps image count + format constant, so the baked
+    // ImGui pipeline and per-frame ring buffers stay valid. Nothing to do.
+    const uint32_t ic  = m_sc.imageCount();
+    const VkFormat fmt = m_sc.format();
+    if (ic == m_initImageCount && fmt == m_initFormat) {
+        return;
+    }
+    // Unsupported reconfiguration. ImGui's Vulkan main-viewport backend cannot
+    // change image count (ImGui_ImplVulkan_SetMinImageCount asserts) or format
+    // without a full re-init, which we do not perform here. In practice this
+    // never triggers for a resize on the same device + surface; if it ever
+    // does, the chrome would render incorrectly, so make the cause obvious.
+    LOG_WARN("ImGui swapchain reconfiguration unsupported: imageCount %u->%u, "
+             "format %d->%d. ImGui chrome may render incorrectly.",
+             m_initImageCount, ic, (int)m_initFormat, (int)fmt);
 }
 
 void ImGuiLayer::beginFrame() {

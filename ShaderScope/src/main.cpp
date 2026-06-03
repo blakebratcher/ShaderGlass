@@ -585,7 +585,39 @@ static int runWindowed(Args& a) {
             LOG_INFO("No capture active. Use the source picker to select a source.");
         }
 
+        // Recreate the swapchain at the window's current drawable size. Returns
+        // false when the window is minimized / zero-sized (0x0 swapchains are
+        // invalid) — the caller skips rendering that frame. Used both
+        // proactively (on a resize event) and reactively (on
+        // VK_ERROR_OUT_OF_DATE_KHR from acquire/present).
+        auto recreateSwapchain = [&]() -> bool {
+            uint32_t dw = 0, dh = 0;
+            window.getDrawableSize(dw, dh);
+            if (dw == 0 || dh == 0) return false;
+            swapchain.recreate(dw, dh);
+            imgui.onSwapchainRecreated();
+            return true;
+        };
+
+        // Set when an acquire/present reports the swapchain is stale (or a
+        // resize event fires). The next loop iteration recreates before
+        // rendering.
+        bool swapchainDirty = false;
+
         while (window.pollEvents()) {
+            // Resize / DPI-change events flag the swapchain stale up front, so
+            // we recreate before drawing rather than after a failed present.
+            if (window.takeResizePending()) swapchainDirty = true;
+
+            if (swapchainDirty) {
+                if (!recreateSwapchain()) {
+                    // Minimized / zero-sized: keep the dirty flag and skip the
+                    // frame entirely until the window has a drawable area again.
+                    continue;
+                }
+                swapchainDirty = false;
+            }
+
             imgui.beginFrame();
 
             // Dock space + panels. F2 hides the chrome for an overlay-style view.
@@ -797,6 +829,10 @@ static int runWindowed(Args& a) {
 
             auto imguiBody = [&](VkCommandBuffer cb){ imgui.recordDrawData(cb); };
 
+            // Outcome of this frame's render. SwapchainOutOfDate flags the
+            // swapchain stale so the next iteration recreates before drawing.
+            RenderStatus rs = RenderStatus::Ok;
+
             if (state.capture) {
                 auto f = state.capture->acquireFrame();
                 if (f) {
@@ -814,14 +850,15 @@ static int runWindowed(Args& a) {
                                 activePipeline.bindAndDrawWithImageView(
                                     cb, state.preset->finalInputView(), ext);
                             };
-                            engine.renderCustomWithOverlay(shaderBody, imguiBody,
+                            rs = engine.renderCustomWithOverlay(shaderBody, imguiBody,
                                 &screenshotWriter, &state, prePassBody);
                         } else {
-                            engine.renderImageViewWithOverlay(imp->view, activePipeline,
+                            rs = engine.renderImageViewWithOverlay(imp->view, activePipeline,
                                 imguiBody, &screenshotWriter, &state);
                         }
                         screenshotWriter.tick();
                         state.capture->release(*f);
+                        if (rs == RenderStatus::SwapchainOutOfDate) swapchainDirty = true;
                         continue;
                     }
 
@@ -865,20 +902,21 @@ static int runWindowed(Args& a) {
                             activePipeline.bindAndDrawWithImageView(
                                 cb, state.preset->finalInputView(), ext);
                         };
-                        engine.renderCustomWithOverlay(shaderBody, imguiBody,
+                        rs = engine.renderCustomWithOverlay(shaderBody, imguiBody,
                             &screenshotWriter, &state, prePassBody);
                     } else {
-                        engine.renderTextureWithOverlay(*sourceTex, activePipeline,
+                        rs = engine.renderTextureWithOverlay(*sourceTex, activePipeline,
                             imguiBody, &screenshotWriter, &state);
                     }
                 } else {
                     // Capture present but no valid frame yet — show splash.
-                    engine.renderEmpty(imguiBody);
+                    rs = engine.renderEmpty(imguiBody);
                 }
             } else {
                 // No active capture: render a splash (dark clear + ImGui).
-                engine.renderEmpty(imguiBody);
+                rs = engine.renderEmpty(imguiBody);
             }
+            if (rs == RenderStatus::SwapchainOutOfDate) swapchainDirty = true;
             screenshotWriter.tick();
         }
     }
