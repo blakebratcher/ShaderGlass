@@ -4,7 +4,7 @@
 ```
 sudo pacman -S base-devel cmake ninja vulkan-headers vulkan-validation-layers \
     sdl3 glslang shaderc dbus libpipewire libdrm libgbm \
-    libx11 libxcomposite libxext libxrandr
+    libx11 libxcomposite libxext libxrandr libxcb
 ```
 
 ## Dependencies (Debian / Ubuntu)
@@ -13,7 +13,8 @@ sudo apt install build-essential cmake ninja-build pkg-config \
     libsdl3-dev libvulkan-dev vulkan-validationlayers-dev \
     glslang-dev glslang-tools \
     libdbus-1-dev libpipewire-0.3-dev libdrm-dev libgbm-dev \
-    libx11-dev libxcomposite-dev libxext-dev libxrandr-dev
+    libx11-dev libxcomposite-dev libxext-dev libxrandr-dev \
+    libxcb1-dev libxcb-dri3-dev libx11-xcb-dev
 ```
 
 ## Dependencies (Fedora)
@@ -22,8 +23,13 @@ sudo dnf install gcc-c++ cmake ninja-build pkgconfig \
     SDL3-devel vulkan-headers vulkan-validation-layers-devel \
     glslang-devel glslc \
     dbus-devel pipewire-devel libdrm-devel mesa-libgbm-devel \
-    libX11-devel libXcomposite-devel libXext-devel libXrandr-devel
+    libX11-devel libXcomposite-devel libXext-devel libXrandr-devel \
+    libxcb-devel
 ```
+
+> The xcb / xcb-dri3 packages enable the X11 DMA-BUF zero-copy capture
+> fast path (M3.5). They're optional — without them the build falls back
+> to the CPU (XShm) capture path automatically.
 
 ## Build-time-fetched dependencies (no system install needed)
 
@@ -104,17 +110,21 @@ SHADERSCOPE_LOG=debug ./build/ShaderScope/shaderscope
 
 ## Status
 
-**Status:** M5 feature-complete — multi-pass shaders, runtime `.slangp`
-import (drag-and-drop + path input), in-window hotkeys, and overlay-style
-toggles (chrome/always-on-top/borderless) all shipped. The Linux port now
-covers the full RetroArch-shader workflow.
+**Status:** feature-complete — RetroArch slang shaders render correctly
+(semantic UBO + vertex-input support), multi-pass chains, LUTs, runtime
+`.slangp` import (drag-and-drop + path input), in-window hotkeys,
+overlay-style toggles (chrome/always-on-top/borderless), composited X11
+capture with a DRI3 DMA-BUF zero-copy fast path, and swapchain-resize
+recovery all shipped.
 
 - M1: ✅ shipped
 - M2: ✅ shipped
-- M3: X11 capture (CPU-only XShm) — ✅ shipped
-- M3.5: X11 DMA-BUF fast path (via EGL + DRI3) — pending
+- M3: X11 capture (XShm) — ✅ shipped
+- M3.5: composited X11 capture + DRI3 DMA-BUF fast path — ✅ shipped
 - M4: ImGui UI + config persistence — ✅ shipped
 - M5 UX polish (toast, first-run, crop, screenshot) — ✅ shipped
 - M5 feature-complete (multi-pass, runtime import, hotkeys) — ✅ shipped
+- M6 render-correctness (slang semantics, quad VBO, push constants,
+  swapchain recreation) — ✅ shipped
 - Future: true click-through X11 overlay (XShape + 32-bit visual),
-  LUT (lookup-texture) support, per-pass scale factors, M3.5 DMA-BUF
+  frame-history textures (OriginalHistory# / PassOutput# / PassFeedback#)

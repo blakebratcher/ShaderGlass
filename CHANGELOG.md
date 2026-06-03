@@ -6,8 +6,46 @@ Semantic Versioning starting from `0.1.0-preview`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **RetroArch slang shaders render correctly** — the all-black-output bug
+  affecting every starter preset is fixed. ShaderGC now reflects UBO and
+  push-constant block members (name → offset/size) directly from SPIR-V
+  (`ShaderGC/SpirvReflect.{h,cpp}`), and the runtime writes built-in
+  semantics (identity `MVP`, `SourceSize`, `OriginalSize`, `OutputSize`,
+  `FinalViewportSize`, `FrameCount` with `frame_count_mod`,
+  `FrameDirection`) plus user parameters at their reflected offsets.
+  Vertex-input shaders (`in vec4 Position` / `in vec2 TexCoord`) get a
+  fullscreen-quad vertex buffer; `gl_VertexIndex` shaders keep the no-VBO
+  path. Shaders with their own `push_constant` block get a matching
+  VERTEX|FRAGMENT push range. The `Source` sampler binds at its reflected
+  binding instead of a hardcoded slot. Verified: all 21 starter presets
+  render correctly headlessly.
+- **`VK_ERROR_OUT_OF_DATE_KHR` no longer aborts** — the swapchain is
+  recreated at the window's current size on acquire/present out-of-date
+  and on SDL resize events; minimized (0×0) windows skip rendering.
+  Static-image GUI launches (`shaderscope <image.png>`) no longer crash
+  on the first frame.
+- **X11 capture shows composited content under GL-backend compositors**
+  (picom `backend = "glx"`, etc.) — monitor capture now does a server-side
+  `IncludeInferiors` copy into a staging pixmap, which contains the
+  composed screen (overlay window included) on any compositor backend.
+- `.slangp` parameter overrides (`PARAM = value` lines) are now applied;
+  previously parsed but ignored.
+
 ### Added
 
+- **X11 DRI3 DMA-BUF zero-copy capture fast path (M3.5)** — when xcb-dri3
+  is available, the staging pixmap is exported as a DMA-BUF fd and
+  imported directly into Vulkan (no CPU readback). Falls back to the XShm
+  CPU path when DRI3/Vulkan-import is unavailable, or when
+  `SHADERSCOPE_DISABLE_X11_DMABUF=1` is set.
+- Crop support for slang presets — the crop rectangle now remaps the quad
+  vertex buffer's texture coordinates, so it works with vertex-input
+  shader presets (previously builtin-passthrough only).
+- Headless `--preset` rendering goes through the full Preset chain —
+  semantics, multi-pass intermediates, and LUTs now work in
+  `--headless` mode, identical to the windowed renderer.
 - Window geometry persistence — `~/.config/shaderscope/config.json`
   remembers `{x, y, w, h}` and restores on next launch.
 - Per-pass `srgb_framebuffer` / `float_framebuffer` parsing — multi-pass

@@ -6,9 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ShaderScope is a Linux desktop overlay that applies RetroArch slang shaders
 to captured desktop content using Vulkan and SDL3. Capture backends cover
-both X11 (XComposite + XShm) and Wayland (xdg-desktop-portal + PipeWire +
-DMA-BUF). The UI is Dear ImGui — source picker, preset browser, per-shader
-parameter editor, toast notifications, crop overlay, screenshot capture.
+both X11 (composited XComposite capture + DRI3 DMA-BUF fast path + XShm
+fallback) and Wayland (xdg-desktop-portal + PipeWire + DMA-BUF). The UI is
+Dear ImGui — source picker, preset browser, per-shader parameter editor,
+toast notifications, crop overlay, screenshot capture.
 
 This branch (`linux/main`) is a Linux-only fork of the upstream Windows
 [mausimus/ShaderGlass](https://github.com/mausimus/ShaderGlass). The Windows
@@ -62,6 +63,14 @@ Env:
 - `SHADERSCOPE_LOG_FILE=/path/to/log` — mirror every log line that passes
   the threshold to this file (appended, flushed per line). Opens on
   first log call.
+- `SHADERSCOPE_DISABLE_X11_DMABUF=1` — force the X11 capture CPU (XShm)
+  path even when DRI3 + Vulkan DMA-BUF import are available.
+
+Hidden diagnostic flag: `--dump-capture-frame <out.png>` captures one
+frame from the selected source, writes it as PNG, and exits (not listed
+in `--help`; forces the CPU capture path by default so pixels are
+measurable; `SHADERSCOPE_DUMP_VERIFY_DMABUF=1` additionally exercises the
+DMA-BUF import).
 
 In-window hotkeys (active only when ImGui doesn't have keyboard focus):
 - `F11` — screenshot to `$XDG_PICTURES_DIR/shaderscope-*.png`
@@ -83,12 +92,12 @@ Drag-and-drop: drop a `.slangp` file onto the window to import it
 
 | Layer | Path | Notes |
 |---|---|---|
-| Capture | `ShaderScope/src/capture/` | `X11Capture` + `RealX11CaptureSession` / `FakeX11CaptureSession` (XShm), `WaylandCapture` + `PortalCaptureSession` / `FakeWaylandCaptureSession` (PipeWire), `StaticImageCapture` (PNG via stb). Common `CaptureBackend` interface (`kindName()`, `size()`, `acquireFrame()`, `release()`). `BadWindowRegistry` filters bad windows. |
-| Render | `ShaderScope/src/render/` | `VulkanContext` + `Swapchain` + `RenderEngine` (dynamic-rendering swapchain frame loop). `ShaderPipeline` runs either the builtin passthrough shader or a slang-compiled fragment shader, with a UV-transform push constant for crop. `Preset` owns one ShaderPipeline per `.slangp`. `Texture` + `DmaBufImport` + `HeadlessOutput` round out the render side. |
+| Capture | `ShaderScope/src/capture/` | `X11Capture` + `RealX11CaptureSession` / `FakeX11CaptureSession` (composited IncludeInferiors capture, DRI3 DMA-BUF fast path, XShm fallback), `X11DmaBufPolicy` (fast-path decision logic), `WaylandCapture` + `PortalCaptureSession` / `FakeWaylandCaptureSession` (PipeWire), `StaticImageCapture` (PNG via stb). Common `CaptureBackend` interface (`kindName()`, `size()`, `acquireFrame()`, `release()`). `BadWindowRegistry` filters bad windows. |
+| Render | `ShaderScope/src/render/` | `VulkanContext` + `Swapchain` (with `recreate()`) + `RenderEngine` (dynamic-rendering swapchain frame loop, returns `RenderStatus` for out-of-date recovery). `ShaderPipeline` runs the builtin passthrough or a slang-compiled shader pass; its layout (UBO/push/sampler bindings, quad VBO vs fullscreen triangle) is described by a reflection-derived `ShaderPipelineSlangConfig`. `Preset` owns the pipeline chain per `.slangp` and writes semantics + params each frame. `Texture` + `DmaBufImport` + `HeadlessOutput` round out the render side. |
 | UI | `ShaderScope/src/ui/` | `ImGuiLayer` initialises the Vulkan ImGui backend. `AppState` is the single shared state object. Panels: `SourcePickerPanel`, `PresetBrowserPanel`, `ParamsPanel`, `CropOverlay`, `ToastPanel`. |
 | Util | `ShaderScope/src/util/` | `ConfigStore` (JSON config + per-source crops), `PresetLibrary`, `Logging` (+ toast variants), `ToastQueue`, `ScreenshotPath` + `ScreenshotWriter`, `Time`, `XdgConfig`, `SourceMatcher`, `FourccToVk`. |
 | Output | `ShaderScope/src/output/` | `SdlWindow` thin wrapper around SDL3 window + event loop. |
-| Shader compiler | `ShaderGC/` | Shared library (also linked into the Windows trunk on `master`). On Linux, `HLSL_stub.cpp` and `SPIRV_stub.cpp` replace the DirectX-bound originals — Vulkan consumes SPIR-V directly so HLSL emission is dead code. |
+| Shader compiler | `ShaderGC/` | Shared library (also linked into the Windows trunk on `master`). On Linux, `HLSL_stub.cpp` and `SPIRV_stub.cpp` replace the DirectX-bound originals — Vulkan consumes SPIR-V directly so HLSL emission is dead code. `SpirvReflect.{h,cpp}` parses the compiled SPIR-V for UBO/push-constant member offsets, sampler bindings, and vertex-input usage; `LookupParamsSpirv` in ShaderGC.cpp maps that onto `ShaderDef::Params` (mirrors the Windows spirv-cross JSON path). |
 
 ### Built-in shaders
 
@@ -112,19 +121,24 @@ find them without `make install`. `PresetLibrary` probes
 ### Frame loop
 
 ```
-window.pollEvents()
+window.pollEvents()                    # + resize events mark swapchain dirty
+  → [swapchain dirty?] swapchain.recreate(drawable size); skip 0x0 (minimized)
   → imgui.beginFrame()
     → panels draw (SourcePicker, PresetBrowser, Params, Crop)
     → ImGui::Render()
   → state.applyPending()          # sole capture/preset rebuild point
   → config.tick()
-  → state.preset?.updateUbo()
+  → state.preset?.advanceFrame()  # FrameCount++ + semantics + params → UBO/push
   → activePipeline.setUvTransform(...)  # crop UV every frame
   → if state.capture: state.capture->acquireFrame()
-       → engine.renderTextureWithOverlay(...) or renderImageViewWithOverlay(...)
+       → state.preset?.ensureSourceSize(frame, swapchain)   # semantics + intermediates
+       → single-pass: engine.renderTextureWithOverlay(...) or renderImageViewWithOverlay(...)
+         multi-pass:  engine.renderCustomWithOverlay(prePassBody → recordIntermediatePasses,
+                                                     shaderBody → preset.drawFinalPass)
                                               + ScreenshotWriter + AppState
        → screenshotWriter.tick()
      else: engine.renderEmpty(imguiBody)
+  → every render call returns RenderStatus; OutOfDate marks swapchain dirty
 ```
 
 ### Screenshot path (M5 UX-polish)
@@ -176,87 +190,33 @@ never touch GPU state from a panel.
 | M1 | Vulkan/SDL3 foundation, passthrough render, headless mode | shipped |
 | M2 | Wayland capture (portal + PipeWire + DMA-BUF) | shipped |
 | M3 | X11 capture (XComposite + XShm) | shipped |
-| M3.5 | X11 DMA-BUF fast path (EGL + DRI3) | pending |
+| M3.5 | Composited X11 capture (IncludeInferiors) + DRI3 DMA-BUF fast path | shipped |
 | M4 | Dear ImGui UI (source picker, preset browser, params, session restore) | shipped |
 | M5 UX-polish | Toast UI, first-run UX, region/crop, screenshot capture | shipped |
 | M5 feature-complete | Multi-pass shaders, runtime `.slangp` import (DnD + path input), hotkeys (F11/B/[/]/F1/F2/F3/F4) | shipped |
-| Future | True click-through X11 overlay (XShape + 32-bit visual), multi-buffer UBOs, M3.5 DMA-BUF fast path | pending |
+| M6 render-correctness | SPIR-V semantic reflection, quad VBO, shader push constants, `.slangp` overrides, swapchain recreation | shipped |
+| Future | True click-through X11 overlay (XShape + 32-bit visual), frame-history textures (OriginalHistory# / PassOutput# / PassFeedback#) | pending |
 
 Per-milestone specs and plans live under `docs/superpowers/specs/` and
 `docs/superpowers/plans/`. Per-milestone manual smoke checklists live at
 `docs/manual-tests-m{1..5}*.md`.
 
-## Known runtime bugs
+## Known limitations
 
-### Slang vertex-input / semantic-UBO renders all-black
-
-Slang shaders that declare RetroArch-style vertex inputs (`layout(location=0)
-in vec4 Position; layout(location=1) in vec2 TexCoord;`) AND read semantic
-UBO fields (`global.MVP * Position`, `global.SourceSize`, etc.) render
-all-black on Linux. `ShaderPipeline` doesn't allocate a vertex buffer or
-write MVP/SourceSize/OutputSize/OriginalSize/FrameCount into the UBO, so
-the vertex shader multiplies an undefined `Position` by an undefined
-`MVP` and produces a degenerate triangle.
-
-The only `gl_VertexIndex`-based shader in this tree is the **built-in
-passthrough** compiled into the binary from `ShaderScope/shaders/passthrough.{vert,frag}`
-(used when no `--preset` is given and the active preset is null). Verified
-2026-05-21: headless run with no `--preset` against `4x4_red.png` →
-65536/65536 red pixels.
-
-The test fixture `ShaderScope/tests/data/stock.slangp` also uses
-`gl_VertexIndex` and is what the e2e test suite exercises — which is why
-77/77 tests pass even though the bug is live.
-
-Everything under `shaders/starter/` belongs to the broken family,
-including `passthrough.slangp`, `passthrough-2pass.slangp`, and every
-`crt-*.slangp` — they all declare `in vec4 Position` + `gl_Position =
-global.MVP * Position`. Loading any of them on Linux produces an all-black
-output. A real fix needs SPIR-V struct-member reflection (`OpMemberName`
-+ `OpMemberDecorate Offset`) so the runtime can write semantics at their
-declared offsets; a naive "always bind a fullscreen-quad vertex buffer"
-attempt broke the `gl_VertexIndex` shaders too, so the work is parked
-for a future milestone.
-
-### X11 capture sees only the un-composed root under GLX-backend compositors
-
-`RealX11CaptureSession` calls `XShmGetImage` on the X root with an
-XRandR-derived crop. On X servers where the running compositor uses an
-OpenGL/Vulkan backend (picom with `backend = "glx"`, compton with
-`--backend glx`, kwin_x11 with the OpenGL backend, etc.), the compositor
-draws the composed framebuffer directly via GL and never writes back to
-the root pixmap. The XShm grab succeeds — it just returns the
-un-composed root (typically just the wallpaper, or uniform near-black if
-xfdesktop hasn't drawn one), with all window content invisible.
-
-Verified 2026-05-21 on Blake's machine (picom `backend = "glx"` + XFCE):
-first 1024 captured bytes from DP-4 averaged ~19/255, uniform dark grey,
-while DP-4 visibly had real windows on it. The grab path returned no
-error — the diagnostics had to be added inside `grab()` to confirm pixels
-were being read.
-
-Workarounds for a user hitting this: switch picom to `backend = "xrender"`
-(xrender composites through the X server, so root reflects the final
-image), or stop picom while running ShaderScope. A proper fix needs the
-**M3.5 DMA-BUF fast path** (EGL + DRI3) listed in the milestone table —
-DMA-BUF import bypasses the un-composed-root problem entirely. Note this
-is a real capture-path limitation, not a render bug: the rest of the
-pipeline behaves correctly given empty input.
-
-### `VK_ERROR_OUT_OF_DATE_KHR` is fatal in `RenderEngine::renderFrame`
-
-`vkAcquireNextImageKHR` at `ShaderScope/src/render/RenderEngine.cpp:76`
-runs through `VK_CHECK`, which aborts on anything other than
-`VK_SUCCESS` / `VK_SUBOPTIMAL_KHR`. `VK_ERROR_OUT_OF_DATE_KHR` should
-not be fatal — the correct response is to recreate the swapchain at the
-window's current size and retry the frame. Verified 2026-05-21:
-`shaderscope <image.png>` (static-image GUI launch) hard-exits on first
-frame with this error, before the window has a chance to draw anything.
-GUI capture launches happen to dodge it because their first frame
-arrives later, after SDL3 has settled the window geometry. Fix: detect
-`OUT_OF_DATE_KHR` / `SUBOPTIMAL_KHR` from acquire and present, mark the
-swapchain dirty, recreate at the next iteration, and `continue;` the
-frame.
+- **Frame-history / feedback samplers are not real** — shaders that sample
+  `OriginalHistory1..N`, `PassOutput#`, or `PassFeedback#` get the
+  *current* original input bound at those slots instead (with a LOG_WARN
+  at preset build). No starter preset uses them; motion-blur/temporal
+  community shaders will look wrong until a frame-history ring buffer is
+  implemented (see Future milestone).
+- **One UBO per pass** — params/semantics in `binding != 0` UBOs are
+  ignored (warned at build). The RetroArch convention is a single UBO at
+  binding 0 + an optional push-constant block, which is what's supported.
+- **Crop with gl_VertexIndex slang presets** — the crop UV transform reaches
+  builtin passthrough (fragment push constant) and vertex-input slang
+  shaders (quad VBO texcoord remap), but a slang preset that uses
+  `gl_VertexIndex` (e.g. the stock.slang test fixture) has no hook point
+  and renders uncropped.
 
 ## Code gotchas
 
@@ -269,13 +229,34 @@ frame.
   CMake-aware include paths. `"file not found"` / "unknown identifier"
   errors on otherwise-compiling Linux source are almost always false
   positives. Trust `cmake --build`, not the LSP.
-- **`buildPipelineSource(Args{})` idiom** (in `src/main.cpp`) — passing a
-  default-constructed `Args` returns the builtin passthrough SPIR-V
-  without invoking ShaderGC. Use this when the active preset is owned
-  elsewhere (e.g. `state.preset`) and you just need a no-op fallback.
-- **`Preset` multi-pass guard** — throws on `ShaderDefs.size() > 1`.
-  The curated starter set is hand-vetted to be single-pass; multi-pass
-  is part of the remaining M5 work.
+- **`buildPipelineSource()` is builtin-only** (in `src/main.cpp`) — it
+  returns the embedded passthrough SPIR-V and never invokes ShaderGC.
+  Preset-driven rendering (headless `--preset` AND windowed) goes through
+  the `Preset` class, which owns compilation, semantics, multi-pass and
+  LUTs.
+- **Semantics live in `Preset::params()` too** — after SPIR-V reflection,
+  `params()` contains BOTH user `#pragma parameter` entries AND built-in
+  semantic members (MVP, SourceSize, …, plus oddballs like stock.slang's
+  `_unused`). Anything that shows params to the user or persists them must
+  filter with `Preset::isUserParam(p)` (true ⇔ `minValue < maxValue`).
+  `updateUbo()` recognises semantics by name and computes their values;
+  user params write `currentValue`.
+- **`ShaderPipelineSlangConfig` describes a pass's whole layout** — UBO
+  size/binding, push-constant size, reflected Source binding,
+  Original-family bindings, LUTs, and `usesVertexInput`. It replaced the
+  old `WithParamsTag` constructor. All values come from ShaderGC
+  reflection (`ShaderGC/SpirvReflect.{h,cpp}`); never hardcode descriptor
+  bindings in the runtime.
+- **Two vertex paths in `ShaderPipeline`** — `usesVertexInput == true`
+  binds a host-visible fullscreen-quad VBO (triangle strip, 4 verts,
+  attributes at locations 0/1) whose texcoords honour `setUvTransform()`;
+  `false` keeps the no-VBO `vkCmdDraw(cb, 3, …)` fullscreen-triangle path
+  for `gl_VertexIndex` shaders. Never declare vertex attributes for the
+  latter — that was the failed May-2026 fix attempt.
+- **`Preset::advanceFrame()` once per rendered frame** — bumps FrameCount
+  and calls `updateUbo()`. Call sites that just need a value refresh
+  (param edit, size change) call `updateUbo()` directly so FrameCount
+  doesn't jump.
 - **`AppState::applyPending()` is the sole capture/preset rebuild point**
   — called between `ImGui::Render()` and the next `capture->acquireFrame()`.
   Panels write into `pending*` intent fields; never touch GPU state from a panel.
@@ -296,11 +277,17 @@ frame.
 - **Multi-pass intermediates live on `Preset`** — `Preset` owns
   `vector<ShaderPipeline>` (size N) plus `vector<OffscreenTarget>`
   (size N-1). `recordIntermediatePasses(cb, srcView, srcExt)` must
-  run BEFORE the swapchain rendering scope opens; the new
+  run BEFORE the swapchain rendering scope opens; the
   `RenderEngine` `prePassBody` hook is where that happens. The final
-  pass binds inside the swapchain scope using `Preset::finalInputView()`.
-  Single-pass uses the existing direct route — `Preset` short-circuits
-  the intermediate path when `passCount() == 1`.
+  pass draws inside the swapchain scope via `Preset::drawFinalPass(cb,
+  ext)` (which binds `finalInputView()` as Source + the original capture
+  view at Original-family slots). Single-pass uses the existing direct
+  route — `Preset` short-circuits the intermediate path when
+  `passCount() == 1`.
+- **`ensureSourceSize()` must run for single-pass presets too** — it feeds
+  the SourceSize/OutputSize/FinalViewportSize semantics, not just the
+  multi-pass intermediate allocation. The frame loop calls it on every
+  captured frame for any active preset.
 - **Hotkeys honour `ImGui::GetIO().WantCaptureKeyboard`** — gated in
   `SdlWindow::setKeyDownHandler`'s callback in `main.cpp` so text
   fields don't lose keystrokes to a preset-cycle. Escape is consumed
