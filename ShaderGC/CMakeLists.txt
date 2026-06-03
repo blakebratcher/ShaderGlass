@@ -6,6 +6,7 @@ set(SHADERGC_SRC
     sha256.cpp
     ShaderCache.cpp
     ShaderGC.cpp
+    SpirvReflect.cpp
     HLSL_stub.cpp
     SPIRV_stub.cpp
     pch.cpp

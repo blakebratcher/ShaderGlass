@@ -14,6 +14,9 @@ GNU General Public License v3.0
 #include "SPIRV.h"
 #include "SafeParsing.h"
 #include "SecurityLimits.h"
+#ifndef _MSC_VER
+#    include "SpirvReflect.h"
+#endif
 
 #include "json.hpp"
 
@@ -36,6 +39,118 @@ static uint8_t* CopyVector(const std::vector<uint8_t>& d)
     memcpy(copy, d.data(), d.size());
     return copy;
 }
+
+#ifndef _MSC_VER
+// Linux equivalent of AddParams(): walk one reflected block's members and
+// emit a SourceShaderParam per member — matched #pragma parameters keep
+// their declared metadata (range/default/description); everything else
+// (built-in semantics like MVP / SourceSize / FinalViewportSize) becomes a
+// bare entry the runtime recognises by name.
+static void AddParamsSpirv(vector<SourceShaderParam>&       actualParams,
+                           const vector<SourceShaderParam>& declaredParams,
+                           const SpirvReflect::Block&       block,
+                           int                              buffer)
+{
+    for(const auto& member : block.members)
+    {
+        // De-dupe members that appear in both the vertex and fragment
+        // stage's copy of the same block.
+        bool seen = false;
+        for(const auto& ap : actualParams)
+        {
+            if(ap.buffer == buffer && ap.name == member.name)
+            {
+                seen = true;
+                break;
+            }
+        }
+        if(seen)
+            continue;
+
+        bool paramFound = false;
+        int  dpi        = 0;
+        for(const auto& p : declaredParams)
+        {
+            if(p.name == member.name)
+            {
+                SourceShaderParam actualParam(p);
+                actualParam.i      = dpi;
+                actualParam.buffer = buffer;
+                actualParam.offset = static_cast<int>(member.offset);
+                actualParam.size   = static_cast<int>(member.size);
+                actualParams.emplace_back(actualParam);
+                paramFound = true;
+            }
+            dpi++;
+        }
+
+        if(!paramFound)
+        {
+            // built-in semantic / alias not covered by #pragma parameter
+            SourceShaderParam newParam(member.name, static_cast<int>(member.size), buffer);
+            newParam.offset = static_cast<int>(member.offset);
+            newParam.i      = -1;
+            actualParams.emplace_back(newParam);
+        }
+    }
+}
+
+// Linux equivalent of LookupParams(): derives every block member's
+// buffer/offset/size from SPIR-V reflection of both stages instead of the
+// spirv-cross JSON metadata the Windows path uses. UBOs keep their binding
+// as the buffer index; the push-constant block is buffer -1.
+static vector<SourceShaderParam> LookupParamsSpirv(const vector<SourceShaderParam>&             declaredParams,
+                                                   vector<SourceShaderSampler>&                  textures,
+                                                   const std::optional<SpirvReflect::Reflection>& vertexRefl,
+                                                   const std::optional<SpirvReflect::Reflection>& fragmentRefl)
+{
+    vector<SourceShaderParam> actualParams;
+
+    // Uniform blocks: merge across stages keyed by binding.
+    for(const auto* refl : {&vertexRefl, &fragmentRefl})
+    {
+        if(!refl->has_value())
+            continue;
+        for(const auto& block : (*refl)->uniformBlocks)
+        {
+            if(block.set != 0)
+                continue; // slang convention: everything lives in set 0
+            AddParamsSpirv(actualParams, declaredParams, block, block.binding);
+        }
+        if((*refl)->pushConstants)
+            AddParamsSpirv(actualParams, declaredParams, *(*refl)->pushConstants, -1);
+    }
+
+    // Samplers: union across stages, de-duped by name.
+    for(const auto* refl : {&vertexRefl, &fragmentRefl})
+    {
+        if(!refl->has_value())
+            continue;
+        for(const auto& smp : (*refl)->samplers)
+        {
+            if(smp.set != 0)
+                continue;
+            bool seen = false;
+            for(const auto& t : textures)
+            {
+                if(t.name == smp.name)
+                {
+                    seen = true;
+                    break;
+                }
+            }
+            if(!seen)
+                textures.emplace_back(smp.name, smp.binding);
+        }
+    }
+
+    // Keep #pragma parameter declaration order for the UI; semantics (i == -1)
+    // sort ahead of user params.
+    std::stable_sort(actualParams.begin(), actualParams.end(), [](const SourceShaderParam& a, const SourceShaderParam& b) { return a.i < b.i; });
+
+    return actualParams;
+}
+#endif
 
 ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool& warn, const ShaderCache& cache)
 {
@@ -154,76 +269,19 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
     if(vSize) std::memcpy(vb, vertexSPIRV.data(),   vSize);
     if(fSize) std::memcpy(fb, fragmentSPIRV.data(), fSize);
 
-    // Reflect the fragment SPIR-V to find sampler/image bindings. The
-    // slang convention (RetroArch) is that user-declared LUTs land in
-    // descriptor set 0 alongside the built-in Source / UBO bindings.
-    // We extract `name -> binding` for every UniformConstant variable
-    // in set 0; the runtime matches names against .slangp TextureDefs
-    // and binds each LUT image to its slot.
+    // Reflect both SPIR-V stages:
+    //   - UBO + push-constant block members (name → buffer/offset/size) so
+    //     the runtime can write user parameters AND built-in semantics (MVP,
+    //     SourceSize, OutputSize, …) at the offsets the shader declared.
+    //   - Sampler/image bindings ("Source", "Original", LUT names) so the
+    //     descriptor set layout matches what the shader actually wants.
+    //   - Whether the vertex stage consumes Location-decorated inputs (the
+    //     RetroArch `in vec4 Position` / `in vec2 TexCoord` convention).
+    // This mirrors what the Windows path derives from spirv-cross JSON.
     std::vector<SourceShaderSampler> textures;
-    {
-        auto reflectSamplers = [](const std::vector<uint32_t>& spv,
-                                   std::vector<SourceShaderSampler>& out) {
-            if(spv.size() < 5 || spv[0] != 0x07230203) return; // SPIR-V magic
-            std::map<uint32_t, std::string> names;
-            std::map<uint32_t, uint32_t>    bindings;
-            std::map<uint32_t, uint32_t>    sets;
-            std::map<uint32_t, uint32_t>    storage; // result_id -> storage_class
-            size_t i = 5;
-            while(i < spv.size())
-            {
-                const uint32_t header    = spv[i];
-                const uint32_t wordCount = header >> 16;
-                const uint32_t opcode    = header & 0xFFFFu;
-                if(wordCount == 0 || i + wordCount > spv.size()) break;
-                switch(opcode)
-                {
-                    case 5: // OpName id, name…
-                        if(wordCount >= 3)
-                        {
-                            const uint32_t id = spv[i + 1];
-                            const char* str =
-                                reinterpret_cast<const char*>(&spv[i + 2]);
-                            names[id] = std::string(str);
-                        }
-                        break;
-                    case 71: // OpDecorate id, decoration, value
-                        if(wordCount >= 4)
-                        {
-                            const uint32_t id    = spv[i + 1];
-                            const uint32_t deco  = spv[i + 2];
-                            const uint32_t value = spv[i + 3];
-                            if(deco == 33) bindings[id] = value;     // Binding
-                            else if(deco == 34) sets[id] = value;    // DescriptorSet
-                        }
-                        break;
-                    case 59: // OpVariable result_type, result_id, storage_class
-                        if(wordCount >= 4)
-                        {
-                            const uint32_t resultId    = spv[i + 2];
-                            const uint32_t storageCls  = spv[i + 3];
-                            storage[resultId] = storageCls;
-                        }
-                        break;
-                    default:
-                        break;
-                }
-                i += wordCount;
-            }
-            for(const auto& [id, storageCls] : storage)
-            {
-                if(storageCls != 0) continue;            // UniformConstant only
-                auto bit = bindings.find(id);
-                if(bit == bindings.end()) continue;
-                auto sit = sets.find(id);
-                if(sit != sets.end() && sit->second != 0) continue;
-                auto nit = names.find(id);
-                if(nit == names.end()) continue;
-                out.emplace_back(nit->second, static_cast<int>(bit->second));
-            }
-        };
-        reflectSamplers(fragmentSPIRV, textures);
-    }
+    const auto vertexRefl   = SpirvReflect::Reflect(vertexSPIRV.data(), vertexSPIRV.size());
+    const auto fragmentRefl = SpirvReflect::Reflect(fragmentSPIRV.data(), fragmentSPIRV.size());
+    def.params = LookupParamsSpirv(def.params, textures, vertexRefl, fragmentRefl);
 
     ShaderDef sd;
     sd.Format           = CopyString(def.format);
@@ -234,6 +292,7 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
     sd.FragmentByteCode = fb;
     sd.FragmentLength   = fSize;
     sd.Name             = def.input.filename().string();
+    sd.UsesVertexInput  = vertexRefl.has_value() && vertexRefl->usesLocationInputs;
 #endif
 
     for(const auto& p : def.params)

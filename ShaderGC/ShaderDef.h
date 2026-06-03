@@ -63,6 +63,11 @@ public:
     size_t                             FragmentLength;
     char*                              Format;
     bool                               Dynamic;
+    // True when the vertex stage declares Location-decorated inputs
+    // (RetroArch `in vec4 Position` / `in vec2 TexCoord` convention).
+    // The runtime must bind a fullscreen-quad vertex buffer for these
+    // shaders; gl_VertexIndex shaders keep the no-VBO path.
+    bool                               UsesVertexInput = false;
 
     size_t ParamsSize(int buffer)
     {
