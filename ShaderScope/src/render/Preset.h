@@ -19,14 +19,15 @@ class PresetDef;
 // intermediate[1]→…→swapchain.
 //
 // Per-frame contract:
-//   - main.cpp calls ensureSourceSize(w, h) before recording any draws
-//     so intermediates match the current capture resolution.
+//   - main.cpp calls ensureSourceSize(w, h, vpW, vpH) before recording any
+//     draws so intermediates + per-pass semantics match the current capture
+//     resolution.
+//   - main.cpp calls advanceFrame() once per frame (bumps FrameCount and
+//     refreshes every pass's UBO/push-constant semantics + params).
 //   - main.cpp calls recordIntermediatePasses(cb, sourceView, sourceExt)
 //     OUTSIDE the swapchain rendering scope (RenderEngine::prePassBody).
-//   - main.cpp calls finalPipeline().bindAndDraw...() INSIDE the
-//     swapchain rendering scope (RenderEngine::shaderBody).
-//   - For single-pass, recordIntermediatePasses stores the source view
-//     so the caller can bind finalPipeline() with finalInputView().
+//   - main.cpp calls drawFinalPass(cb, viewport) INSIDE the swapchain
+//     rendering scope (RenderEngine::shaderBody).
 class Preset {
 public:
     Preset(VulkanContext& ctx, const std::filesystem::path& path,
@@ -44,7 +45,7 @@ public:
 
     // Mutable list of params aggregated across ALL passes. updateUbo()
     // walks m_params + m_paramPass to write each value to the right
-    // pipeline's UBO at the declared offset.
+    // pipeline's UBO / push-constant block at the reflected offset.
     std::vector<ShaderParam>&       params()       { return m_params; }
     const std::vector<ShaderParam>& params() const { return m_params; }
 
@@ -52,17 +53,30 @@ public:
     // group/label by pass when a preset is multi-pass.
     const std::vector<int>&         paramPasses() const { return m_paramPass; }
 
+    // True when this param is a user-tweakable #pragma parameter (valid
+    // min < max range). False for built-in semantics (MVP, SourceSize, …)
+    // and unrecognised block members — the UI must skip those.
+    static bool isUserParam(const ShaderParam& p) { return p.minValue < p.maxValue; }
+
+    // True when `name` is a RetroArch built-in semantic the runtime computes
+    // each frame (MVP, SourceSize, OriginalSize, OutputSize,
+    // FinalViewportSize, FrameCount, FrameDirection).
+    static bool isSemanticName(const std::string& name);
+
     void resetParamsToDefaults();
 
-    // Reflect currentValue into the host-coherent UBOs across all passes
-    // that own one. Cheap; safe to call every frame.
+    // Writes built-in semantics + user param values into every pass's
+    // host-coherent UBO and push-constant staging at their reflected
+    // offsets. Cheap; safe to call every frame.
     void updateUbo();
 
-    // Allocate / resize intermediates per the .slangp's scale_type/scale.
-    // No-op on single-pass presets. Rebuilds only when source OR viewport
-    // dimensions change. `viewport` is the swapchain extent — needed
-    // because `scale_type = viewport` and `scale_type_x = viewport`
-    // multiply against it.
+    // Bumps FrameCount and calls updateUbo(). Call once per rendered frame.
+    void advanceFrame();
+
+    // Allocate / resize intermediates per the .slangp's scale_type/scale,
+    // and recompute every pass's SourceSize/OutputSize semantics.
+    // `viewport` is the swapchain (or headless output) extent — needed for
+    // `scale_type = viewport` and as the final pass's OutputSize.
     void ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
                           uint32_t viewportWidth, uint32_t viewportHeight);
 
@@ -75,11 +89,20 @@ public:
                                   VkImageView sourceView,
                                   VkExtent2D  sourceExtent);
 
+    // Binds + draws the final pass inside an active rendering scope, using
+    // finalInputView() as Source and the original capture as Original.
+    void drawFinalPass(VkCommandBuffer cb, VkExtent2D viewport);
+
     VkImageView finalInputView()   const { return m_finalInputView; }
     VkExtent2D  finalInputExtent() const { return m_finalInputExtent; }
 
 private:
     void buildPipelines(VulkanContext& ctx, VkFormat swapFmt);
+    void applyPresetOverrides();
+    void writeParamValue(uint8_t* dst, const ShaderParam& p, int passIdx) const;
+
+    VkExtent2D passInputExtent(int passIdx) const;
+    VkExtent2D passOutputExtent(int passIdx) const;
 
     std::filesystem::path                          m_path;
     std::unique_ptr<PresetDef>                     m_def;
@@ -93,6 +116,8 @@ private:
     std::vector<uint32_t>                          m_uboSizes;
     std::vector<ShaderParam>                       m_params;
     std::vector<int>                               m_paramPass;
+    // Per-pass frame_count_mod (0 = no wrap), parsed from the .slangp.
+    std::vector<uint32_t>                          m_frameCountMods;
 
     VulkanContext*   m_ctx                = nullptr;
     VkFormat         m_intermediateFormat = VK_FORMAT_R8G8B8A8_UNORM;
@@ -101,6 +126,10 @@ private:
     uint32_t         m_srcHeight          = 0;
     uint32_t         m_vpWidth            = 0;
     uint32_t         m_vpHeight           = 0;
+    uint32_t         m_frameCount         = 0;
     VkImageView      m_finalInputView     = VK_NULL_HANDLE;
     VkExtent2D       m_finalInputExtent   = {};
+    // Original (pass-0 input) view, captured by recordIntermediatePasses —
+    // bound at "Original"-family sampler slots in every pass.
+    VkImageView      m_originalView       = VK_NULL_HANDLE;
 };

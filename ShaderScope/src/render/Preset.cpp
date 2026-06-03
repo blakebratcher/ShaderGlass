@@ -5,6 +5,7 @@
 #include "ShaderCache.h"
 #include "PresetDef.h"
 #include "util/Logging.h"
+#include <algorithm>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -76,7 +77,33 @@ void transitionImage(VkCommandBuffer cb, VkImage img,
     dep.pImageMemoryBarriers    = &b;
     vkCmdPipelineBarrier2(cb, &dep);
 }
+
+// vec4(width, height, 1/width, 1/height) — the RetroArch *Size convention.
+void writeSizeVec4(uint8_t* dst, uint32_t size, VkExtent2D e) {
+    const float v[4] = {
+        static_cast<float>(e.width),
+        static_cast<float>(e.height),
+        e.width  ? 1.0f / static_cast<float>(e.width)  : 0.0f,
+        e.height ? 1.0f / static_cast<float>(e.height) : 0.0f,
+    };
+    std::memcpy(dst, v, std::min<uint32_t>(size, sizeof(v)));
+}
+
+constexpr float kIdentityMat4[16] = {
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+};
+
 } // namespace
+
+bool Preset::isSemanticName(const std::string& name) {
+    return name == "MVP" || name == "SourceSize" || name == "OriginalSize"
+        || name == "OutputSize" || name == "FinalViewportSize"
+        || name == "FrameCount" || name == "FrameDirection"
+        || name == "OriginalHistorySize0";
+}
 
 Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
                VkFormat swapchainFormat)
@@ -140,6 +167,7 @@ Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
             m_paramPass.push_back(static_cast<int>(i));
         }
     }
+    applyPresetOverrides();
     updateUbo();
 }
 
@@ -151,6 +179,7 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
     const size_t N = m_def->ShaderDefs.size();
     m_pipelines.reserve(N);
     m_uboSizes.reserve(N);
+    m_frameCountMods.reserve(N);
 
     auto parseSampler = [](const std::map<std::string, std::string>& pp) {
         ShaderPipelineSampler s;
@@ -194,6 +223,15 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
         return m_intermediateFormat;
     };
 
+    auto parseFrameCountMod = [](const std::map<std::string, std::string>& pp) -> uint32_t {
+        auto it = pp.find("frame_count_mod");
+        if (it == pp.end()) return 0;
+        try {
+            const long v = std::stol(it->second);
+            return (v > 0) ? static_cast<uint32_t>(v) : 0;
+        } catch (...) { return 0; }
+    };
+
     m_passOutputFormats.assign(N, VK_FORMAT_UNDEFINED);
     for (size_t i = 0; i < N; ++i) {
         m_passOutputFormats[i] = (i + 1 == N)
@@ -204,41 +242,67 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
     for (size_t i = 0; i < N; ++i) {
         auto& sd = m_def->ShaderDefs[i];
         const VkFormat passFmt = m_passOutputFormats[i];
-        const uint32_t uboSize = static_cast<uint32_t>(sd.ParamsSize(0));
-        const ShaderPipelineSampler so = parseSampler(sd.PresetParams);
+
+        ShaderPipelineSlangConfig cfg;
+        cfg.uboSize         = static_cast<uint32_t>(sd.ParamsSize(0));
+        cfg.uboBinding      = 0;
+        cfg.pushSize        = static_cast<uint32_t>(sd.ParamsSize(-1));
+        cfg.usesVertexInput = sd.UsesVertexInput;
+        cfg.sampler         = parseSampler(sd.PresetParams);
+
         if (sd.ParamsSize(1) > 0) {
             LOG_WARN("Preset: '%s' pass %zu uses uniform buffer 1 (%zu bytes); "
                      "only buffer 0 is bound — expect visual artifacts",
                      m_path.string().c_str(), i, sd.ParamsSize(1));
         }
-        // Walk reflected samplers; for each whose name matches a LUT,
-        // record the binding so the pipeline can wire it at the right slot.
-        // "Source" / built-in sampler names are skipped — they're handled
-        // by the pipeline's hardcoded binding 2.
-        std::vector<ShaderPipelineLutBinding> lutBindings;
+
+        // Route every reflected sampler to its role: Source, the
+        // Original family (incl. graceful degradation for history/feedback
+        // samplers we don't keep textures for), or a named LUT.
         for (const auto& smp : sd.Samplers) {
-            auto it = lutByName.find(smp.name);
-            if (it == lutByName.end()) continue;
-            ShaderPipelineLutBinding lb;
-            lb.binding = static_cast<uint32_t>(smp.binding);
-            lb.view    = it->second->view();
-            lb.sampler = it->second->sampler();
-            lutBindings.push_back(lb);
+            if (smp.name == "Source") {
+                cfg.sourceBinding = smp.binding;
+                continue;
+            }
+            auto lutIt = lutByName.find(smp.name);
+            if (lutIt != lutByName.end()) {
+                ShaderPipelineLutBinding lb;
+                lb.binding = static_cast<uint32_t>(smp.binding);
+                lb.view    = lutIt->second->view();
+                lb.sampler = lutIt->second->sampler();
+                cfg.luts.push_back(lb);
+                continue;
+            }
+            if (smp.name != "Original" && smp.name != "OriginalHistory0") {
+                LOG_WARN("Preset: '%s' pass %zu samples '%s' (history/feedback "
+                         "textures are not supported yet) — binding the original "
+                         "input instead",
+                         m_path.string().c_str(), i, smp.name.c_str());
+            }
+            cfg.originalBindings.push_back(static_cast<uint32_t>(smp.binding));
         }
 
-        if (uboSize == 0) {
-            m_pipelines.push_back(std::make_unique<ShaderPipeline>(
-                ctx, sd.VertexByteCode,   sd.VertexLength,
-                     sd.FragmentByteCode, sd.FragmentLength,
-                passFmt, so));
-        } else {
-            m_pipelines.push_back(std::make_unique<ShaderPipeline>(
-                ctx, sd.VertexByteCode,   sd.VertexLength,
-                     sd.FragmentByteCode, sd.FragmentLength,
-                passFmt, uboSize, ShaderPipeline::WithParamsTag{}, so,
-                std::move(lutBindings)));
+        m_pipelines.push_back(std::make_unique<ShaderPipeline>(
+            ctx, sd.VertexByteCode,   sd.VertexLength,
+                 sd.FragmentByteCode, sd.FragmentLength,
+            passFmt, std::move(cfg)));
+        m_uboSizes.push_back(static_cast<uint32_t>(sd.ParamsSize(0)));
+        m_frameCountMods.push_back(parseFrameCountMod(sd.PresetParams));
+    }
+}
+
+void Preset::applyPresetOverrides() {
+    // .slangp files can pin parameters: `SCANLINE_STRENGTH = 0.5`. ShaderGC
+    // parses these into PresetDef::Overrides; apply them as the new current
+    // AND default values (RetroArch treats overrides as the preset's
+    // baseline, and "reset to defaults" returns to them).
+    for (const auto& o : m_def->Overrides) {
+        for (auto& p : m_params) {
+            if (p.name == o.name && isUserParam(p)) {
+                p.currentValue = o.value;
+                p.defaultValue = o.value;
+            }
         }
-        m_uboSizes.push_back(uboSize);
     }
 }
 
@@ -247,19 +311,87 @@ void Preset::resetParamsToDefaults() {
     updateUbo();
 }
 
+VkExtent2D Preset::passInputExtent(int passIdx) const {
+    const size_t i = static_cast<size_t>(passIdx);
+    if (i == 0 || m_intermediates.empty() || i - 1 >= m_intermediates.size()
+        || !m_intermediates[i - 1]) {
+        return { m_srcWidth, m_srcHeight };
+    }
+    return m_intermediates[i - 1]->extent();
+}
+
+VkExtent2D Preset::passOutputExtent(int passIdx) const {
+    const size_t i = static_cast<size_t>(passIdx);
+    if (i + 1 < m_pipelines.size() && i < m_intermediates.size() && m_intermediates[i]) {
+        return m_intermediates[i]->extent();
+    }
+    const uint32_t w = m_vpWidth  ? m_vpWidth  : m_srcWidth;
+    const uint32_t h = m_vpHeight ? m_vpHeight : m_srcHeight;
+    return { w, h };
+}
+
+void Preset::writeParamValue(uint8_t* dst, const ShaderParam& p, int passIdx) const {
+    const uint32_t size = static_cast<uint32_t>(p.size);
+
+    if (p.name == "MVP") {
+        std::memcpy(dst, kIdentityMat4, std::min<uint32_t>(size, sizeof(kIdentityMat4)));
+    } else if (p.name == "SourceSize") {
+        writeSizeVec4(dst, size, passInputExtent(passIdx));
+    } else if (p.name == "OriginalSize" || p.name == "OriginalHistorySize0") {
+        writeSizeVec4(dst, size, { m_srcWidth, m_srcHeight });
+    } else if (p.name == "OutputSize") {
+        writeSizeVec4(dst, size, passOutputExtent(passIdx));
+    } else if (p.name == "FinalViewportSize") {
+        const uint32_t w = m_vpWidth  ? m_vpWidth  : m_srcWidth;
+        const uint32_t h = m_vpHeight ? m_vpHeight : m_srcHeight;
+        writeSizeVec4(dst, size, { w, h });
+    } else if (p.name == "FrameCount") {
+        const uint32_t mod = (passIdx >= 0 &&
+                              static_cast<size_t>(passIdx) < m_frameCountMods.size())
+                                 ? m_frameCountMods[passIdx] : 0;
+        const uint32_t fc = mod ? (m_frameCount % mod) : m_frameCount;
+        std::memcpy(dst, &fc, std::min<uint32_t>(size, sizeof(fc)));
+    } else if (p.name == "FrameDirection") {
+        const int32_t dir = 1;
+        std::memcpy(dst, &dir, std::min<uint32_t>(size, sizeof(dir)));
+    } else if (isUserParam(p)) {
+        std::memcpy(dst, &p.currentValue, sizeof(float));
+    }
+    // Unknown non-user members (e.g. stock.slang's `_unused`) stay zero.
+}
+
 void Preset::updateUbo() {
     // Walk the aggregated params; m_paramPass tells us which pipeline's
-    // UBO to write each entry into.
+    // UBO / push-constant staging to write each entry into.
     for (size_t i = 0; i < m_params.size(); ++i) {
         const int passIdx = m_paramPass[i];
         if (passIdx < 0 || passIdx >= static_cast<int>(m_pipelines.size())) continue;
-        void* ubo = m_pipelines[passIdx]->mappedUbo();
-        if (!ubo || m_uboSizes[passIdx] == 0) continue;
+        ShaderPipeline& pipe = *m_pipelines[passIdx];
         const auto& p = m_params[i];
-        if (p.buffer != 0) continue;
-        std::memcpy(static_cast<uint8_t*>(ubo) + p.offset, &p.currentValue,
-                    sizeof(float));
+
+        uint8_t* dest     = nullptr;
+        uint32_t destSize = 0;
+        if (p.buffer == 0) {
+            dest     = static_cast<uint8_t*>(pipe.mappedUbo());
+            destSize = pipe.uboSizeBytes();
+        } else if (p.buffer == -1) {
+            dest     = static_cast<uint8_t*>(pipe.mappedPush());
+            destSize = pipe.pushSizeBytes();
+        } else {
+            continue; // unsupported buffer index (warned at build time)
+        }
+        if (!dest || destSize == 0) continue;
+        if (p.offset < 0 || p.size < 0 ||
+            static_cast<uint32_t>(p.offset) + static_cast<uint32_t>(p.size) > destSize) {
+            continue; // defensive: never write out of bounds
+        }
+        writeParamValue(dest + p.offset, p, passIdx);
     }
+}
+
+void Preset::advanceFrame() {
+    ++m_frameCount;
+    updateUbo();
 }
 
 void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
@@ -269,6 +401,7 @@ void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
         m_srcHeight = srcHeight;
         m_vpWidth   = viewportWidth;
         m_vpHeight  = viewportHeight;
+        updateUbo();
         return;
     }
     // Viewport-relative scales require a viewport; fall back to source
@@ -303,11 +436,15 @@ void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
     m_srcHeight = srcHeight;
     m_vpWidth   = viewportWidth;
     m_vpHeight  = viewportHeight;
+    // Sizes changed → refresh SourceSize/OutputSize semantics in every pass.
+    updateUbo();
 }
 
 void Preset::recordIntermediatePasses(VkCommandBuffer cb,
                                       VkImageView sourceView,
                                       VkExtent2D  sourceExtent) {
+    m_originalView = sourceView;
+
     if (!isMultiPass() || m_intermediates.empty()) {
         m_finalInputView   = sourceView;
         m_finalInputExtent = sourceExtent;
@@ -343,7 +480,7 @@ void Preset::recordIntermediatePasses(VkCommandBuffer cb,
         rinfo.pColorAttachments    = &color;
 
         vkCmdBeginRendering(cb, &rinfo);
-        m_pipelines[i]->bindAndDrawWithImageView(cb, readView, tgt.extent());
+        m_pipelines[i]->bindAndDrawWithImageView(cb, readView, tgt.extent(), m_originalView);
         vkCmdEndRendering(cb);
 
         transitionImage(cb, tgt.image(),
@@ -361,4 +498,8 @@ void Preset::recordIntermediatePasses(VkCommandBuffer cb,
 
     m_finalInputView   = readView;
     m_finalInputExtent = readExtent;
+}
+
+void Preset::drawFinalPass(VkCommandBuffer cb, VkExtent2D viewport) {
+    finalPipeline().bindAndDrawWithImageView(cb, m_finalInputView, viewport, m_originalView);
 }

@@ -50,7 +50,9 @@ add_executable(e2e_shadergc_render_tests test_e2e_shadergc_render.cpp)
 target_link_libraries(e2e_shadergc_render_tests PRIVATE gtest_main)
 target_compile_definitions(e2e_shadergc_render_tests PRIVATE
     TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    STARTER_SHADERS_DIR="${CMAKE_SOURCE_DIR}/ShaderScope/shaders/starter"
     SHADERSCOPE_BIN="$<TARGET_FILE:shaderscope>")
+target_include_directories(e2e_shadergc_render_tests PRIVATE ${stb_SOURCE_DIR})
 add_dependencies(e2e_shadergc_render_tests shaderscope)
 gtest_discover_tests(e2e_shadergc_render_tests)
 

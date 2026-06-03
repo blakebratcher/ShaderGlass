@@ -4,6 +4,7 @@
 #include "render/RenderEngine.h"
 #include "render/Texture.h"
 #include "render/ShaderPipeline.h"
+#include "render/Preset.h"
 #include "render/HeadlessOutput.h"
 #include "render/DmaBufImport.h"
 #include "capture/CaptureBackend.h"
@@ -220,47 +221,23 @@ static ParseResult parseArgs(int argc, char** argv) {
     return r;
 }
 
+// Builtin passthrough SPIR-V, embedded at build time. Preset-driven
+// rendering goes through the Preset class instead (semantics, multi-pass,
+// LUTs) — this is only the no-preset fallback.
 struct PipelineSource {
     const void* vert = nullptr;
     size_t      vertSize = 0;
     const void* frag = nullptr;
     size_t      fragSize = 0;
-    PresetDef*  ownedPreset = nullptr;  // non-null when from --preset; caller must MakeDynamic + delete
 };
 
-static PipelineSource buildPipelineSource(const Args& a) {
+static PipelineSource buildPipelineSource(const Args&) {
     PipelineSource ps{};
-    if (!a.preset.empty()) {
-        std::ostringstream log;
-        bool warn = false;
-        ShaderCache cache;
-        PresetDef* p = ShaderGC::CompilePreset(a.preset, log, warn, cache);
-        if (!p) throw std::runtime_error("preset compile failed:\n" + log.str());
-        if (p->ShaderDefs.empty()) {
-            delete p;
-            throw std::runtime_error("preset has 0 shaders");
-        }
-        auto& s = p->ShaderDefs[0];
-        ps.vert        = s.VertexByteCode;
-        ps.vertSize    = s.VertexLength;
-        ps.frag        = s.FragmentByteCode;
-        ps.fragSize    = s.FragmentLength;
-        ps.ownedPreset = p;
-    } else {
-        ps.vert     = g_passthrough_vert_spv;
-        ps.vertSize = g_passthrough_vert_spv_len;
-        ps.frag     = g_passthrough_frag_spv;
-        ps.fragSize = g_passthrough_frag_spv_len;
-    }
+    ps.vert     = g_passthrough_vert_spv;
+    ps.vertSize = g_passthrough_vert_spv_len;
+    ps.frag     = g_passthrough_frag_spv;
+    ps.fragSize = g_passthrough_frag_spv_len;
     return ps;
-}
-
-static void releasePipelineSource(PipelineSource& ps) {
-    if (ps.ownedPreset) {
-        ps.ownedPreset->MakeDynamic();
-        delete ps.ownedPreset;
-        ps.ownedPreset = nullptr;
-    }
 }
 
 // Set by the one-shot migration in main() when it actually copied something;
@@ -285,22 +262,27 @@ static int runHeadless(const Args& a) {
     Texture src(ctx, frame->width, frame->height, VK_FORMAT_R8G8B8A8_UNORM);
     src.uploadFromCpu(frame->data, frame->stride * frame->height, frame->stride);
 
-    PipelineSource ps = buildPipelineSource(a);
-    {
+    HeadlessOutput out(ctx, a.width, a.height, VK_FORMAT_R8G8B8A8_UNORM);
+    std::vector<uint8_t> bytes;
+    if (!a.preset.empty()) {
+        // Full preset path — semantics (MVP/SourceSize/…), multi-pass
+        // intermediates and LUTs. Same chain the windowed renderer uses.
+        Preset preset(ctx, a.preset, VK_FORMAT_R8G8B8A8_UNORM);
+        preset.ensureSourceSize(frame->width, frame->height, a.width, a.height);
+        bytes = out.renderToBytes(src, preset);
+    } else {
+        // Builtin passthrough fallback.
+        PipelineSource ps = buildPipelineSource(a);
         ShaderPipeline pipeline(ctx, ps.vert, ps.vertSize, ps.frag, ps.fragSize,
                                 VK_FORMAT_R8G8B8A8_UNORM);
-
-        HeadlessOutput out(ctx, a.width, a.height, VK_FORMAT_R8G8B8A8_UNORM);
-        auto bytes = out.renderToBytes(src, pipeline);
-
-        if (!stbi_write_png(a.output.c_str(), (int)a.width, (int)a.height, 4,
-                            bytes.data(), (int)(a.width * 4))) {
-            releasePipelineSource(ps);
-            LOG_ERROR("stbi_write_png failed for %s", a.output.c_str());
-            return 4;
-        }
+        bytes = out.renderToBytes(src, pipeline);
     }
-    releasePipelineSource(ps);
+
+    if (!stbi_write_png(a.output.c_str(), (int)a.width, (int)a.height, 4,
+                        bytes.data(), (int)(a.width * 4))) {
+        LOG_ERROR("stbi_write_png failed for %s", a.output.c_str());
+        return 4;
+    }
     LOG_INFO("Headless render complete: %s (%ux%u)", a.output.c_str(), a.width, a.height);
     return 0;
 }
@@ -810,7 +792,9 @@ static int runWindowed(Args& a) {
             }
 
             config.tick();
-            if (state.preset) state.preset->updateUbo();
+            // Bump FrameCount + refresh every pass's semantics (MVP,
+            // SourceSize, …) and user param values.
+            if (state.preset) state.preset->advanceFrame();
 
             ShaderPipeline& activePipeline =
                 state.preset ? state.preset->finalPipeline() : pipeline;
@@ -847,17 +831,20 @@ static int runWindowed(Args& a) {
                 if (f) {
                     if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
                         auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
-                        if (multiPass) {
+                        // Source/Output size semantics need the capture +
+                        // viewport dimensions even for single-pass presets.
+                        if (state.preset) {
                             state.preset->ensureSourceSize(f->width, f->height,
                                                             swapchain.extent().width,
                                                             swapchain.extent().height);
+                        }
+                        if (multiPass) {
                             const VkExtent2D srcExt{f->width, f->height};
                             auto prePassBody = [&, view = imp->view, srcExt](VkCommandBuffer cb) {
                                 state.preset->recordIntermediatePasses(cb, view, srcExt);
                             };
                             auto shaderBody = [&](VkCommandBuffer cb, VkExtent2D ext) {
-                                activePipeline.bindAndDrawWithImageView(
-                                    cb, state.preset->finalInputView(), ext);
+                                state.preset->drawFinalPass(cb, ext);
                             };
                             rs = engine.renderCustomWithOverlay(shaderBody, imguiBody,
                                 &screenshotWriter, &state, prePassBody);
@@ -898,18 +885,21 @@ static int runWindowed(Args& a) {
                 }
 
                 if (sourceTex) {
-                    if (multiPass) {
+                    // Source/Output size semantics need the capture +
+                    // viewport dimensions even for single-pass presets.
+                    if (state.preset) {
                         state.preset->ensureSourceSize(sourceTex->width(), sourceTex->height(),
                                                        swapchain.extent().width,
                                                        swapchain.extent().height);
+                    }
+                    if (multiPass) {
                         const VkImageView srcView = sourceTex->view();
                         const VkExtent2D  srcExt{sourceTex->width(), sourceTex->height()};
                         auto prePassBody = [&, srcView, srcExt](VkCommandBuffer cb) {
                             state.preset->recordIntermediatePasses(cb, srcView, srcExt);
                         };
                         auto shaderBody = [&](VkCommandBuffer cb, VkExtent2D ext) {
-                            activePipeline.bindAndDrawWithImageView(
-                                cb, state.preset->finalInputView(), ext);
+                            state.preset->drawFinalPass(cb, ext);
                         };
                         rs = engine.renderCustomWithOverlay(shaderBody, imguiBody,
                             &screenshotWriter, &state, prePassBody);
@@ -940,7 +930,6 @@ static int runWindowed(Args& a) {
         }
     }
     config.saveSync();
-    releasePipelineSource(ps);
     // Clear the non-owning ImGuiLayer pointer so SdlWindow doesn't outlive
     // its target — imgui destructs first when runWindowed returns.
     window.setImGuiLayer(nullptr);

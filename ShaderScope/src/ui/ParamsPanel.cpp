@@ -57,7 +57,14 @@ void ParamsPanel::draw(AppState& state) {
         return;
     }
     auto& params = state.preset->params();
-    if (params.empty()) {
+    // Only user-tweakable #pragma parameters are editable; built-in
+    // semantics (MVP, SourceSize, …) also live in params() but are
+    // computed by the runtime every frame.
+    bool anyUserParam = false;
+    for (const auto& p : params) {
+        if (Preset::isUserParam(p)) { anyUserParam = true; break; }
+    }
+    if (!anyUserParam) {
         ImGui::TextWrapped("This preset declares no editable parameters.");
         ImGui::End();
         return;
@@ -79,6 +86,7 @@ void ParamsPanel::draw(AppState& state) {
         int currentPass = -1;
         bool open = false;
         for (size_t i = 0; i < params.size(); ++i) {
+            if (!Preset::isUserParam(params[i])) continue;
             const int passIdx = passes[i];
             if (passIdx != currentPass) {
                 if (currentPass >= 0 && open) ImGui::Unindent();
@@ -98,6 +106,7 @@ void ParamsPanel::draw(AppState& state) {
         if (currentPass >= 0 && open) ImGui::Unindent();
     } else {
         for (size_t i = 0; i < params.size(); ++i) {
+            if (!Preset::isUserParam(params[i])) continue;
             ImGui::PushID(static_cast<int>(i));
             drawOneParam(params[i], edited);
             ImGui::PopID();
@@ -108,6 +117,7 @@ void ParamsPanel::draw(AppState& state) {
         if (state.config) {
             std::unordered_map<std::string, float> snapshot;
             for (const auto& p : state.preset->params()) {
+                if (!Preset::isUserParam(p)) continue;
                 snapshot.emplace(p.name, p.currentValue);
             }
             state.config->setPresetParams(state.preset->path().string(),

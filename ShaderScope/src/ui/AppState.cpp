@@ -66,6 +66,7 @@ void AppState::applyPending() {
                     auto saved = config->paramsFor(activePresetPath);
                     if (!saved.empty()) {
                         for (auto& p : preset->params()) {
+                            if (!Preset::isUserParam(p)) continue;
                             auto it = saved.find(p.name);
                             if (it != saved.end()) p.currentValue = it->second;
                         }

@@ -2,6 +2,7 @@
 #include "VulkanContext.h"
 #include "Texture.h"
 #include "ShaderPipeline.h"
+#include "Preset.h"
 #include "../util/VkCheck.h"
 #include <cstring>
 #include <stdexcept>
@@ -71,6 +72,22 @@ HeadlessOutput::~HeadlessOutput() {
 }
 
 std::vector<uint8_t> HeadlessOutput::renderToBytes(const Texture& src, ShaderPipeline& pipeline) {
+    return renderToBytesImpl(
+        nullptr,
+        [&](VkCommandBuffer cb) { pipeline.bindAndDraw(cb, src, {m_width, m_height}); });
+}
+
+std::vector<uint8_t> HeadlessOutput::renderToBytes(const Texture& src, Preset& preset) {
+    return renderToBytesImpl(
+        [&](VkCommandBuffer cb) {
+            preset.recordIntermediatePasses(cb, src.view(), {src.width(), src.height()});
+        },
+        [&](VkCommandBuffer cb) { preset.drawFinalPass(cb, {m_width, m_height}); });
+}
+
+std::vector<uint8_t> HeadlessOutput::renderToBytesImpl(
+    const std::function<void(VkCommandBuffer)>& prePass,
+    const std::function<void(VkCommandBuffer)>& drawBody) {
     size_t size = (size_t)m_width * m_height * 4;
     StagingResources staging{m_ctx.device()};
 
@@ -108,6 +125,11 @@ std::vector<uint8_t> HeadlessOutput::renderToBytes(const Texture& src, ShaderPip
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             0, 0, nullptr, 0, nullptr, 1, &b);
     };
+
+    // Multi-pass intermediates must be recorded OUTSIDE the final rendering
+    // scope (they open their own scopes per pass).
+    if (prePass) prePass(cb);
+
     trans(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -120,7 +142,7 @@ std::vector<uint8_t> HeadlessOutput::renderToBytes(const Texture& src, ShaderPip
     ri.layerCount = 1;
     ri.colorAttachmentCount = 1; ri.pColorAttachments = &color;
     vkCmdBeginRendering(cb, &ri);
-    pipeline.bindAndDraw(cb, src, {m_width, m_height});
+    drawBody(cb);
     vkCmdEndRendering(cb);
 
     trans(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
