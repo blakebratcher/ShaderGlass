@@ -92,6 +92,14 @@ add_executable(x11_capture_real_tests test_x11_capture_real_session.cpp)
 target_link_libraries(x11_capture_real_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(x11_capture_real_tests)
 
+add_executable(x11_dmabuf_policy_tests test_x11_dmabuf_policy.cpp)
+target_link_libraries(x11_dmabuf_policy_tests PRIVATE shaderscope_core gtest_main)
+gtest_discover_tests(x11_dmabuf_policy_tests)
+
+add_executable(x11_capture_framekind_tests test_x11_capture_framekind.cpp)
+target_link_libraries(x11_capture_framekind_tests PRIVATE shaderscope_core gtest_main)
+gtest_discover_tests(x11_capture_framekind_tests)
+
 add_executable(bad_window_registry_tests test_bad_window_registry.cpp)
 target_link_libraries(bad_window_registry_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(bad_window_registry_tests)
