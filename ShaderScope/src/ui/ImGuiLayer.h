@@ -40,6 +40,13 @@ public:
     void beginFrame();
     void recordDrawData(VkCommandBuffer cb);
 
+    // Balances beginFrame() when the frame bails out before recordDrawData()
+    // ran (e.g. the swapchain went out-of-date at acquire, so no command
+    // buffer was recorded). ImGui::NewFrame() asserts if called twice without
+    // an intervening Render()/EndFrame(). Safe to call unconditionally — it
+    // no-ops when Render() already ended the frame.
+    void endFrame();
+
 private:
     VulkanContext&   m_ctx;
     Swapchain&       m_sc;

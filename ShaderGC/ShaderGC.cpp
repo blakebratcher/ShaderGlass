@@ -97,16 +97,25 @@ static void AddParamsSpirv(vector<SourceShaderParam>&       actualParams,
 
 // Linux equivalent of LookupParams(): derives every block member's
 // buffer/offset/size from SPIR-V reflection of both stages instead of the
-// spirv-cross JSON metadata the Windows path uses. UBOs keep their binding
-// as the buffer index; the push-constant block is buffer -1.
+// spirv-cross JSON metadata the Windows path uses. The first set-0 uniform
+// block is "the" UBO — its members are normalised to buffer index 0 and its
+// real descriptor binding is returned via `uboBinding` so the runtime can
+// bind it where the shader declared it. Additional UBOs keep their binding
+// as the buffer index (unsupported; the runtime warns). The push-constant
+// block is buffer -1.
 static vector<SourceShaderParam> LookupParamsSpirv(const vector<SourceShaderParam>&             declaredParams,
                                                    vector<SourceShaderSampler>&                  textures,
                                                    const std::optional<SpirvReflect::Reflection>& vertexRefl,
-                                                   const std::optional<SpirvReflect::Reflection>& fragmentRefl)
+                                                   const std::optional<SpirvReflect::Reflection>& fragmentRefl,
+                                                   int&                                           uboBinding)
 {
     vector<SourceShaderParam> actualParams;
+    uboBinding = 0;
 
-    // Uniform blocks: merge across stages keyed by binding.
+    // Uniform blocks: merge across stages keyed by binding. The same block
+    // declared in both stages has the same binding → both normalise to
+    // buffer 0 and AddParamsSpirv de-dupes the members.
+    int primaryUboBinding = -1;
     for(const auto* refl : {&vertexRefl, &fragmentRefl})
     {
         if(!refl->has_value())
@@ -115,11 +124,23 @@ static vector<SourceShaderParam> LookupParamsSpirv(const vector<SourceShaderPara
         {
             if(block.set != 0)
                 continue; // slang convention: everything lives in set 0
-            AddParamsSpirv(actualParams, declaredParams, block, block.binding);
+            int bufferIndex;
+            if(primaryUboBinding < 0 || block.binding == primaryUboBinding)
+            {
+                primaryUboBinding = block.binding;
+                bufferIndex       = 0;
+            }
+            else
+            {
+                bufferIndex = block.binding; // secondary UBO — unsupported downstream
+            }
+            AddParamsSpirv(actualParams, declaredParams, block, bufferIndex);
         }
         if((*refl)->pushConstants)
             AddParamsSpirv(actualParams, declaredParams, *(*refl)->pushConstants, -1);
     }
+    if(primaryUboBinding > 0)
+        uboBinding = primaryUboBinding;
 
     // Samplers: union across stages, de-duped by name.
     for(const auto* refl : {&vertexRefl, &fragmentRefl})
@@ -281,7 +302,8 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
     std::vector<SourceShaderSampler> textures;
     const auto vertexRefl   = SpirvReflect::Reflect(vertexSPIRV.data(), vertexSPIRV.size());
     const auto fragmentRefl = SpirvReflect::Reflect(fragmentSPIRV.data(), fragmentSPIRV.size());
-    def.params = LookupParamsSpirv(def.params, textures, vertexRefl, fragmentRefl);
+    int uboBinding = 0;
+    def.params = LookupParamsSpirv(def.params, textures, vertexRefl, fragmentRefl, uboBinding);
 
     ShaderDef sd;
     sd.Format           = CopyString(def.format);
@@ -293,6 +315,7 @@ ShaderDef ShaderGC::CompileSourceShader(SourceShaderDef& def, ostream& log, bool
     sd.FragmentLength   = fSize;
     sd.Name             = def.input.filename().string();
     sd.UsesVertexInput  = vertexRefl.has_value() && vertexRefl->usesLocationInputs;
+    sd.UboBinding       = uboBinding;
 #endif
 
     for(const auto& p : def.params)

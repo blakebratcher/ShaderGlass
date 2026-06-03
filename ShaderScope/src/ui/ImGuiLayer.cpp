@@ -166,3 +166,11 @@ void ImGuiLayer::recordDrawData(VkCommandBuffer cb) {
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cb);
 }
+
+void ImGuiLayer::endFrame() {
+    // ImGui::EndFrame() early-returns when the current frame was already
+    // ended (FrameCountEnded == FrameCount), so this is safe to call on
+    // every loop path — it only does work on the bail-out paths where
+    // recordDrawData() (and therefore ImGui::Render()) never ran.
+    ImGui::EndFrame();
+}

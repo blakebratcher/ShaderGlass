@@ -39,6 +39,7 @@ private:
     Window      m_windowTarget = 0;    // for XWindow source kind (Xlib Window type)
     int         m_cropX = 0, m_cropY = 0; // for MonitorOutput
     uint32_t    m_width = 0, m_height = 0;
+    bool        m_windowUnmapped = false; // XWindow: tracked via Map/UnmapNotify
 
     // X resources.
     Display*       m_display      = nullptr;
@@ -66,6 +67,10 @@ private:
     ImportedDmaBuf m_dmaImport{};
     int            m_dmaImportW     = 0;       // dims the cached import was built for
     int            m_dmaImportH     = 0;
+    uint64_t       m_dmaImportPixmap = 0;      // pixmap XID the cached import was built for
+
+    // XRandR event base (for RRScreenChangeNotify dispatch). -1 = no XRandR.
+    int            m_xrandrEventBase = -1;
 
     // Cached EWMH/ICCCM atoms — interned once at construction so enumerateSources
     // doesn't pay a server roundtrip per window per call.
@@ -80,6 +85,20 @@ private:
     bool   reallocIfDimsChanged(uint32_t newW, uint32_t newH);
     Drawable targetDrawable() const;
     bool   windowHasHiddenState(Window w) const;
+
+    // Bug 1 (XWindow): drain pending StructureNotify events for m_windowTarget.
+    // On any Map/Unmap/ConfigureNotify the composite backing pixmap was
+    // reallocated, so re-name it and invalidate the staging + DMA caches.
+    // Returns true if the pixmap was re-named (caller should skip the frame if
+    // the window is now unmapped).
+    void   drainWindowStructureEvents();
+    bool   renameWindowPixmap();
+
+    // Bug 2 (MonitorOutput): re-query the CRTC crop for m_outputName (same
+    // logic as start()). Returns false if the output is gone. On success it
+    // writes the new crop/size into the out-params (caller decides whether
+    // anything changed).
+    bool   queryOutputCrop(int& cropX, int& cropY, uint32_t& w, uint32_t& h) const;
 
     // Composited-capture helpers (Part 1).
     bool   ensureStaging(uint32_t w, uint32_t h);  // (re)create pixmap + GC

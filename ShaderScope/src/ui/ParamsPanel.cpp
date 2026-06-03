@@ -113,7 +113,9 @@ void ParamsPanel::draw(AppState& state) {
         }
     }
     if (edited) {
-        state.preset->updateUbo();
+        // No direct updateUbo() here: the frame loop's advanceFrame() writes
+        // the new values after waiting on in-flight GPU frames. Writing the
+        // mapped UBO from inside the UI draw would race pending reads.
         if (state.config) {
             std::unordered_map<std::string, float> snapshot;
             for (const auto& p : state.preset->params()) {

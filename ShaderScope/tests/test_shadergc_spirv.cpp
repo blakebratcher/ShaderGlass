@@ -212,3 +212,29 @@ TEST(ShaderGCReflection, NightModeReflectsFinalViewportSize) {
     EXPECT_EQ(fvs->offset, 64);
     EXPECT_EQ(fvs->size,   16);
 }
+
+TEST(ShaderGCReflection, UboAtNonZeroBindingIsNormalisedToBufferZero) {
+    // A UBO at binding != 0 (legal, unconventional) must still produce
+    // buffer-0 params (so ParamsSize(0)/updateUbo work) and report its real
+    // binding via UboBinding for the descriptor write.
+    fs::path slangp = fs::path(TEST_DATA_DIR) / "binding1.slangp";
+    std::ostringstream log;
+    CompiledPreset p{compile(slangp, log)};
+    ASSERT_NE(p.def, nullptr) << log.str();
+    auto& sd = p.def->ShaderDefs[0];
+
+    const ShaderParam* mvp = findParam(sd, "MVP");
+    ASSERT_NE(mvp, nullptr);
+    EXPECT_EQ(mvp->buffer, 0) << "UBO members must normalise to buffer 0";
+    EXPECT_EQ(mvp->offset, 0);
+    EXPECT_EQ(mvp->size,  64);
+    EXPECT_EQ(sd.ParamsSize(0), 64u);
+    EXPECT_EQ(sd.UboBinding, 1) << "real descriptor binding must be preserved";
+
+    // The conventional layout still reports binding 0.
+    fs::path conventional = fs::path(STARTER_SHADERS_DIR) / "passthrough.slangp";
+    std::ostringstream log2;
+    CompiledPreset p2{compile(conventional, log2)};
+    ASSERT_NE(p2.def, nullptr) << log2.str();
+    EXPECT_EQ(p2.def->ShaderDefs[0].UboBinding, 0);
+}

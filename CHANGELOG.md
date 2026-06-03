@@ -32,6 +32,23 @@ Semantic Versioning starting from `0.1.0-preview`.
   composed screen (overlay window included) on any compositor backend.
 - `.slangp` parameter overrides (`PARAM = value` lines) are now applied;
   previously parsed but ignored.
+- Post-review hardening (adversarial multi-agent review of the above):
+  - ImGui frame lifecycle stays balanced when the swapchain goes
+    out-of-date at acquire (previously double-`NewFrame()` → assert/abort
+    in Debug builds on rapid resize).
+  - Host writes to preset UBO/VBO memory now wait for in-flight GPU frames
+    (`RenderEngine::waitForInFlightFrames()`), eliminating a write-after-read
+    hazard that could feed shaders torn semantics.
+  - Minimized windows idle on `SDL_WaitEventTimeout` instead of busy-spinning
+    a core.
+  - A `.slangp` whose UBO sits at a non-zero binding now renders correctly
+    (reflection normalises params to buffer 0 and binds the descriptor at
+    the reflected binding).
+  - Crop now applies to the pass that samples the captured source (pass 0)
+    in multi-pass presets, not the final pass.
+  - X11 window capture recovers when the target's backing pixmap is
+    reallocated (minimize/restore); monitor capture revalidates its crop
+    against the root and re-queries the CRTC on XRandR changes.
 
 ### Added
 

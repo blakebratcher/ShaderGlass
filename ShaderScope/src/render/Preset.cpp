@@ -245,7 +245,7 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
 
         ShaderPipelineSlangConfig cfg;
         cfg.uboSize         = static_cast<uint32_t>(sd.ParamsSize(0));
-        cfg.uboBinding      = 0;
+        cfg.uboBinding      = static_cast<uint32_t>(sd.UboBinding);
         cfg.pushSize        = static_cast<uint32_t>(sd.ParamsSize(-1));
         cfg.usesVertexInput = sd.UsesVertexInput;
         cfg.sampler         = parseSampler(sd.PresetParams);
@@ -307,8 +307,10 @@ void Preset::applyPresetOverrides() {
 }
 
 void Preset::resetParamsToDefaults() {
+    // Values reach the GPU on the next advanceFrame()/updateUbo() — the
+    // windowed loop runs that after waiting on in-flight frames, so writing
+    // the mapped buffers here (mid-UI-draw) would race pending GPU reads.
     for (auto& p : m_params) p.currentValue = p.defaultValue;
-    updateUbo();
 }
 
 VkExtent2D Preset::passInputExtent(int passIdx) const {

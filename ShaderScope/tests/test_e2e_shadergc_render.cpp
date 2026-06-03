@@ -142,3 +142,24 @@ TEST(EndToEndStarter, Passthrough2PassPresetRendersInputUnchanged) {
         EXPECT_LT(img.rgba[i * 4 + 2],   5) << "pixel " << i << " blue channel";
     }
 }
+
+TEST(EndToEndStarter, UboAtNonZeroBindingRendersCorrectly) {
+    // Regression: a .slangp whose UBO sits at binding != 0 (legal, just
+    // unconventional) must still get its semantics written and its
+    // descriptor bound at the right slot — not silently render black.
+    fs::path in     = fs::path(TEST_DATA_DIR) / "4x4_red.png";
+    fs::path preset = fs::path(TEST_DATA_DIR) / "binding1.slangp";
+    fs::path out    = fs::temp_directory_path() / "shaderscope_e2e_binding1.png";
+
+    ASSERT_EQ(runHeadless(preset, in, out, 4, 4), 0) << "headless run failed";
+    ASSERT_TRUE(fs::exists(out));
+
+    DecodedPng img = decodePng(out);
+    ASSERT_EQ(img.w, 4);
+    ASSERT_EQ(img.h, 4);
+    for (int i = 0; i < img.w * img.h; ++i) {
+        EXPECT_GT(img.rgba[i * 4 + 0], 250) << "pixel " << i << " red channel";
+        EXPECT_LT(img.rgba[i * 4 + 1],   5) << "pixel " << i << " green channel";
+        EXPECT_LT(img.rgba[i * 4 + 2],   5) << "pixel " << i << " blue channel";
+    }
+}

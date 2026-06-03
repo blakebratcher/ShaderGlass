@@ -39,6 +39,15 @@ RenderEngine::~RenderEngine() {
     vkDestroyCommandPool(m_ctx.device(), m_cmdPool, nullptr);
 }
 
+void RenderEngine::waitForInFlightFrames() {
+    // All fences are created signalled and only reset immediately before a
+    // submit, so waiting on the full array is safe regardless of how many
+    // frames actually submitted work.
+    vkWaitForFences(m_ctx.device(),
+                    static_cast<uint32_t>(m_inFlight.size()), m_inFlight.data(),
+                    VK_TRUE, UINT64_MAX);
+}
+
 static void transitionImage(VkCommandBuffer cb, VkImage img,
                             VkImageLayout oldL, VkImageLayout newL,
                             VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess,

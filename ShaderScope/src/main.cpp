@@ -604,6 +604,9 @@ static int runWindowed(Args& a) {
                 if (!recreateSwapchain()) {
                     // Minimized / zero-sized: keep the dirty flag and skip the
                     // frame entirely until the window has a drawable area again.
+                    // Block until an event arrives (restore/resize/quit) or a
+                    // short timeout elapses so this doesn't busy-spin a core.
+                    SDL_WaitEventTimeout(nullptr, 100);
                     continue;
                 }
                 swapchainDirty = false;
@@ -793,29 +796,39 @@ static int runWindowed(Args& a) {
 
             config.tick();
             // Bump FrameCount + refresh every pass's semantics (MVP,
-            // SourceSize, …) and user param values.
-            if (state.preset) state.preset->advanceFrame();
+            // SourceSize, …) and user param values. Preset UBO/VBO memory is
+            // host-coherent and single-buffered, so wait for every in-flight
+            // frame's GPU reads to finish before the CPU writes below
+            // (advanceFrame, ensureSourceSize, setUvTransform).
+            if (state.preset) {
+                engine.waitForInFlightFrames();
+                state.preset->advanceFrame();
+            }
 
             ShaderPipeline& activePipeline =
                 state.preset ? state.preset->finalPipeline() : pipeline;
             const bool multiPass = state.preset && state.preset->isMultiPass();
 
             // Feed crop UV transform every frame so the pipeline stays in sync.
-            // Only the builtin passthrough actually honours this push constant
-            // (slang preset shaders control their own sampling), so this is
-            // effectively a no-op when a slang preset is active.
+            // The builtin passthrough consumes it via its fragment push
+            // constant; vertex-input slang presets consume it via the quad
+            // VBO's texcoords. For multi-pass presets the crop must apply to
+            // the pass that samples the captured source (pass 0), not the
+            // final pass (which samples an intermediate).
+            ShaderPipeline& cropPipeline =
+                state.preset ? state.preset->sourcePipeline() : pipeline;
             if (state.capture) {
                 auto sz = state.capture->size();
                 if (sz.width > 0 && sz.height > 0) {
                     if (state.currentCrop) {
                         const auto& c = *state.currentCrop;
-                        activePipeline.setUvTransform(
+                        cropPipeline.setUvTransform(
                             float(c.x) / sz.width,
                             float(c.y) / sz.height,
                             float(c.x + c.w) / sz.width,
                             float(c.y + c.h) / sz.height);
                     } else {
-                        activePipeline.setUvTransform(0.0f, 0.0f, 1.0f, 1.0f);
+                        cropPipeline.setUvTransform(0.0f, 0.0f, 1.0f, 1.0f);
                     }
                 }
             }
@@ -855,6 +868,10 @@ static int runWindowed(Args& a) {
                         screenshotWriter.tick();
                         state.capture->release(*f);
                         if (rs == RenderStatus::SwapchainOutOfDate) swapchainDirty = true;
+                        // Balance imgui.beginFrame() — if the render bailed at
+                        // acquire (out-of-date), ImGui::Render() never ran and
+                        // the next NewFrame() would assert.
+                        imgui.endFrame();
                         continue;
                     }
 
@@ -916,6 +933,9 @@ static int runWindowed(Args& a) {
                 rs = engine.renderEmpty(imguiBody);
             }
             if (rs == RenderStatus::SwapchainOutOfDate) swapchainDirty = true;
+            // Balance imgui.beginFrame() — no-op when ImGui::Render() ran,
+            // required when the render bailed at acquire (out-of-date).
+            imgui.endFrame();
             screenshotWriter.tick();
         }
     }

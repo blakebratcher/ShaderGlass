@@ -209,9 +209,11 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
   at preset build). No starter preset uses them; motion-blur/temporal
   community shaders will look wrong until a frame-history ring buffer is
   implemented (see Future milestone).
-- **One UBO per pass** — params/semantics in `binding != 0` UBOs are
-  ignored (warned at build). The RetroArch convention is a single UBO at
-  binding 0 + an optional push-constant block, which is what's supported.
+- **One UBO per pass** — the shader's single set-0 uniform block can sit at
+  any binding (reflection normalises its params to buffer 0 and the
+  descriptor is created at the reflected binding), but a *second* UBO in
+  the same pass is ignored (warned at build). The RetroArch convention is
+  one UBO + an optional push-constant block.
 - **Crop with gl_VertexIndex slang presets** — the crop UV transform reaches
   builtin passthrough (fragment push constant) and vertex-input slang
   shaders (quad VBO texcoord remap), but a slang preset that uses

@@ -42,6 +42,11 @@ public:
     size_t          passCount()      const { return m_pipelines.size(); }
     bool            isMultiPass()    const { return m_pipelines.size() > 1; }
     ShaderPipeline& finalPipeline()        { return *m_pipelines.back(); }
+    // The pass that samples the captured source (pass 0). Crop UV transforms
+    // must target this pass — for multi-pass presets the final pass samples
+    // an intermediate, not the source. Same object as finalPipeline() for
+    // single-pass presets.
+    ShaderPipeline& sourcePipeline()       { return *m_pipelines.front(); }
 
     // Mutable list of params aggregated across ALL passes. updateUbo()
     // walks m_params + m_paramPass to write each value to the right

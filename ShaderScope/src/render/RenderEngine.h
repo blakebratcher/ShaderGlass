@@ -68,6 +68,14 @@ public:
     // matches (16,16,16,255).
     RenderStatus renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody);
 
+    // Blocks until every in-flight frame's GPU work has completed. Call
+    // before host writes to memory the GPU may still be reading — e.g. the
+    // Preset's single-buffered, persistently-mapped UBO / quad-VBO — so a
+    // new frame's CPU writes can't race the previous frame's shader reads.
+    // Fences are created signalled and only reset at submit, so this never
+    // deadlocks on frames that bailed before submitting.
+    void waitForInFlightFrames();
+
 private:
     RenderStatus renderFrame(VkClearValue clearColor,
                      const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,

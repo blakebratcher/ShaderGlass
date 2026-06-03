@@ -98,6 +98,18 @@ add_executable(x11_dmabuf_policy_tests test_x11_dmabuf_policy.cpp)
 target_link_libraries(x11_dmabuf_policy_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(x11_dmabuf_policy_tests)
 
+add_executable(x11_capture_geometry_tests test_x11_capture_geometry.cpp)
+target_link_libraries(x11_capture_geometry_tests PRIVATE shaderscope_core gtest_main)
+gtest_discover_tests(x11_capture_geometry_tests)
+
+# Live-X11 integration test for the window unmap/remap staleness fix.
+# Skips cleanly when DISPLAY is unset. Xcomposite/Xrandr come transitively
+# via shaderscope_core's PkgConfig::X11 (x11 xcomposite xext xrandr).
+add_executable(x11_capture_window_staleness_tests test_x11_capture_window_staleness.cpp)
+target_link_libraries(x11_capture_window_staleness_tests
+    PRIVATE shaderscope_core gtest_main)
+gtest_discover_tests(x11_capture_window_staleness_tests)
+
 add_executable(x11_capture_framekind_tests test_x11_capture_framekind.cpp)
 target_link_libraries(x11_capture_framekind_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(x11_capture_framekind_tests)

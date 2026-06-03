@@ -1,6 +1,7 @@
 #include "RealX11CaptureSession.h"
 #include "BadWindowRegistry.h"
 #include "X11DmaBufPolicy.h"
+#include "X11CaptureGeometry.h"
 #include "util/Logging.h"
 #include "render/DmaBufImport.h"
 #include <X11/extensions/Xcomposite.h>
@@ -188,27 +189,17 @@ void RealX11CaptureSession::start(const SourceInfo& source) {
         m_sourceKind  = SourceKind::MonitorOutput;
         m_outputName  = id.substr(strlen("monitor:"));
         // Look up the output's CRTC for crop info + dimensions.
-        XRRScreenResources* res = XRRGetScreenResources(m_display, m_root);
-        if (!res) throw std::runtime_error("X11: XRRGetScreenResources failed");
-        bool found = false;
-        for (int i = 0; i < res->noutput && !found; ++i) {
-            XRROutputInfo* oi = XRRGetOutputInfo(m_display, res, res->outputs[i]);
-            if (oi && oi->name && m_outputName == oi->name &&
-                oi->connection == RR_Connected && oi->crtc) {
-                XRRCrtcInfo* ci = XRRGetCrtcInfo(m_display, res, oi->crtc);
-                if (ci) {
-                    m_cropX  = ci->x;
-                    m_cropY  = ci->y;
-                    m_width  = ci->width;
-                    m_height = ci->height;
-                    XRRFreeCrtcInfo(ci);
-                    found = true;
-                }
-            }
-            if (oi) XRRFreeOutputInfo(oi);
+        if (!queryOutputCrop(m_cropX, m_cropY, m_width, m_height)) {
+            throw std::runtime_error("X11: output not found: " + m_outputName);
         }
-        XRRFreeScreenResources(res);
-        if (!found) throw std::runtime_error("X11: output not found: " + m_outputName);
+        // Bug 2: watch for XRandR mode/layout changes so grab() can re-query
+        // the crop and drop frames where the source rect no longer fits.
+        int xrErr = 0;
+        if (XRRQueryExtension(m_display, &m_xrandrEventBase, &xrErr)) {
+            XRRSelectInput(m_display, m_root, RRScreenChangeNotifyMask);
+        } else {
+            m_xrandrEventBase = -1;
+        }
     } else if (id.rfind("window:", 0) == 0) {
         m_sourceKind = SourceKind::XWindow;
         unsigned long xid = 0;
@@ -216,12 +207,21 @@ void RealX11CaptureSession::start(const SourceInfo& source) {
             throw std::runtime_error("X11: bad window id: " + id);
         }
         m_windowTarget = (Window)xid;
+        m_windowUnmapped = false;
 
         // Composite-redirect so we can capture even when the window is
         // partially obscured or minimized. The pixmap is the off-screen
         // backing store the composite manager renders into.
         XCompositeRedirectWindow(m_display, m_windowTarget,
                                  CompositeRedirectAutomatic);
+
+        // Bug 1: the composite backing pixmap is reallocated on EVERY
+        // map/unmap/reconfigure (Composite spec), not just on size change.
+        // Watch StructureNotify so grab() can re-name the pixmap and
+        // invalidate the staging + DMA caches when that happens. Selecting
+        // input before XCompositeNameWindowPixmap means we won't miss an
+        // event that races the initial name.
+        XSelectInput(m_display, m_windowTarget, StructureNotifyMask);
         XSync(m_display, False);
 
         m_pixmap = XCompositeNameWindowPixmap(m_display, m_windowTarget);
@@ -273,10 +273,59 @@ void RealX11CaptureSession::stop() {
     m_dmaBufActive = false;
     m_sourceKind = SourceKind::Unset;
     m_width = m_height = 0;
+    m_windowUnmapped = false;
+    m_xrandrEventBase = -1;
 }
 
 std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
     if (m_sourceKind == SourceKind::Unset) return std::nullopt;
+
+    // Bug 1 (XWindow): drain StructureNotify events BEFORE touching the
+    // pixmap. A map/unmap/reconfigure reallocates the composite backing
+    // pixmap (Composite spec), so we re-name it here and invalidate the
+    // staging + DMA caches; otherwise every grab returns frozen content.
+    if (m_sourceKind == SourceKind::XWindow) {
+        drainWindowStructureEvents();
+        if (m_windowUnmapped) {
+            // Nothing to capture while the window is hidden/minimized; its
+            // backing pixmap is undefined. Skip this frame.
+            return std::nullopt;
+        }
+    }
+
+    // Bug 2 (MonitorOutput): drain XRandR screen-change events and re-query
+    // the CRTC crop when the mode/layout changed. Done before the read so a
+    // stale crop never feeds XCopyArea (which would silently keep old pixels
+    // in any region that fell out of bounds).
+    if (m_sourceKind == SourceKind::MonitorOutput && m_xrandrEventBase >= 0) {
+        bool screenChanged = false;
+        XEvent ev;
+        while (XCheckTypedEvent(
+                   m_display, m_xrandrEventBase + RRScreenChangeNotify, &ev)) {
+            // Let Xlib update its cached screen config from the event.
+            XRRUpdateConfiguration(&ev);
+            screenChanged = true;
+        }
+        if (screenChanged) {
+            int newX, newY; uint32_t newW, newH;
+            if (!queryOutputCrop(newX, newY, newW, newH)) {
+                LOG_ERROR("X11: monitor output '%s' gone after XRandR change",
+                          m_outputName.c_str());
+                m_sourceKind = SourceKind::Unset;
+                return std::nullopt;
+            }
+            if (newX != m_cropX || newY != m_cropY ||
+                newW != m_width || newH != m_height) {
+                freeDmaImport();
+                freeStaging();
+                freeSharedImage();
+                m_cropX = newX; m_cropY = newY;
+                m_width = newW; m_height = newH;
+                allocSharedImage(m_width, m_height);
+                return std::nullopt;  // skip the frame; resources are fresh
+            }
+        }
+    }
 
     // Detect source resize. Cheap query (no server roundtrip cache).
     Window  rootRet;
@@ -288,8 +337,28 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
     if (XGetGeometry(m_display, probe, &rootRet, &xRet, &yRet,
                      &wRet, &hRet, &borderRet, &depthRet)) {
         if (m_sourceKind == SourceKind::MonitorOutput) {
-            // Output dimensions tracked via XRandR; only detect root resize
-            // by also clamping to current width/height of the cached crop.
+            // Bug 2 belt-and-braces: even if we missed the XRandR event,
+            // validate the cached crop against the live root size. If the
+            // source rect no longer fits, re-query (or drop the frame) rather
+            // than reading partially out of bounds.
+            if (!X11CaptureGeometry::cropFitsRoot(m_cropX, m_cropY,
+                                                  m_width, m_height,
+                                                  wRet, hRet)) {
+                int newX, newY; uint32_t newW, newH;
+                if (!queryOutputCrop(newX, newY, newW, newH)) {
+                    LOG_ERROR("X11: monitor output '%s' gone (crop out of root)",
+                              m_outputName.c_str());
+                    m_sourceKind = SourceKind::Unset;
+                    return std::nullopt;
+                }
+                freeDmaImport();
+                freeStaging();
+                freeSharedImage();
+                m_cropX = newX; m_cropY = newY;
+                m_width = newW; m_height = newH;
+                allocSharedImage(m_width, m_height);
+                return std::nullopt;  // skip the frame; resources are fresh
+            }
         } else if (reallocIfDimsChanged(wRet, hRet)) {
             // Skip this frame — the new SHM segment is fresh and uninitialised.
             return std::nullopt;
@@ -478,6 +547,102 @@ Drawable RealX11CaptureSession::targetDrawable() const {
     return m_root;
 }
 
+// Bug 1: re-name the window's composite backing pixmap. Called after a
+// Map/Unmap/Configure event reallocated it server-side. Frees the old name,
+// queries a new one, and invalidates the staging + DMA-BUF caches so they
+// rebuild against the fresh pixmap. Returns false (and clears m_havePixmap)
+// if the new name fails.
+bool RealX11CaptureSession::renameWindowPixmap() {
+    if (m_sourceKind != SourceKind::XWindow) return false;
+    if (m_havePixmap && m_pixmap) {
+        XFreePixmap(m_display, m_pixmap);
+        m_pixmap = 0;
+    }
+    m_pixmap = XCompositeNameWindowPixmap(m_display, m_windowTarget);
+    // Caches were built against the old pixmap XID; drop them.
+    freeDmaImport();
+    freeStaging();
+    if (!m_pixmap) {
+        m_havePixmap = false;
+        return false;
+    }
+    m_havePixmap = true;
+    return true;
+}
+
+// Bug 1: drain pending StructureNotify events for the source window. Any
+// Map/Unmap/Configure means the backing pixmap was reallocated; re-name it.
+// Tracks map state in m_windowUnmapped so grab() can skip frames while the
+// window is hidden (its backing pixmap is undefined when unmapped).
+void RealX11CaptureSession::drainWindowStructureEvents() {
+    if (m_sourceKind != SourceKind::XWindow || !m_windowTarget) return;
+
+    bool pixmapStale = false;
+    XEvent ev;
+    while (XCheckWindowEvent(m_display, m_windowTarget,
+                             StructureNotifyMask, &ev)) {
+        switch (ev.type) {
+            case MapNotify:
+                m_windowUnmapped = false;
+                pixmapStale = true;
+                break;
+            case UnmapNotify:
+                m_windowUnmapped = true;
+                pixmapStale = true;
+                break;
+            case ConfigureNotify:
+                pixmapStale = true;
+                break;
+            case DestroyNotify:
+                // Nothing left to capture. Mark unmapped so we skip the
+                // re-name below; the BadWindowRegistry::consume() check in
+                // grab() does the full session teardown.
+                m_havePixmap = false;
+                m_windowUnmapped = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    // Only re-name while mapped — XCompositeNameWindowPixmap on an unmapped
+    // window yields an unusable pixmap. We rebuild it on the next MapNotify.
+    if (pixmapStale && !m_windowUnmapped) {
+        if (!renameWindowPixmap()) {
+            LOG_WARN("X11: re-name of window 0x%lx backing pixmap failed",
+                     (unsigned long)m_windowTarget);
+        }
+    }
+}
+
+// Bug 2: re-query the CRTC crop + size for m_outputName. Shared by start()
+// and grab(). Returns false if the output is no longer connected / has no
+// CRTC (caller treats that as "source gone").
+bool RealX11CaptureSession::queryOutputCrop(int& cropX, int& cropY,
+                                            uint32_t& w, uint32_t& h) const {
+    XRRScreenResources* res = XRRGetScreenResources(m_display, m_root);
+    if (!res) return false;
+    bool found = false;
+    for (int i = 0; i < res->noutput && !found; ++i) {
+        XRROutputInfo* oi = XRRGetOutputInfo(m_display, res, res->outputs[i]);
+        if (oi && oi->name && m_outputName == oi->name &&
+            oi->connection == RR_Connected && oi->crtc) {
+            XRRCrtcInfo* ci = XRRGetCrtcInfo(m_display, res, oi->crtc);
+            if (ci) {
+                cropX = ci->x;
+                cropY = ci->y;
+                w     = ci->width;
+                h     = ci->height;
+                XRRFreeCrtcInfo(ci);
+                found = true;
+            }
+        }
+        if (oi) XRRFreeOutputInfo(oi);
+    }
+    XRRFreeScreenResources(res);
+    return found;
+}
+
 bool RealX11CaptureSession::windowHasHiddenState(Window w) const {
     Atom actualType = None;
     int actualFormat = 0;
@@ -587,7 +752,12 @@ bool RealX11CaptureSession::detectDmaBufPath() {
 
 #if SHADERSCOPE_HAVE_XCB_DRI3
 bool RealX11CaptureSession::ensureDmaImport(Drawable pixmap, uint32_t w, uint32_t h) {
-    if (m_dmaImportValid && m_dmaImportW == (int)w && m_dmaImportH == (int)h) {
+    // Key on the pixmap XID as well as dims (Bug 1). After a window is
+    // minimized + restored at the same size, the backing pixmap XID changes
+    // even though w/h don't — a dims-only key would keep the dead import.
+    if (X11CaptureGeometry::dmaImportCacheValid(
+            m_dmaImportValid, m_dmaImportPixmap, m_dmaImportW, m_dmaImportH,
+            (uint64_t)pixmap, (int)w, (int)h)) {
         return true;
     }
     freeDmaImport();
@@ -673,6 +843,7 @@ bool RealX11CaptureSession::ensureDmaImport(Drawable pixmap, uint32_t w, uint32_
     m_dmaImportValid = true;
     m_dmaImportW = (int)w;
     m_dmaImportH = (int)h;
+    m_dmaImportPixmap = (uint64_t)pixmap;
     LOG_INFO("X11: DMA-BUF import succeeded (%ux%u, modifier 0x%llx)",
              w, h, (unsigned long long)modifier);
     return true;
@@ -711,4 +882,5 @@ void RealX11CaptureSession::freeDmaImport() {
 #endif
     m_dmaImportValid = false;
     m_dmaImportW = m_dmaImportH = 0;
+    m_dmaImportPixmap = 0;
 }

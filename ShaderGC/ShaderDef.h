@@ -68,6 +68,12 @@ public:
     // The runtime must bind a fullscreen-quad vertex buffer for these
     // shaders; gl_VertexIndex shaders keep the no-VBO path.
     bool                               UsesVertexInput = false;
+    // Descriptor binding of the shader's (single) set-0 uniform block.
+    // Params in that block are normalised to buffer index 0 regardless of
+    // the binding; the runtime must create the UBO descriptor at this
+    // binding. 0 for the conventional RetroArch layout (and when no UBO
+    // exists).
+    int                                UboBinding = 0;
 
     size_t ParamsSize(int buffer)
     {
