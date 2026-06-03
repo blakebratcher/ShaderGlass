@@ -20,6 +20,19 @@ public:
     // Call once per SDL event so ImGui captures keyboard/mouse state.
     void processSdlEvent(const SDL_Event& e);
 
+    // Call after Swapchain::recreate(). The Vulkan backend derives its
+    // viewport/scissor from ImGui's DisplaySize every frame, so a pure resize
+    // (same format + image count) needs no action — this is a no-op in the
+    // common case. It exists to detect the unsupported case: if the recreated
+    // swapchain reports a different image count or format than the one ImGui
+    // was initialised with, the baked ImGui pipeline / ring buffers are stale
+    // and a full backend re-init would be required. The ImGui Vulkan backend
+    // explicitly does not support that for the main viewport
+    // (ImGui_ImplVulkan_SetMinImageCount hits IM_ASSERT(0)), so we log a loud
+    // warning instead of silently rendering corrupt chrome. On the same
+    // physical device + surface, neither value changes across a resize.
+    void onSwapchainRecreated();
+
     // Frame lifecycle. beginFrame() must come before any ImGui:: calls.
     // recordDrawData() calls ImGui::Render() internally, then submits the
     // draw data to the command buffer. It must be called inside an active
@@ -33,4 +46,9 @@ private:
     SDL_Window*      m_window = nullptr;
     VkDescriptorPool m_pool   = VK_NULL_HANDLE;
     std::string      m_iniPath;
+    // Swapchain image count + format ImGui's backend was initialised with.
+    // onSwapchainRecreated() compares against these to detect the unsupported
+    // mid-run reconfiguration case.
+    uint32_t         m_initImageCount = 0;
+    VkFormat         m_initFormat     = VK_FORMAT_UNDEFINED;
 };

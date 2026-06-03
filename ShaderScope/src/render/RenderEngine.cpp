@@ -58,7 +58,7 @@ static void transitionImage(VkCommandBuffer cb, VkImage img,
     vkCmdPipelineBarrier2(cb, &dep);
 }
 
-void RenderEngine::renderFrame(VkClearValue clearColor,
+RenderStatus RenderEngine::renderFrame(VkClearValue clearColor,
                                const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
                                const std::function<void(VkCommandBuffer)>& imguiBody,
                                ScreenshotWriter* screenshotWriter,
@@ -66,15 +66,26 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
                                const std::function<void(VkCommandBuffer)>& prePassBody) {
     VkFence fence = m_inFlight[m_frame];
     vkWaitForFences(m_ctx.device(), 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences  (m_ctx.device(), 1, &fence);
 
     uint32_t idx = 0;
     VkResult acquireResult = vkAcquireNextImageKHR(
         m_ctx.device(), m_sc.handle(), UINT64_MAX,
         m_imgAvail[m_frame], VK_NULL_HANDLE, &idx);
+    if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
+        // The surface no longer matches the swapchain (resize / DPI change).
+        // Bail without submitting — the caller recreates the swapchain and
+        // retries. The fence is still signalled (we never reset it) and the
+        // m_imgAvail semaphore was not signalled by this failed acquire, so
+        // the per-frame state stays consistent for the retry.
+        return RenderStatus::SwapchainOutOfDate;
+    }
     if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
         VK_CHECK(acquireResult);
     }
+
+    // Only now that we will actually submit do we reset the fence; bailing
+    // above leaves it signalled so the next frame's wait does not deadlock.
+    vkResetFences(m_ctx.device(), 1, &fence);
 
     VkCommandBuffer cb = m_cmd[m_frame];
     vkResetCommandBuffer(cb, 0);
@@ -202,38 +213,50 @@ void RenderEngine::renderFrame(VkClearValue clearColor,
     pi.swapchainCount     = 1;
     pi.pSwapchains        = &sc;
     pi.pImageIndices      = &idx;
-    vkQueuePresentKHR(m_ctx.graphicsQueue(), &pi);
+    VkResult presentResult = vkQueuePresentKHR(m_ctx.graphicsQueue(), &pi);
 
     m_frame = (m_frame + 1) % kFramesInFlight;
+
+    // The work was submitted, but the surface needs a fresh swapchain before
+    // the next frame. Report it so the caller recreates; abort on anything
+    // genuinely fatal.
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR ||
+        presentResult == VK_SUBOPTIMAL_KHR) {
+        return RenderStatus::SwapchainOutOfDate;
+    }
+    if (presentResult != VK_SUCCESS) {
+        VK_CHECK(presentResult);
+    }
+    return RenderStatus::Ok;
 }
 
-void RenderEngine::renderClear(float r, float g, float b, float a) {
+RenderStatus RenderEngine::renderClear(float r, float g, float b, float a) {
     VkClearValue cv{};
     cv.color = {{ r, g, b, a }};
-    renderFrame(cv, nullptr, nullptr, nullptr, nullptr, nullptr);
+    return renderFrame(cv, nullptr, nullptr, nullptr, nullptr, nullptr);
 }
 
-void RenderEngine::renderTexture(const Texture& src, ShaderPipeline& pipeline) {
+RenderStatus RenderEngine::renderTexture(const Texture& src, ShaderPipeline& pipeline) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv,
+    return renderFrame(cv,
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDraw(cb, src, ext);
         },
         nullptr, nullptr, nullptr, nullptr);
 }
 
-void RenderEngine::renderImageView(VkImageView view, ShaderPipeline& pipeline) {
+RenderStatus RenderEngine::renderImageView(VkImageView view, ShaderPipeline& pipeline) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv,
+    return renderFrame(cv,
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDrawWithImageView(cb, view, ext);
         },
         nullptr, nullptr, nullptr, nullptr);
 }
 
-void RenderEngine::renderTextureWithOverlay(const Texture& src,
+RenderStatus RenderEngine::renderTextureWithOverlay(const Texture& src,
                                             ShaderPipeline& pipeline,
                                             const std::function<void(VkCommandBuffer)>& imguiBody,
                                             ScreenshotWriter* screenshotWriter,
@@ -241,14 +264,14 @@ void RenderEngine::renderTextureWithOverlay(const Texture& src,
                                             const std::function<void(VkCommandBuffer)>& prePassBody) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv,
+    return renderFrame(cv,
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDraw(cb, src, ext);
         },
         imguiBody, screenshotWriter, state, prePassBody);
 }
 
-void RenderEngine::renderImageViewWithOverlay(VkImageView view,
+RenderStatus RenderEngine::renderImageViewWithOverlay(VkImageView view,
                                               ShaderPipeline& pipeline,
                                               const std::function<void(VkCommandBuffer)>& imguiBody,
                                               ScreenshotWriter* screenshotWriter,
@@ -256,25 +279,25 @@ void RenderEngine::renderImageViewWithOverlay(VkImageView view,
                                               const std::function<void(VkCommandBuffer)>& prePassBody) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv,
+    return renderFrame(cv,
         [&](VkCommandBuffer cb, VkExtent2D ext) {
             pipeline.bindAndDrawWithImageView(cb, view, ext);
         },
         imguiBody, screenshotWriter, state, prePassBody);
 }
 
-void RenderEngine::renderCustomWithOverlay(const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
+RenderStatus RenderEngine::renderCustomWithOverlay(const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
                                            const std::function<void(VkCommandBuffer)>& imguiBody,
                                            ScreenshotWriter* screenshotWriter,
                                            AppState*         state,
                                            const std::function<void(VkCommandBuffer)>& prePassBody) {
     VkClearValue cv{};
     cv.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
-    renderFrame(cv, shaderBody, imguiBody, screenshotWriter, state, prePassBody);
+    return renderFrame(cv, shaderBody, imguiBody, screenshotWriter, state, prePassBody);
 }
 
-void RenderEngine::renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody) {
+RenderStatus RenderEngine::renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody) {
     VkClearValue cv{};
     cv.color = {{ 0.063f, 0.063f, 0.063f, 1.0f }};
-    renderFrame(cv, nullptr, imguiBody, nullptr, nullptr, nullptr);
+    return renderFrame(cv, nullptr, imguiBody, nullptr, nullptr, nullptr);
 }

@@ -41,6 +41,13 @@ bool SdlWindow::pollEvents() {
             if (m_keyHandler) {
                 m_keyHandler(e.key.scancode, e.key.mod);
             }
+        } else if ((e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+                    e.type == SDL_EVENT_WINDOW_RESIZED) &&
+                   e.window.windowID == SDL_GetWindowID(m_window)) {
+            // Drawable size or DPI changed — the swapchain extent is now stale.
+            // Flag it so the frame loop recreates proactively rather than
+            // waiting for the next VK_ERROR_OUT_OF_DATE_KHR from acquire/present.
+            m_resizePending = true;
         } else if (e.type == SDL_EVENT_DROP_FILE) {
             if (m_dropHandler && e.drop.data) m_dropHandler(e.drop.data);
         }

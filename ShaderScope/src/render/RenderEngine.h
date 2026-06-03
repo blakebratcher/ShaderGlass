@@ -11,6 +11,16 @@ class ShaderPipeline;
 class ScreenshotWriter;
 struct AppState;
 
+// Outcome of a frame submission. SwapchainOutOfDate means the acquire or
+// present reported VK_ERROR_OUT_OF_DATE_KHR / VK_SUBOPTIMAL_KHR — the caller
+// must recreate the swapchain at the window's current drawable size and
+// retry the next frame. No GPU work was submitted in the OutOfDate-on-acquire
+// case; on present it was submitted but the image may not have been shown.
+enum class RenderStatus {
+    Ok,
+    SwapchainOutOfDate,
+};
+
 class RenderEngine {
 public:
     RenderEngine(VulkanContext& ctx, Swapchain& sc);
@@ -21,9 +31,9 @@ public:
     RenderEngine(RenderEngine&&)                 = delete;
     RenderEngine& operator=(RenderEngine&&)      = delete;
 
-    void renderClear(float r, float g, float b, float a);
-    void renderTexture(const Texture& src, ShaderPipeline& pipeline);
-    void renderImageView(VkImageView view, ShaderPipeline& pipeline);
+    RenderStatus renderClear(float r, float g, float b, float a);
+    RenderStatus renderTexture(const Texture& src, ShaderPipeline& pipeline);
+    RenderStatus renderImageView(VkImageView view, ShaderPipeline& pipeline);
 
     // Variants that also record an ImGui pass on top of the shader output.
     // `prePassBody` (optional) runs OUTSIDE any rendering scope — used by
@@ -33,12 +43,12 @@ public:
     // / pre-ImGui image is copied to a host-visible buffer (so the resulting
     // PNG has no ImGui chrome). The writer's fence is signalled by an empty
     // submit on the same queue after the main submit.
-    void renderTextureWithOverlay(const Texture& src, ShaderPipeline& pipeline,
+    RenderStatus renderTextureWithOverlay(const Texture& src, ShaderPipeline& pipeline,
                                   const std::function<void(VkCommandBuffer)>& imguiBody,
                                   ScreenshotWriter* screenshotWriter = nullptr,
                                   AppState*         state            = nullptr,
                                   const std::function<void(VkCommandBuffer)>& prePassBody = nullptr);
-    void renderImageViewWithOverlay(VkImageView view, ShaderPipeline& pipeline,
+    RenderStatus renderImageViewWithOverlay(VkImageView view, ShaderPipeline& pipeline,
                                     const std::function<void(VkCommandBuffer)>& imguiBody,
                                     ScreenshotWriter* screenshotWriter = nullptr,
                                     AppState*         state            = nullptr,
@@ -47,7 +57,7 @@ public:
     // Fully custom variant: caller controls the final shader body and any
     // pre-pass setup. Use this when the input view comes from a multi-pass
     // intermediate rather than a Texture / ImageView directly.
-    void renderCustomWithOverlay(const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
+    RenderStatus renderCustomWithOverlay(const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
                                  const std::function<void(VkCommandBuffer)>& imguiBody,
                                  ScreenshotWriter* screenshotWriter = nullptr,
                                  AppState*         state            = nullptr,
@@ -56,10 +66,10 @@ public:
     // Renders an ImGui-only frame with a dark background. Used when there
     // is no active capture (cold launch, no saved session). The clear colour
     // matches (16,16,16,255).
-    void renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody);
+    RenderStatus renderEmpty(const std::function<void(VkCommandBuffer)>& imguiBody);
 
 private:
-    void renderFrame(VkClearValue clearColor,
+    RenderStatus renderFrame(VkClearValue clearColor,
                      const std::function<void(VkCommandBuffer, VkExtent2D)>& shaderBody,
                      const std::function<void(VkCommandBuffer)>&             imguiBody,
                      ScreenshotWriter* screenshotWriter,

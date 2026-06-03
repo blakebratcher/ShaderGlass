@@ -1,20 +1,24 @@
 #include "Swapchain.h"
 #include "VulkanContext.h"
 #include "../util/VkCheck.h"
+#include "../util/Logging.h"
 #include <algorithm>
 #include <stdexcept>
 
 Swapchain::Swapchain(VulkanContext& ctx, VkSurfaceKHR surface,
                      uint32_t width, uint32_t height)
     : m_ctx(ctx), m_surface(surface) {
+    create(width, height, VK_NULL_HANDLE);
+}
 
+void Swapchain::create(uint32_t width, uint32_t height, VkSwapchainKHR oldSwapchain) {
     VkSurfaceCapabilitiesKHR caps{};
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx.physicalDevice(), surface, &caps);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_ctx.physicalDevice(), m_surface, &caps);
 
     uint32_t fc = 0;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice(), surface, &fc, nullptr));
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_ctx.physicalDevice(), m_surface, &fc, nullptr));
     std::vector<VkSurfaceFormatKHR> fmts(fc);
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice(), surface, &fc, fmts.data()));
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_ctx.physicalDevice(), m_surface, &fc, fmts.data()));
 
     if (fmts.empty()) {
         throw std::runtime_error("No surface formats available for the device/surface combo");
@@ -38,7 +42,7 @@ Swapchain::Swapchain(VulkanContext& ctx, VkSurfaceKHR surface,
         desiredImages = caps.maxImageCount;
 
     VkSwapchainCreateInfoKHR ci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
-    ci.surface          = surface;
+    ci.surface          = m_surface;
     ci.minImageCount    = desiredImages;
     ci.imageFormat      = pick.format;
     ci.imageColorSpace  = pick.colorSpace;
@@ -50,13 +54,20 @@ Swapchain::Swapchain(VulkanContext& ctx, VkSurfaceKHR surface,
     ci.compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     ci.presentMode      = VK_PRESENT_MODE_FIFO_KHR;
     ci.clipped          = VK_TRUE;
+    ci.oldSwapchain     = oldSwapchain;
 
-    VK_CHECK(vkCreateSwapchainKHR(ctx.device(), &ci, nullptr, &m_swapchain));
+    VK_CHECK(vkCreateSwapchainKHR(m_ctx.device(), &ci, nullptr, &m_swapchain));
+
+    // The old swapchain stays valid until the new one is created (so the driver
+    // can recycle its presentable images); it can be destroyed now.
+    if (oldSwapchain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(m_ctx.device(), oldSwapchain, nullptr);
+    }
 
     uint32_t ic = 0;
-    VK_CHECK(vkGetSwapchainImagesKHR(ctx.device(), m_swapchain, &ic, nullptr));
+    VK_CHECK(vkGetSwapchainImagesKHR(m_ctx.device(), m_swapchain, &ic, nullptr));
     m_images.resize(ic);
-    VK_CHECK(vkGetSwapchainImagesKHR(ctx.device(), m_swapchain, &ic, m_images.data()));
+    VK_CHECK(vkGetSwapchainImagesKHR(m_ctx.device(), m_swapchain, &ic, m_images.data()));
 
     m_views.resize(ic);
     for (uint32_t i = 0; i < ic; ++i) {
@@ -67,8 +78,26 @@ Swapchain::Swapchain(VulkanContext& ctx, VkSurfaceKHR surface,
         vci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         vci.subresourceRange.levelCount = 1;
         vci.subresourceRange.layerCount = 1;
-        VK_CHECK(vkCreateImageView(ctx.device(), &vci, nullptr, &m_views[i]));
+        VK_CHECK(vkCreateImageView(m_ctx.device(), &vci, nullptr, &m_views[i]));
     }
+}
+
+void Swapchain::recreate(uint32_t width, uint32_t height) {
+    // Make sure nothing is reading the soon-to-be-destroyed views/images.
+    vkDeviceWaitIdle(m_ctx.device());
+
+    for (auto v : m_views) vkDestroyImageView(m_ctx.device(), v, nullptr);
+    m_views.clear();
+    m_images.clear();
+
+    // Hand the old handle to create() so the driver can reuse presentable
+    // images; create() destroys it once the new swapchain exists.
+    VkSwapchainKHR old = m_swapchain;
+    m_swapchain = VK_NULL_HANDLE;
+    create(width, height, old);
+
+    LOG_DEBUG("Swapchain recreated at %ux%u (%u images)",
+              m_extent.width, m_extent.height, (uint32_t)m_images.size());
 }
 
 Swapchain::~Swapchain() {
