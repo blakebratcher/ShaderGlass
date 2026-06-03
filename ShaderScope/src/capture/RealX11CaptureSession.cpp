@@ -1,12 +1,22 @@
 #include "RealX11CaptureSession.h"
 #include "BadWindowRegistry.h"
+#include "X11DmaBufPolicy.h"
 #include "util/Logging.h"
+#include "render/DmaBufImport.h"
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/Xatom.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+
+#if SHADERSCOPE_HAVE_XCB_DRI3
+#include <X11/Xlib-xcb.h>
+#include <xcb/xcb.h>
+#include <xcb/dri3.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -233,10 +243,20 @@ void RealX11CaptureSession::start(const SourceInfo& source) {
         throw std::runtime_error("X11: unrecognized source id: " + id);
     }
 
+    // Decide the DMA-BUF fast path once per session (env + DRI3 + Vulkan).
+    m_dmaBufActive = detectDmaBufPath();
+    if (m_dmaBufActive) {
+        LOG_INFO("X11: DRI3 DMA-BUF fast path enabled");
+    } else {
+        LOG_INFO("X11: using CPU capture path (IncludeInferiors XCopyArea + XShm)");
+    }
+
     allocSharedImage(m_width, m_height);
 }
 
 void RealX11CaptureSession::stop() {
+    freeDmaImport();
+    freeStaging();
     freeSharedImage();
     if (m_havePixmap && m_pixmap) {
         XFreePixmap(m_display, m_pixmap);
@@ -250,6 +270,7 @@ void RealX11CaptureSession::stop() {
                                    CompositeRedirectAutomatic);
         m_windowTarget = 0;
     }
+    m_dmaBufActive = false;
     m_sourceKind = SourceKind::Unset;
     m_width = m_height = 0;
 }
@@ -285,15 +306,45 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
         return std::nullopt;
     }
 
+    // Composited capture (Part 1): for monitor sources, server-side-copy the
+    // root window — with subwindow_mode = IncludeInferiors — into a staging
+    // pixmap. The copy includes the composite overlay window's content, so it
+    // reflects the composed screen even under GLX-backend compositors (picom
+    // backend="glx" etc.), where the root pixmap itself only holds wallpaper.
+    //
+    // After a successful copy, the staging pixmap holds the cropped region at
+    // origin (0,0); both the DMA-BUF and CPU read paths below target it.
+    Drawable readDrawable = targetDrawable();
+    if (readDrawable == 0) return std::nullopt;
+    int readX = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropX : 0;
+    int readY = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropY : 0;
+
+    if (needsCompositeCopy() && ensureStaging(m_width, m_height)) {
+        XCopyArea(m_display, m_root, m_stagingPixmap, m_copyGC,
+                  readX, readY, m_width, m_height, 0, 0);
+        readDrawable = m_stagingPixmap;
+        readX = readY = 0;
+    }
+
+    // DMA-BUF fast path (Part 2): export the staging (or window backing)
+    // pixmap via DRI3 and hand the consumer a zero-copy VkImage. The XCopyArea
+    // above already refreshed the pixmap's GPU contents this frame.
+    if (m_dmaBufActive) {
+        if (auto dmaFrame = grabViaDmaBuf()) {
+            return dmaFrame;
+        }
+        // Import/export failed — disable for the rest of the session and fall
+        // through to the CPU path, which always works.
+        LOG_WARN("X11: DRI3 DMA-BUF export failed; falling back to CPU path");
+        freeDmaImport();
+        m_dmaBufActive = false;
+    }
+
     if (!m_haveXShm) {
-        Drawable d = targetDrawable();
-        if (d == 0) return std::nullopt;
-        int srcX = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropX : 0;
-        int srcY = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropY : 0;
         // XGetImage allocates a new XImage each call; we copy out the data
         // into a thread-local staging buffer so the caller's pointer
         // lifetime matches the rest of the contract.
-        XImage* img = XGetImage(m_display, d, srcX, srcY,
+        XImage* img = XGetImage(m_display, readDrawable, readX, readY,
                                 m_width, m_height, AllPlanes, ZPixmap);
         if (!img) return std::nullopt;
         m_xgetImageStaging.assign(img->data, img->data + size_t(img->bytes_per_line) * img->height);
@@ -308,10 +359,9 @@ std::optional<X11SessionFrame> RealX11CaptureSession::grab() {
         return f;
     }
 
-    Drawable d = targetDrawable();
-    if (d == 0) return std::nullopt;
-    int srcX = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropX : 0;
-    int srcY = (m_sourceKind == SourceKind::MonitorOutput) ? m_cropY : 0;
+    Drawable d    = readDrawable;
+    int      srcX = readX;
+    int      srcY = readY;
 
     if (!XShmGetImage(m_display, d, m_image, srcX, srcY, AllPlanes)) {
         // Try one teardown + reallocate at current size in case of transient
@@ -404,6 +454,8 @@ void RealX11CaptureSession::freeSharedImage() {
 
 bool RealX11CaptureSession::reallocIfDimsChanged(uint32_t newW, uint32_t newH) {
     if (newW == m_width && newH == m_height) return false;
+    freeDmaImport();   // stale dims; rebuilt on next grab at the new size
+    freeStaging();     // stale dims; rebuilt on next grab at the new size
     freeSharedImage();
     if (m_sourceKind == SourceKind::XWindow && m_havePixmap) {
         XFreePixmap(m_display, m_pixmap);
@@ -442,4 +494,221 @@ bool RealX11CaptureSession::windowHasHiddenState(Window w) const {
         XFree(data);
     }
     return isHidden;
+}
+
+// ---------------------------------------------------------------------------
+// Composited capture (Part 1): IncludeInferiors XCopyArea staging
+// ---------------------------------------------------------------------------
+
+bool RealX11CaptureSession::needsCompositeCopy() const {
+    // Window sources read their own composite-redirected backing pixmap, which
+    // already holds the window's full content. Only root-reading sources need
+    // the IncludeInferiors copy to capture the composed overlay.
+    return m_sourceKind == SourceKind::MonitorRoot ||
+           m_sourceKind == SourceKind::MonitorOutput;
+}
+
+bool RealX11CaptureSession::ensureStaging(uint32_t w, uint32_t h) {
+    if (m_haveStaging && m_stagingPixmap && m_copyGC) return true;
+
+    int screen = DefaultScreen(m_display);
+    int depth  = DefaultDepth(m_display, screen);
+
+    m_stagingPixmap = XCreatePixmap(m_display, m_root, w, h, depth);
+    if (!m_stagingPixmap) {
+        LOG_WARN("X11: XCreatePixmap(%ux%u) failed; using direct-root grab", w, h);
+        return false;
+    }
+
+    XGCValues gcv{};
+    gcv.subwindow_mode = IncludeInferiors;
+    gcv.graphics_exposures = False;
+    m_copyGC = XCreateGC(m_display, m_root,
+                         GCSubwindowMode | GCGraphicsExposures, &gcv);
+    if (!m_copyGC) {
+        LOG_WARN("X11: XCreateGC failed; using direct-root grab");
+        XFreePixmap(m_display, m_stagingPixmap);
+        m_stagingPixmap = 0;
+        return false;
+    }
+
+    m_haveStaging = true;
+    return true;
+}
+
+void RealX11CaptureSession::freeStaging() {
+    if (m_copyGC) {
+        XFreeGC(m_display, m_copyGC);
+        m_copyGC = nullptr;
+    }
+    if (m_stagingPixmap) {
+        XFreePixmap(m_display, m_stagingPixmap);
+        m_stagingPixmap = 0;
+    }
+    m_haveStaging = false;
+}
+
+// ---------------------------------------------------------------------------
+// DRI3 DMA-BUF fast path (Part 2)
+// ---------------------------------------------------------------------------
+
+bool RealX11CaptureSession::detectDmaBufPath() {
+    X11DmaBufPolicy::Inputs in;
+    in.disabledByEnv = X11DmaBufPolicy::envForcesDisable(
+        std::getenv("SHADERSCOPE_DISABLE_X11_DMABUF"));
+    in.hasVulkanContext = (m_vkCtx != nullptr);
+
+#if SHADERSCOPE_HAVE_XCB_DRI3
+    if (m_vkCtx) {
+        in.vulkanSupportsDmaBuf = DmaBufImport::isSupported(*m_vkCtx);
+    }
+    // Probe DRI3 once. xcb_dri3_query_version returns the server's supported
+    // version; any reply (>= 1.0) means buffer(s)_from_pixmap is usable.
+    if (in.hasVulkanContext && in.vulkanSupportsDmaBuf && !in.disabledByEnv) {
+        xcb_connection_t* conn = XGetXCBConnection(m_display);
+        if (conn) {
+            auto cookie = xcb_dri3_query_version(conn, 1, 2);
+            xcb_generic_error_t* err = nullptr;
+            xcb_dri3_query_version_reply_t* reply =
+                xcb_dri3_query_version_reply(conn, cookie, &err);
+            if (reply) {
+                in.dri3Available = true;
+                LOG_DEBUG("X11: DRI3 version %u.%u",
+                          reply->major_version, reply->minor_version);
+                free(reply);
+            }
+            if (err) free(err);
+        }
+    }
+#endif
+
+    return X11DmaBufPolicy::shouldUseDmaBuf(in);
+}
+
+#if SHADERSCOPE_HAVE_XCB_DRI3
+bool RealX11CaptureSession::ensureDmaImport(Drawable pixmap, uint32_t w, uint32_t h) {
+    if (m_dmaImportValid && m_dmaImportW == (int)w && m_dmaImportH == (int)h) {
+        return true;
+    }
+    freeDmaImport();
+
+    xcb_connection_t* conn = XGetXCBConnection(m_display);
+    if (!conn) return false;
+
+    int      fd        = -1;
+    uint32_t stride    = 0;
+    uint32_t offset    = 0;
+    uint64_t modifier  = 0;  // DRM_FORMAT_MOD_INVALID handled by importer fallback
+    bool     haveMulti = false;
+
+    // Prefer the v1.2 multi-plane API (gives us the modifier). Single-plane
+    // (ARGB8888) is the only layout we support, so n>1 → bail to CPU.
+    auto mcookie = xcb_dri3_buffers_from_pixmap(conn, (xcb_pixmap_t)pixmap);
+    xcb_generic_error_t* merr = nullptr;
+    xcb_dri3_buffers_from_pixmap_reply_t* mreply =
+        xcb_dri3_buffers_from_pixmap_reply(conn, mcookie, &merr);
+    if (mreply) {
+        if (mreply->nfd >= 1) {
+            int* fds = xcb_dri3_buffers_from_pixmap_reply_fds(conn, mreply);
+            const uint32_t* strides = xcb_dri3_buffers_from_pixmap_strides(mreply);
+            const uint32_t* offsets = xcb_dri3_buffers_from_pixmap_offsets(mreply);
+            fd       = fds[0];
+            stride   = strides ? strides[0] : w * 4;
+            offset   = offsets ? offsets[0] : 0;
+            modifier = mreply->modifier;
+            haveMulti = true;
+            // Close any extra plane fds we won't use (multi-plane unsupported).
+            for (int i = 1; i < mreply->nfd; ++i) {
+                if (fds[i] >= 0) ::close(fds[i]);
+            }
+            if (mreply->nfd > 1) {
+                LOG_WARN("X11: DRI3 pixmap has %d planes; only single-plane "
+                         "ARGB8888 supported — falling back to CPU", mreply->nfd);
+                if (fd >= 0) ::close(fd);
+                free(mreply);
+                if (merr) free(merr);
+                return false;
+            }
+        }
+        free(mreply);
+    }
+    if (merr) { free(merr); merr = nullptr; }
+
+    if (!haveMulti) {
+        // v1.0 fallback: single plane, no modifier (assume linear/invalid).
+        auto cookie = xcb_dri3_buffer_from_pixmap(conn, (xcb_pixmap_t)pixmap);
+        xcb_generic_error_t* err = nullptr;
+        xcb_dri3_buffer_from_pixmap_reply_t* reply =
+            xcb_dri3_buffer_from_pixmap_reply(conn, cookie, &err);
+        if (!reply) {
+            if (err) free(err);
+            return false;
+        }
+        if (reply->nfd >= 1) {
+            int* fds = xcb_dri3_buffer_from_pixmap_reply_fds(conn, reply);
+            fd     = fds[0];
+            stride = reply->stride;
+            offset = 0;
+            modifier = 0;  // DRM_FORMAT_MOD_LINEAR — best-effort guess for v1.0
+        }
+        free(reply);
+        if (err) free(err);
+    }
+
+    if (fd < 0) return false;
+
+    try {
+        // ARGB8888 on a 32-bit TrueColor visual (BGRA in memory).
+        m_dmaImport = DmaBufImport::importFd(*m_vkCtx, fd, w, h,
+                                             0x34325241 /*DRM_FORMAT_ARGB8888*/,
+                                             modifier, offset, stride);
+    } catch (const std::exception& e) {
+        LOG_WARN("X11: DMA-BUF import failed (%s)", e.what());
+        ::close(fd);
+        return false;
+    }
+    // importFd dup()'d the fd; close our copy.
+    ::close(fd);
+
+    m_dmaImportValid = true;
+    m_dmaImportW = (int)w;
+    m_dmaImportH = (int)h;
+    LOG_INFO("X11: DMA-BUF import succeeded (%ux%u, modifier 0x%llx)",
+             w, h, (unsigned long long)modifier);
+    return true;
+}
+
+std::optional<X11SessionFrame> RealX11CaptureSession::grabViaDmaBuf() {
+    // Which pixmap holds this frame's pixels: the IncludeInferiors staging
+    // pixmap for monitor sources, or the window's backing pixmap.
+    Drawable pixmap = needsCompositeCopy() ? m_stagingPixmap : targetDrawable();
+    if (pixmap == 0) return std::nullopt;
+
+    if (!ensureDmaImport(pixmap, m_width, m_height)) return std::nullopt;
+
+    // Make sure the server-side copy/render into the pixmap is visible to the
+    // GPU import before the consumer samples it this frame.
+    XSync(m_display, False);
+
+    X11SessionFrame f;
+    f.width          = m_width;
+    f.height         = m_height;
+    f.fourcc         = 0x34325241;  // ARGB8888 (BGRA in memory)
+    f.importedDmaBuf = &m_dmaImport;
+    f.modifier       = 0;
+    return f;
+}
+#else
+bool RealX11CaptureSession::ensureDmaImport(Drawable, uint32_t, uint32_t) { return false; }
+std::optional<X11SessionFrame> RealX11CaptureSession::grabViaDmaBuf() { return std::nullopt; }
+#endif
+
+void RealX11CaptureSession::freeDmaImport() {
+#if SHADERSCOPE_HAVE_XCB_DRI3
+    if (m_dmaImportValid && m_vkCtx) {
+        DmaBufImport::destroy(*m_vkCtx, m_dmaImport);
+    }
+#endif
+    m_dmaImportValid = false;
+    m_dmaImportW = m_dmaImportH = 0;
 }

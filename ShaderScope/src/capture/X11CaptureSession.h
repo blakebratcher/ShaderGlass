@@ -6,14 +6,26 @@
 #include <utility>
 #include <vector>
 
-// A single CPU-side frame returned by an X11CaptureSession::grab() call.
-// `data` is owned by the session — valid until the next grab() or stop().
+// A single frame returned by an X11CaptureSession::grab() call.
+//
+// By default this is a CPU-side frame: `data` is owned by the session — valid
+// until the next grab() or stop().
+//
+// When the DRI3 DMA-BUF fast path is active, `importedDmaBuf` is non-null and
+// points to an ImportedDmaBuf the session owns (cached + reused across grabs).
+// In that case `data` is null and the consumer must sample `importedDmaBuf`
+// directly. The session keeps the GPU image up to date via a server-side
+// XCopyArea each grab.
 struct X11SessionFrame {
     const uint8_t* data   = nullptr;
     size_t         stride = 0;
     uint32_t       fourcc = 0;     // DRM fourcc, e.g. DRM_FORMAT_ARGB8888 (BGRA in memory)
     uint32_t       width  = 0;
     uint32_t       height = 0;
+
+    // DMA-BUF fast path (DRI3). Null on the CPU path.
+    void*    importedDmaBuf = nullptr;  // ImportedDmaBuf* owned by the session
+    uint64_t modifier       = 0;        // DRM format modifier (informational)
 };
 
 // Pull-based capture session for X11 sources (monitors, top-level windows).

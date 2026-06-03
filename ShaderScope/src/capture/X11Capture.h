@@ -6,6 +6,8 @@
 #include <optional>
 #include <atomic>
 
+class VulkanContext;
+
 class X11Capture : public CaptureBackend {
 public:
     explicit X11Capture(std::unique_ptr<X11CaptureSession> session);
@@ -13,6 +15,11 @@ public:
 
     X11Capture(const X11Capture&)            = delete;
     X11Capture& operator=(const X11Capture&) = delete;
+
+    // Wire a VulkanContext to enable the DRI3 DMA-BUF zero-copy fast path on
+    // the underlying RealX11CaptureSession. Must be called before
+    // selectSource(). No-op for sessions that don't support it.
+    void setVulkanContext(VulkanContext* ctx);
 
     std::string                  kindName() const override { return "x11-screen"; }
     std::vector<SourceInfo>      enumerateSources() override;

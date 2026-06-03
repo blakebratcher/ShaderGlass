@@ -11,6 +11,7 @@
 #include "capture/WaylandCapture.h"
 #include "capture/PortalCaptureSession.h"
 #include "capture/X11Capture.h"
+#include "capture/X11DmaBufPolicy.h"
 #include "capture/RealX11CaptureSession.h"
 #include "ui/AppState.h"
 #include "ui/ImGuiLayer.h"
@@ -54,6 +55,7 @@ struct Args {
     bool debugPortal = false;
     std::string captureKind;
     std::string source;          // --source value for x11-screen
+    std::string dumpCaptureFrame; // --dump-capture-frame <out.png>: grab one frame, write PNG, exit
 };
 
 struct ParseResult {
@@ -189,6 +191,9 @@ static ParseResult parseArgs(int argc, char** argv) {
         } else if (s == "--source")       {
             const char* v = needValue(s, i); if (!v) return r;
             a.source = v;
+        } else if (s == "--dump-capture-frame") {
+            const char* v = needValue(s, i); if (!v) return r;
+            a.dumpCaptureFrame = v;
         } else if (s == "--width")        {
             const char* v = needValue(s, i); if (!v) return r;
             auto d = parseDim(v, "--width", r.errorMsg);
@@ -492,8 +497,12 @@ static int runWindowed(Args& a) {
             std::make_unique<PortalCaptureSession>(&ctx));
         state.capture->selectSource(state.capture->enumerateSources()[0]);
     } else if (a.captureKind == "x11-screen") {
-        state.capture = std::make_unique<X11Capture>(
+        auto x11 = std::make_unique<X11Capture>(
             std::make_unique<RealX11CaptureSession>());
+        // Enable the DRI3 DMA-BUF zero-copy fast path (falls back to CPU
+        // automatically if DRI3/Vulkan support is missing).
+        x11->setVulkanContext(&ctx);
+        state.capture = std::move(x11);
         auto sources = state.capture->enumerateSources();
 
         if (!a.source.empty()) {
@@ -920,6 +929,149 @@ static int runCompilePreset(const Args& a) {
     return 0;
 }
 
+// Hidden diagnostic: grab ONE frame from an X11 source, write it to a PNG,
+// print luminance stats, and exit. Used to verify the M3.5 composited-capture
+// fix — before the fix a GLX-backend compositor returned only the wallpaper
+// (uniform dark grey, mean ~19/255); after the fix the frame shows real
+// composed window content (much higher variance / mean).
+//
+// Forces the CPU (IncludeInferiors XCopyArea + XShm) path so it always yields
+// host-readable pixels to measure, regardless of whether the DMA-BUF fast
+// path is also available. The fast path is verified separately at runtime.
+static int runDumpCaptureFrame(const Args& a) {
+    // SHADERSCOPE_DUMP_VERIFY_DMABUF=1 verifies the DRI3 DMA-BUF fast path
+    // instead of dumping CPU pixels: builds a headless Vulkan context, wires
+    // it, and asserts a Kind::DmaBuf frame is delivered.
+    const bool verifyDmaBuf =
+        X11DmaBufPolicy::envForcesDisable(std::getenv("SHADERSCOPE_DUMP_VERIFY_DMABUF"));
+
+    std::unique_ptr<VulkanContext> vkCtx;
+    if (verifyDmaBuf) {
+        vkCtx = std::make_unique<VulkanContext>(
+            VulkanContextOptions{.headless = true, .enableValidation = false});
+    } else {
+        // Force the CPU path so we get host-visible pixels for the stats/PNG.
+        setenv("SHADERSCOPE_DISABLE_X11_DMABUF", "1", /*overwrite=*/1);
+    }
+
+    auto x11 = std::make_unique<X11Capture>(
+        std::make_unique<RealX11CaptureSession>());
+    if (verifyDmaBuf) x11->setVulkanContext(vkCtx.get());
+    std::vector<SourceInfo> sources;
+    try {
+        sources = x11->enumerateSources();
+    } catch (const std::exception& e) {
+        LOG_ERROR("dump-capture-frame: cannot enumerate X11 sources: %s", e.what());
+        return 2;
+    }
+    if (sources.empty()) {
+        LOG_ERROR("dump-capture-frame: no X11 sources");
+        return 2;
+    }
+
+    // Pick: --source match, else the first non-root monitor, else root.
+    SourceInfo picked = sources[0];
+    if (!a.source.empty()) {
+        SourceInfo m;
+        if (matchSource(sources, a.source, m) == SourceMatchResult::Picked) {
+            picked = m;
+        } else {
+            LOG_WARN("dump-capture-frame: --source '%s' didn't match; using '%s'",
+                     a.source.c_str(), picked.id.c_str());
+        }
+    } else {
+        for (const auto& s : sources) {
+            if (s.id.rfind("monitor:", 0) == 0 && s.id != "monitor:root") {
+                picked = s; break;
+            }
+        }
+    }
+    LOG_INFO("dump-capture-frame: source '%s' (%s)",
+             picked.id.c_str(), picked.displayName.c_str());
+
+    x11->selectSource(picked);
+
+    // First grab can return nullopt (resize-skip); retry a few times.
+    std::optional<CapturedFrame> f;
+    for (int attempt = 0; attempt < 30 && !f; ++attempt) {
+        f = x11->acquireFrame();
+        if (!f) std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
+    if (!f) {
+        LOG_ERROR("dump-capture-frame: no frame after retries");
+        return 6;
+    }
+
+    if (verifyDmaBuf) {
+        if (f->kind == CapturedFrame::Kind::DmaBuf && f->importedDmaBuf) {
+            auto* imp = static_cast<ImportedDmaBuf*>(f->importedDmaBuf);
+            LOG_INFO("dump-capture-frame: DMA-BUF path OK — kind=DmaBuf %ux%u "
+                     "VkImage=%p VkImageView=%p", f->width, f->height,
+                     (void*)imp->image, (void*)imp->view);
+            x11->release(*f);
+            return 0;
+        }
+        LOG_ERROR("dump-capture-frame: expected DmaBuf frame but got kind=%d "
+                  "(DMA-BUF path not active)", (int)f->kind);
+        x11->release(*f);
+        return 7;
+    }
+
+    if (!f->data) {
+        LOG_ERROR("dump-capture-frame: no CPU frame after retries");
+        return 6;
+    }
+
+    const uint32_t w = f->width, h = f->height;
+    const size_t   stride = f->stride;
+    // BGRA in memory. Compute luminance mean + variance over a downsample.
+    const uint32_t step = std::max<uint32_t>(1, w / 256);
+    double sum = 0, sumSq = 0;
+    size_t n = 0;
+    uint8_t minL = 255, maxL = 0;
+    for (uint32_t y = 0; y < h; y += step) {
+        const uint8_t* row = f->data + size_t(y) * stride;
+        for (uint32_t x = 0; x < w; x += step) {
+            const uint8_t* px = row + size_t(x) * 4;
+            // Rec.601 luma on BGRA.
+            double lum = 0.114 * px[0] + 0.587 * px[1] + 0.299 * px[2];
+            sum += lum; sumSq += lum * lum; ++n;
+            uint8_t li = (uint8_t)lum;
+            if (li < minL) minL = li;
+            if (li > maxL) maxL = li;
+        }
+    }
+    double mean = n ? sum / n : 0.0;
+    double var  = n ? (sumSq / n - mean * mean) : 0.0;
+    LOG_INFO("dump-capture-frame: %ux%u  mean_luma=%.1f variance=%.1f min=%u max=%u (n=%zu)",
+             w, h, mean, var, (unsigned)minL, (unsigned)maxL, n);
+
+    // Write RGBA PNG (swap B/R from the BGRA capture).
+    if (!a.dumpCaptureFrame.empty()) {
+        std::vector<uint8_t> rgba(size_t(w) * h * 4);
+        for (uint32_t y = 0; y < h; ++y) {
+            const uint8_t* src = f->data + size_t(y) * stride;
+            uint8_t* dst = rgba.data() + size_t(y) * w * 4;
+            for (uint32_t x = 0; x < w; ++x) {
+                dst[x*4+0] = src[x*4+2]; // R <- R
+                dst[x*4+1] = src[x*4+1]; // G
+                dst[x*4+2] = src[x*4+0]; // B <- B
+                dst[x*4+3] = 255;
+            }
+        }
+        if (!stbi_write_png(a.dumpCaptureFrame.c_str(), (int)w, (int)h, 4,
+                            rgba.data(), (int)(w * 4))) {
+            LOG_ERROR("dump-capture-frame: stbi_write_png failed for %s",
+                      a.dumpCaptureFrame.c_str());
+            x11->release(*f);
+            return 6;
+        }
+        LOG_INFO("dump-capture-frame: wrote %s", a.dumpCaptureFrame.c_str());
+    }
+    x11->release(*f);
+    return 0;
+}
+
 static int runDebugPortal(const Args&) {
     PortalCaptureSession session;
     auto sources = session.selectSource();
@@ -1012,6 +1164,7 @@ int main(int argc, char** argv) {
     }
     try {
         if (a.debugPortal) return runDebugPortal(a);
+        if (!a.dumpCaptureFrame.empty()) return runDumpCaptureFrame(a);
         if (!a.compilePreset.empty()) return runCompilePreset(a);
         return a.headless ? runHeadless(a) : runWindowed(a);
     } catch (const std::exception& e) {

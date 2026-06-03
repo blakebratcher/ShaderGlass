@@ -1,7 +1,15 @@
 #include "X11Capture.h"
+#include "RealX11CaptureSession.h"
 
 X11Capture::X11Capture(std::unique_ptr<X11CaptureSession> session)
     : m_session(std::move(session)) {}
+
+void X11Capture::setVulkanContext(VulkanContext* ctx) {
+    // Only the real session knows about Vulkan/DRI3; the fake one ignores it.
+    if (auto* real = dynamic_cast<RealX11CaptureSession*>(m_session.get())) {
+        real->setVulkanContext(ctx);
+    }
+}
 
 X11Capture::~X11Capture() {
     if (m_session && m_started.load()) m_session->stop();
@@ -26,13 +34,21 @@ std::optional<CapturedFrame> X11Capture::acquireFrame() {
     if (!raw) return std::nullopt;
 
     CapturedFrame f;
-    f.kind          = CapturedFrame::Kind::CpuBuffer;
     f.width         = raw->width;
     f.height        = raw->height;
-    f.stride        = raw->stride;
     f.fourcc        = raw->fourcc;
-    f.data          = raw->data;
     f.sessionHandle = nullptr;  // no per-frame resource for X11/SHM
+    if (raw->importedDmaBuf) {
+        // DRI3 zero-copy fast path: the session owns a cached ImportedDmaBuf
+        // kept current via its per-frame XCopyArea. No CPU pixels to ship.
+        f.kind           = CapturedFrame::Kind::DmaBuf;
+        f.modifier       = raw->modifier;
+        f.importedDmaBuf = raw->importedDmaBuf;
+    } else {
+        f.kind   = CapturedFrame::Kind::CpuBuffer;
+        f.stride = raw->stride;
+        f.data   = raw->data;
+    }
     m_lastWidth.store((int)raw->width);
     m_lastHeight.store((int)raw->height);
     return f;

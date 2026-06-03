@@ -5,6 +5,17 @@ pkg_check_modules(DBUS     REQUIRED IMPORTED_TARGET dbus-1)
 pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
 pkg_check_modules(LIBDRM   REQUIRED libdrm)
 pkg_check_modules(X11      REQUIRED IMPORTED_TARGET x11 xcomposite xext xrandr)
+
+# Optional: DRI3 DMA-BUF zero-copy fast path for X11 capture. If any of these
+# aren't present we silently fall back to the CPU (IncludeInferiors XCopyArea +
+# XShm) path, which works under every compositor backend.
+pkg_check_modules(XCB_DRI3 IMPORTED_TARGET xcb-dri3 x11-xcb xcb)
+if(XCB_DRI3_FOUND)
+    message(STATUS "X11 DRI3 DMA-BUF fast path: enabled (xcb-dri3 found)")
+else()
+    message(STATUS "X11 DRI3 DMA-BUF fast path: disabled (xcb-dri3 not found)")
+endif()
+
 find_program(GLSLC NAMES glslc REQUIRED
     DOC "glslang/glslc compiler")
 
@@ -70,6 +81,7 @@ add_library(shaderscope_core STATIC
     src/capture/BadWindowRegistry.cpp
     src/capture/FakeWaylandCaptureSession.cpp
     src/capture/FakeX11CaptureSession.cpp
+    src/capture/X11DmaBufPolicy.cpp
     src/capture/RealX11CaptureSession.cpp
     src/capture/PortalCaptureSession.cpp
     src/capture/WaylandCapture.cpp
@@ -98,6 +110,12 @@ target_link_libraries(shaderscope_core PUBLIC
     PkgConfig::PIPEWIRE
     PkgConfig::X11
 )
+if(XCB_DRI3_FOUND)
+    target_link_libraries(shaderscope_core PUBLIC PkgConfig::XCB_DRI3)
+    target_compile_definitions(shaderscope_core PUBLIC SHADERSCOPE_HAVE_XCB_DRI3=1)
+else()
+    target_compile_definitions(shaderscope_core PUBLIC SHADERSCOPE_HAVE_XCB_DRI3=0)
+endif()
 add_dependencies(shaderscope_core builtin_shaders_gen)
 
 # Version stamp injected at configure time. Re-run CMake (or do a clean
