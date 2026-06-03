@@ -186,7 +186,9 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
 `docs/superpowers/plans/`. Per-milestone manual smoke checklists live at
 `docs/manual-tests-m{1..5}*.md`.
 
-## Known runtime bug
+## Known runtime bugs
+
+### Slang vertex-input / semantic-UBO renders all-black
 
 Slang shaders that declare RetroArch-style vertex inputs (`layout(location=0)
 in vec4 Position; layout(location=1) in vec2 TexCoord;`) AND read semantic
@@ -196,14 +198,65 @@ write MVP/SourceSize/OutputSize/OriginalSize/FrameCount into the UBO, so
 the vertex shader multiplies an undefined `Position` by an undefined
 `MVP` and produces a degenerate triangle.
 
-The bundled `stock.slang` / `passthrough.slang` use `gl_VertexIndex` and
-synthesize their own positions, so they render correctly — every CRT
-preset under `shaders/starter/` (`crt-easymode`, `crt-aperture`, `crt-geom`,
-etc.) belongs to the broken family. A real fix needs SPIR-V struct-member
-reflection (`OpMemberName` + `OpMemberDecorate Offset`) so the runtime
-can write semantics at their declared offsets; a naive "always bind a
-fullscreen-quad vertex buffer" attempt broke the `gl_VertexIndex` shaders
-too, so the work is parked for a future milestone.
+The only `gl_VertexIndex`-based shader in this tree is the **built-in
+passthrough** compiled into the binary from `ShaderScope/shaders/passthrough.{vert,frag}`
+(used when no `--preset` is given and the active preset is null). Verified
+2026-05-21: headless run with no `--preset` against `4x4_red.png` →
+65536/65536 red pixels.
+
+The test fixture `ShaderScope/tests/data/stock.slangp` also uses
+`gl_VertexIndex` and is what the e2e test suite exercises — which is why
+77/77 tests pass even though the bug is live.
+
+Everything under `shaders/starter/` belongs to the broken family,
+including `passthrough.slangp`, `passthrough-2pass.slangp`, and every
+`crt-*.slangp` — they all declare `in vec4 Position` + `gl_Position =
+global.MVP * Position`. Loading any of them on Linux produces an all-black
+output. A real fix needs SPIR-V struct-member reflection (`OpMemberName`
++ `OpMemberDecorate Offset`) so the runtime can write semantics at their
+declared offsets; a naive "always bind a fullscreen-quad vertex buffer"
+attempt broke the `gl_VertexIndex` shaders too, so the work is parked
+for a future milestone.
+
+### X11 capture sees only the un-composed root under GLX-backend compositors
+
+`RealX11CaptureSession` calls `XShmGetImage` on the X root with an
+XRandR-derived crop. On X servers where the running compositor uses an
+OpenGL/Vulkan backend (picom with `backend = "glx"`, compton with
+`--backend glx`, kwin_x11 with the OpenGL backend, etc.), the compositor
+draws the composed framebuffer directly via GL and never writes back to
+the root pixmap. The XShm grab succeeds — it just returns the
+un-composed root (typically just the wallpaper, or uniform near-black if
+xfdesktop hasn't drawn one), with all window content invisible.
+
+Verified 2026-05-21 on Blake's machine (picom `backend = "glx"` + XFCE):
+first 1024 captured bytes from DP-4 averaged ~19/255, uniform dark grey,
+while DP-4 visibly had real windows on it. The grab path returned no
+error — the diagnostics had to be added inside `grab()` to confirm pixels
+were being read.
+
+Workarounds for a user hitting this: switch picom to `backend = "xrender"`
+(xrender composites through the X server, so root reflects the final
+image), or stop picom while running ShaderScope. A proper fix needs the
+**M3.5 DMA-BUF fast path** (EGL + DRI3) listed in the milestone table —
+DMA-BUF import bypasses the un-composed-root problem entirely. Note this
+is a real capture-path limitation, not a render bug: the rest of the
+pipeline behaves correctly given empty input.
+
+### `VK_ERROR_OUT_OF_DATE_KHR` is fatal in `RenderEngine::renderFrame`
+
+`vkAcquireNextImageKHR` at `ShaderScope/src/render/RenderEngine.cpp:76`
+runs through `VK_CHECK`, which aborts on anything other than
+`VK_SUCCESS` / `VK_SUBOPTIMAL_KHR`. `VK_ERROR_OUT_OF_DATE_KHR` should
+not be fatal — the correct response is to recreate the swapchain at the
+window's current size and retry the frame. Verified 2026-05-21:
+`shaderscope <image.png>` (static-image GUI launch) hard-exits on first
+frame with this error, before the window has a chance to draw anything.
+GUI capture launches happen to dodge it because their first frame
+arrives later, after SDL3 has settled the window geometry. Fix: detect
+`OUT_OF_DATE_KHR` / `SUBOPTIMAL_KHR` from acquire and present, mark the
+swapchain dirty, recreate at the next iteration, and `continue;` the
+frame.
 
 ## Code gotchas
 
