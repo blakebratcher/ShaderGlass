@@ -6,6 +6,27 @@ Semantic Versioning starting from `0.1.0-preview`.
 
 ## [Unreleased]
 
+### Added
+
+- **Frame-history textures (M7)** — `OriginalHistory#`, `PassOutput#`, and
+  `PassFeedback#` semantic samplers are now real. History frames live in a
+  ring of offscreen targets filled by a builtin-passthrough blit each
+  frame; feedback-sampled passes double-buffer their intermediate (parity
+  swap per frame); pass outputs bind the matching intermediate rendered
+  earlier in the same frame. `.slangp` aliases (`aliasN` / `#pragma name`)
+  resolve for samplers and the `OriginalHistorySize#` / `PassOutputSize#` /
+  `PassFeedbackSize#` UBO semantics. Motion-blur/temporal community
+  shaders now render correctly; a `motionblur.slangp` starter preset
+  demonstrates the feature. Feedback of the final (swapchain) pass remains
+  unsupported (warns at preset build, binds black).
+- **Click-through X11 overlay (M7)** — `F5` empties the window's XShape
+  *input* region so clicks land on whatever is beneath; combined with `F2`
+  (hide chrome), `F3` (always-on-top) and `F4` (borderless) this gives a
+  true desktop overlay. While active, the frame loop polls the global
+  keyboard state (`XQueryKeymap`, focus-independent) so pressing `F5`
+  again always restores normal input even after the window lost focus.
+  On Wayland the toggle shows a "requires X11" toast.
+
 ### Fixed
 
 - **RetroArch slang shaders render correctly** — the all-black-output bug

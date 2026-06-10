@@ -81,6 +81,8 @@ In-window hotkeys (active only when ImGui doesn't have keyboard focus):
 - `F2` — hide / show ImGui chrome (overlay-style)
 - `F3` — toggle always-on-top
 - `F4` — toggle borderless (no window decorations)
+- `F5` — toggle click-through (X11 only — XShape empty input region; while
+  active, a global-keymap poll lets F5 restore input even without focus)
 - `Esc` — close the window
 
 Drag-and-drop: drop a `.slangp` file onto the window to import it
@@ -93,10 +95,10 @@ Drag-and-drop: drop a `.slangp` file onto the window to import it
 | Layer | Path | Notes |
 |---|---|---|
 | Capture | `ShaderScope/src/capture/` | `X11Capture` + `RealX11CaptureSession` / `FakeX11CaptureSession` (composited IncludeInferiors capture, DRI3 DMA-BUF fast path, XShm fallback), `X11DmaBufPolicy` (fast-path decision logic), `WaylandCapture` + `PortalCaptureSession` / `FakeWaylandCaptureSession` (PipeWire), `StaticImageCapture` (PNG via stb). Common `CaptureBackend` interface (`kindName()`, `size()`, `acquireFrame()`, `release()`). `BadWindowRegistry` filters bad windows. |
-| Render | `ShaderScope/src/render/` | `VulkanContext` + `Swapchain` (with `recreate()`) + `RenderEngine` (dynamic-rendering swapchain frame loop, returns `RenderStatus` for out-of-date recovery). `ShaderPipeline` runs the builtin passthrough or a slang-compiled shader pass; its layout (UBO/push/sampler bindings, quad VBO vs fullscreen triangle) is described by a reflection-derived `ShaderPipelineSlangConfig`. `Preset` owns the pipeline chain per `.slangp` and writes semantics + params each frame. `Texture` + `DmaBufImport` + `HeadlessOutput` round out the render side. |
+| Render | `ShaderScope/src/render/` | `VulkanContext` + `Swapchain` (with `recreate()`) + `RenderEngine` (dynamic-rendering swapchain frame loop, returns `RenderStatus` for out-of-date recovery). `ShaderPipeline` runs the builtin passthrough or a slang-compiled shader pass; its layout (UBO/push/sampler bindings, quad VBO vs fullscreen triangle) is described by a reflection-derived `ShaderPipelineSlangConfig`. `Preset` owns the pipeline chain per `.slangp` and writes semantics + params each frame — including the frame-history ring, feedback double-buffers, and pass-output bindings (`SlangSemantics.{h,cpp}` classifies the sampler/size names). `Texture` + `DmaBufImport` + `HeadlessOutput` round out the render side. |
 | UI | `ShaderScope/src/ui/` | `ImGuiLayer` initialises the Vulkan ImGui backend. `AppState` is the single shared state object. Panels: `SourcePickerPanel`, `PresetBrowserPanel`, `ParamsPanel`, `CropOverlay`, `ToastPanel`. |
 | Util | `ShaderScope/src/util/` | `ConfigStore` (JSON config + per-source crops), `PresetLibrary`, `Logging` (+ toast variants), `ToastQueue`, `ScreenshotPath` + `ScreenshotWriter`, `Time`, `XdgConfig`, `SourceMatcher`, `FourccToVk`. |
-| Output | `ShaderScope/src/output/` | `SdlWindow` thin wrapper around SDL3 window + event loop. |
+| Output | `ShaderScope/src/output/` | `SdlWindow` thin wrapper around SDL3 window + event loop. `X11ClickThrough` (F5 overlay mode): XShape input-region toggle + `XQueryKeymap` escape-hatch polling. |
 | Shader compiler | `ShaderGC/` | Shared library (also linked into the Windows trunk on `master`). On Linux, `HLSL_stub.cpp` and `SPIRV_stub.cpp` replace the DirectX-bound originals — Vulkan consumes SPIR-V directly so HLSL emission is dead code. `SpirvReflect.{h,cpp}` parses the compiled SPIR-V for UBO/push-constant member offsets, sampler bindings, and vertex-input usage; `LookupParamsSpirv` in ShaderGC.cpp maps that onto `ShaderDef::Params` (mirrors the Windows spirv-cross JSON path). |
 
 ### Built-in shaders
@@ -133,7 +135,8 @@ window.pollEvents()                    # + resize events mark swapchain dirty
   → if state.capture: state.capture->acquireFrame()
        → state.preset?.ensureSourceSize(frame, swapchain)   # semantics + intermediates
        → single-pass: engine.renderTextureWithOverlay(...) or renderImageViewWithOverlay(...)
-         multi-pass:  engine.renderCustomWithOverlay(prePassBody → recordIntermediatePasses,
+         multi-pass or history (preset->requiresCustomRenderPath()):
+                      engine.renderCustomWithOverlay(prePassBody → recordIntermediatePasses,
                                                      shaderBody → preset.drawFinalPass)
                                               + ScreenshotWriter + AppState
        → screenshotWriter.tick()
@@ -195,7 +198,8 @@ never touch GPU state from a panel.
 | M5 UX-polish | Toast UI, first-run UX, region/crop, screenshot capture | shipped |
 | M5 feature-complete | Multi-pass shaders, runtime `.slangp` import (DnD + path input), hotkeys (F11/B/[/]/F1/F2/F3/F4) | shipped |
 | M6 render-correctness | SPIR-V semantic reflection, quad VBO, shader push constants, `.slangp` overrides, swapchain recreation | shipped |
-| Future | True click-through X11 overlay (XShape + 32-bit visual), frame-history textures (OriginalHistory# / PassOutput# / PassFeedback#) | pending |
+| M7 | Frame-history textures (OriginalHistory# / PassOutput# / PassFeedback# + aliases + *Size semantics), click-through X11 overlay (XShape input region, F5) | shipped |
+| Future | ARGB transparent overlay visual (deliberately skipped in M7 — shader output fills the window opaquely, and garbage shader alpha would punch holes), final-pass feedback | pending |
 
 Per-milestone specs and plans live under `docs/superpowers/specs/` and
 `docs/superpowers/plans/`. Per-milestone manual smoke checklists live at
@@ -203,12 +207,12 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
 
 ## Known limitations
 
-- **Frame-history / feedback samplers are not real** — shaders that sample
-  `OriginalHistory1..N`, `PassOutput#`, or `PassFeedback#` get the
-  *current* original input bound at those slots instead (with a LOG_WARN
-  at preset build). No starter preset uses them; motion-blur/temporal
-  community shaders will look wrong until a frame-history ring buffer is
-  implemented (see Future milestone).
+- **Final-pass feedback is unsupported** — `PassFeedback#` of the final
+  pass would require copying the swapchain image back; it warns at preset
+  build and binds black. Feedback of intermediate passes, `PassOutput#`,
+  and `OriginalHistory#` (depth ≤ 16) are fully supported as of M7.
+  History copies are uncropped (matching the existing `Original` binding
+  behaviour under crop) and reset to black on source/viewport resize.
 - **One UBO per pass** — the shader's single set-0 uniform block can sit at
   any binding (reflection normalises its params to buffer 0 and the
   descriptor is created at the reflected binding), but a *second* UBO in
@@ -255,10 +259,32 @@ Per-milestone specs and plans live under `docs/superpowers/specs/` and
   `false` keeps the no-VBO `vkCmdDraw(cb, 3, …)` fullscreen-triangle path
   for `gl_VertexIndex` shaders. Never declare vertex attributes for the
   latter — that was the failed May-2026 fix attempt.
-- **`Preset::advanceFrame()` once per rendered frame** — bumps FrameCount
-  and calls `updateUbo()`. Call sites that just need a value refresh
-  (param edit, size change) call `updateUbo()` directly so FrameCount
-  doesn't jump.
+- **`Preset::advanceFrame()` once per rendered frame** — bumps FrameCount,
+  flips the feedback parity, and calls `updateUbo()`. Call sites that just
+  need a value refresh (param edit, size change) call `updateUbo()`
+  directly so FrameCount doesn't jump and feedback targets don't swap.
+- **History ring slot math lives in two places that must agree** —
+  `recordHistoryBlit` writes slot `m_frameCount % ring` and
+  `resolveSemanticView` reads `(m_frameCount + ring − K) % ring`. Both are
+  keyed to the *same* frame's `m_frameCount`, which only works because
+  `advanceFrame()` runs before any recording. Ring size is
+  `m_maxHistory + 1` (write slot + N readable history frames).
+- **Feedback double-buffer parity** — `currentTarget(k)` /
+  `previousTarget(k)` pick between `m_intermediates[k]` and its
+  `m_feedback[k]` twin by `m_feedbackParity`. Every consumer (render
+  target, PassOutput view, next pass's Source, feedback view) must go
+  through these helpers — never index `m_intermediates` directly in new
+  code, or feedback presets will sample the frame being written.
+- **`requiresCustomRenderPath()` gates the windowed routing** — multi-pass
+  OR any history use forces the recordIntermediatePasses/drawFinalPass
+  path (the history blit must record outside the swapchain rendering
+  scope). A single-pass history preset routed through
+  `renderImageViewWithOverlay` would silently never update its ring.
+- **Click-through escape hatch is a per-frame poll** — `X11ClickThrough::
+  pollDisableKey()` samples `XQueryKeymap` once per rendered frame, so an
+  F5 press must outlast one frame to register. Don't move the poll behind
+  conditions that skip frames (minimised handling etc.) without checking
+  the loop still spins.
 - **`AppState::applyPending()` is the sole capture/preset rebuild point**
   — called between `ImGui::Render()` and the next `capture->acquireFrame()`.
   Panels write into `pending*` intent fields; never touch GPU state from a panel.
