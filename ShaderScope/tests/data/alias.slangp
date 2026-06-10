@@ -1,0 +1,6 @@
+shaders = 2
+shader0 = swap-rg.slang
+alias0 = RefPass
+filter_linear0 = false
+shader1 = show-alias.slang
+filter_linear1 = false

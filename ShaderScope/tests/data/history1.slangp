@@ -1,0 +1,3 @@
+shaders = 1
+shader0 = history1.slang
+filter_linear0 = false

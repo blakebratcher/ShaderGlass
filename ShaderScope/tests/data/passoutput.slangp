@@ -1,0 +1,7 @@
+shaders = 3
+shader0 = swap-rg.slang
+filter_linear0 = false
+shader1 = invert.slang
+filter_linear1 = false
+shader2 = show-passoutput.slang
+filter_linear2 = false
