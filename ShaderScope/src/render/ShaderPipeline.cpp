@@ -96,7 +96,8 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
     //   - "Original"-family samplers at their reflected bindings
     //   - one COMBINED_IMAGE_SAMPLER per LUT at its reflected binding
     std::vector<VkDescriptorSetLayoutBinding> bindings;
-    bindings.reserve(2 + m_config.originalBindings.size() + m_config.luts.size());
+    bindings.reserve(2 + m_config.originalBindings.size()
+                       + m_config.extraBindings.size() + m_config.luts.size());
     if (uboSize > 0) {
         VkDescriptorSetLayoutBinding b{};
         b.binding         = m_config.uboBinding;
@@ -118,6 +119,7 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
     };
     addSamplerBinding(m_sourceBinding);
     for (uint32_t ob : m_config.originalBindings) addSamplerBinding(ob);
+    for (uint32_t eb : m_config.extraBindings)    addSamplerBinding(eb);
     for (const auto& lut : m_config.luts)         addSamplerBinding(lut.binding);
 
     VkDescriptorSetLayoutCreateInfo dsli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -150,7 +152,8 @@ void ShaderPipeline::createPipeline(VulkanContext& ctx,
 
     // ── Descriptor pool ──────────────────────────────────────────────────────
     const uint32_t samplerCount =
-        static_cast<uint32_t>(1 + m_config.originalBindings.size() + m_config.luts.size());
+        static_cast<uint32_t>(1 + m_config.originalBindings.size()
+                                + m_config.extraBindings.size() + m_config.luts.size());
     if (uboSize > 0) {
         VkDescriptorPoolSize ps[2]{};
         ps[0] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         1 };
@@ -346,13 +349,16 @@ void ShaderPipeline::writeQuadVbo() noexcept {
 }
 
 void ShaderPipeline::bindAndDrawWithImageView(VkCommandBuffer cb, VkImageView view,
-                                              VkExtent2D viewport, VkImageView originalView) {
-    // Per-draw image descriptors: Source at its reflected binding, plus the
-    // original-input view at every "Original"-family binding.
+                                              VkExtent2D viewport, VkImageView originalView,
+                                              const std::vector<std::pair<uint32_t, VkImageView>>* extraViews) {
+    // Per-draw image descriptors: Source at its reflected binding, the
+    // original-input view at every "Original"-family binding, and any
+    // caller-resolved semantic textures (history/pass-output/feedback).
+    const size_t extraCount = extraViews ? extraViews->size() : 0;
     std::vector<VkDescriptorImageInfo> imageInfos;
     std::vector<VkWriteDescriptorSet>  writes;
-    imageInfos.reserve(1 + m_config.originalBindings.size());
-    writes.reserve(1 + m_config.originalBindings.size());
+    imageInfos.reserve(1 + m_config.originalBindings.size() + extraCount);
+    writes.reserve(1 + m_config.originalBindings.size() + extraCount);
 
     auto addImageWrite = [&](uint32_t binding, VkImageView v) {
         VkDescriptorImageInfo ii{};
@@ -373,6 +379,12 @@ void ShaderPipeline::bindAndDrawWithImageView(VkCommandBuffer cb, VkImageView vi
     for (uint32_t ob : m_config.originalBindings) {
         if (ob == m_sourceBinding) continue;
         addImageWrite(ob, origView);
+    }
+    if (extraViews) {
+        for (const auto& [binding, extraView] : *extraViews) {
+            if (binding == m_sourceBinding || extraView == VK_NULL_HANDLE) continue;
+            addImageWrite(binding, extraView);
+        }
     }
     // pImageInfo must be assigned after the vectors stop reallocating.
     for (size_t i = 0; i < writes.size(); ++i) writes[i].pImageInfo = &imageInfos[i];

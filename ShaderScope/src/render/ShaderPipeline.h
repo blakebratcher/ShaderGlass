@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 class VulkanContext;
@@ -56,6 +57,12 @@ struct ShaderPipelineSlangConfig {
     // history/feedback samplers we degrade gracefully to.
     std::vector<uint32_t> originalBindings;
 
+    // Additional sampler slots whose image views the *caller* resolves per
+    // draw (history ring slots, pass outputs, feedback targets). Declared in
+    // the descriptor layout here; views arrive via bindAndDrawWithImageView's
+    // extraViews argument each frame.
+    std::vector<uint32_t> extraBindings;
+
     // True when the vertex stage declares Location-decorated inputs
     // (RetroArch `in vec4 Position` / `in vec2 TexCoord`). The pipeline
     // binds a fullscreen-quad VBO (triangle strip, 4 vertices) whose
@@ -93,8 +100,11 @@ public:
     void bindAndDraw(VkCommandBuffer cb, const Texture& source, VkExtent2D viewport);
     // originalView: image bound at config.originalBindings (defaults to
     // `view` when VK_NULL_HANDLE) — the pass-0 input for multi-pass chains.
+    // extraViews: per-draw (binding, view) pairs for config.extraBindings —
+    // history/pass-output/feedback textures resolved by the Preset.
     void bindAndDrawWithImageView(VkCommandBuffer cb, VkImageView view, VkExtent2D viewport,
-                                  VkImageView originalView = VK_NULL_HANDLE);
+                                  VkImageView originalView = VK_NULL_HANDLE,
+                                  const std::vector<std::pair<uint32_t, VkImageView>>* extraViews = nullptr);
 
     // Non-null when the shader declares a UBO. Writes here are visible to
     // the shader on the next frame (host-coherent memory).
