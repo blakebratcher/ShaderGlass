@@ -51,12 +51,14 @@ struct AppState {
     // Phase D: screenshot request flag
     bool                            screenshotPending = false;
 
-    // Overlay-style toggles (F2/F3/F4 hotkeys). When `hideChrome` is true,
+    // Overlay-style toggles (F2/F3/F4/F5 hotkeys). When `hideChrome` is true,
     // main.cpp skips every panel draw — only the shader output and toast
-    // stack remain visible.
+    // stack remain visible. `clickThrough` mirrors X11ClickThrough::enabled()
+    // for display; all four are session-only (not persisted).
     bool                            hideChrome     = false;
     bool                            borderless     = false;
     bool                            alwaysOnTop    = false;
+    bool                            clickThrough   = false;
 
     // Set by the SourcePickerPanel 'About' button (or F12); main.cpp draws
     // the About modal in the same frame it's set.

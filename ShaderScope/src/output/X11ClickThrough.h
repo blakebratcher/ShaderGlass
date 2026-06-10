@@ -16,7 +16,10 @@ bool applyClickThroughShape(Display* dpy, unsigned long win, bool enabled);
 // off, and keyboard focus is gone once the user clicks elsewhere — so
 // while enabled the frame loop polls pollDisableKey(), which reads the
 // *global* keyboard state via XQueryKeymap (focus-independent) and fires
-// on an F5 press edge.
+// on an F5 press edge. Polling samples once per rendered frame, so a
+// press must outlast one frame (~16 ms at 60 fps) to register — any human
+// press does; only sub-frame synthetic events (xdotool's default 12 ms)
+// can slip through.
 class X11ClickThrough {
 public:
     explicit X11ClickThrough(SDL_Window* win);

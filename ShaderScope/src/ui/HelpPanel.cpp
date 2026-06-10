@@ -11,6 +11,7 @@ constexpr Row kHotkeys[] = {
     { "F2",       "Hide / show ImGui chrome (overlay-style)" },
     { "F3",       "Toggle always-on-top" },
     { "F4",       "Toggle borderless (no decorations)" },
+    { "F5",       "Toggle click-through (X11 only; press F5 again to restore)" },
     { "F11",      "Take a screenshot" },
     { "F12",      "About dialog" },
     { "B",        "Bypass toggle (preset \xe2\x87\x84 passthrough)" },

@@ -1,4 +1,5 @@
 #include "output/SdlWindow.h"
+#include "output/X11ClickThrough.h"
 #include "render/VulkanContext.h"
 #include "render/Swapchain.h"
 #include "render/RenderEngine.h"
@@ -306,6 +307,9 @@ static int runWindowed(Args& a) {
     }
 
     SdlWindow window("ShaderScope", 1280, 720);
+    // Click-through overlay control (F5). No-op object on Wayland — the
+    // X11 window properties simply aren't there.
+    X11ClickThrough clickThrough(window.handle());
     // Restore prior window geometry before the swapchain is built, so
     // the swapchain extent matches what the user expects on first frame.
     {
@@ -423,6 +427,18 @@ static int runWindowed(Args& a) {
                 state.borderless = !state.borderless;
                 SDL_SetWindowBordered(window.handle(), !state.borderless);
                 Logging::infoToast(state, state.borderless ? "Borderless on" : "Borderless off");
+                break;
+            case SDL_SCANCODE_F5:
+                if (!clickThrough.supported()) {
+                    Logging::warnToast(state, "Click-through requires X11");
+                } else if (clickThrough.setEnabled(!clickThrough.enabled())) {
+                    state.clickThrough = clickThrough.enabled();
+                    Logging::infoToast(state, state.clickThrough
+                        ? "Click-through on — press F5 to restore"
+                        : "Click-through off");
+                } else {
+                    Logging::errorToast(state, "Click-through toggle failed");
+                }
                 break;
             case SDL_SCANCODE_F12:
                 state.showAbout = true;
@@ -599,6 +615,15 @@ static int runWindowed(Args& a) {
             // Resize / DPI-change events flag the swapchain stale up front, so
             // we recreate before drawing rather than after a failed present.
             if (window.takeResizePending()) swapchainDirty = true;
+
+            // Click-through escape hatch: SDL never sees keys once the input
+            // shape is empty and focus moves on, so poll the global keyboard
+            // state for the F5 press that turns the mode back off.
+            if (state.clickThrough && clickThrough.pollDisableKey()) {
+                clickThrough.setEnabled(false);
+                state.clickThrough = false;
+                Logging::infoToast(state, "Click-through off");
+            }
 
             if (swapchainDirty) {
                 if (!recreateSwapchain()) {
