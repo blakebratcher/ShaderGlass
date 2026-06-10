@@ -430,7 +430,8 @@ static int runWindowed(Args& a) {
                 break;
             case SDL_SCANCODE_F5:
                 if (!clickThrough.supported()) {
-                    Logging::warnToast(state, "Click-through requires X11");
+                    Logging::warnToast(state,
+                        "Click-through requires X11 (with the Shape extension)");
                 } else if (clickThrough.setEnabled(!clickThrough.enabled())) {
                     state.clickThrough = clickThrough.enabled();
                     Logging::infoToast(state, state.clickThrough

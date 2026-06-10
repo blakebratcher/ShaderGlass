@@ -12,6 +12,7 @@
 
 class VulkanContext;
 class PresetDef;
+class Texture;
 
 // Owns one compiled .slangp preset and the ShaderPipeline chain that
 // renders it. Single-pass presets compile to N=1 pipeline + zero
@@ -43,10 +44,13 @@ public:
     size_t          passCount()      const { return m_pipelines.size(); }
     bool            isMultiPass()    const { return m_pipelines.size() > 1; }
     // True when the windowed renderer must route this preset through
-    // recordIntermediatePasses() + drawFinalPass(): multi-pass chains, and
-    // any preset sampling OriginalHistory# (the history blit must record
-    // outside the swapchain rendering scope).
-    bool requiresCustomRenderPath() const { return isMultiPass() || m_maxHistory > 0; }
+    // recordIntermediatePasses() + drawFinalPass(): multi-pass chains, any
+    // preset sampling OriginalHistory# (the history blit must record outside
+    // the swapchain rendering scope), and any pass with semantic-texture
+    // bindings (only drawFinalPass passes the resolved views).
+    bool requiresCustomRenderPath() const {
+        return isMultiPass() || m_maxHistory > 0 || m_hasSemanticTextures;
+    }
     ShaderPipeline& finalPipeline()        { return *m_pipelines.back(); }
     // The pass that samples the captured source (pass 0). Crop UV transforms
     // must target this pass — for multi-pass presets the final pass samples
@@ -68,11 +72,6 @@ public:
     // min < max range). False for built-in semantics (MVP, SourceSize, …)
     // and unrecognised block members — the UI must skip those.
     static bool isUserParam(const ShaderParam& p) { return p.minValue < p.maxValue; }
-
-    // True when `name` is a RetroArch built-in semantic the runtime computes
-    // each frame (MVP, SourceSize, OriginalSize, OutputSize,
-    // FinalViewportSize, FrameCount, FrameDirection).
-    static bool isSemanticName(const std::string& name);
 
     void resetParamsToDefaults();
 
@@ -167,6 +166,11 @@ private:
     std::vector<std::unique_ptr<OffscreenTarget>>  m_feedback;
     std::vector<bool>                              m_passHasFeedback;
     bool                                           m_feedbackParity = false;
+    // True when any pass has semantic-texture bindings (routing hint).
+    bool                                           m_hasSemanticTextures = false;
+    // 1×1 black texture bound at unsupported PassFeedback slots (feedback
+    // of the final pass) — "no previous frame", matching RetroArch.
+    std::unique_ptr<Texture>                       m_blackFallback;
 
     VulkanContext*   m_ctx                = nullptr;
     VkFormat         m_intermediateFormat = VK_FORMAT_R8G8B8A8_UNORM;

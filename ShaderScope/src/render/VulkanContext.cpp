@@ -159,7 +159,18 @@ void VulkanContext::createDevice(bool headless) {
         exts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     }
 
+    // The renderer is built on Vulkan 1.3 dynamic rendering and
+    // synchronization2 throughout. Core 1.3 still requires explicitly
+    // enabling these at device creation — most drivers tolerate the
+    // omission, but it's a spec violation (VVL flags every
+    // vkCmdBeginRendering / vkCmdPipelineBarrier2 otherwise).
+    VkPhysicalDeviceVulkan13Features feat13{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    feat13.dynamicRendering = VK_TRUE;
+    feat13.synchronization2 = VK_TRUE;
+
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    dci.pNext                   = &feat13;
     dci.queueCreateInfoCount    = 1;
     dci.pQueueCreateInfos       = &qci;
     dci.enabledExtensionCount   = (uint32_t)exts.size();

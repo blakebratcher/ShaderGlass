@@ -374,15 +374,38 @@ void ShaderPipeline::bindAndDrawWithImageView(VkCommandBuffer cb, VkImageView vi
         writes.push_back(w);
     };
 
-    addImageWrite(m_sourceBinding, view);
+    // When the shader never declared a Source sampler, m_sourceBinding is a
+    // historic *fallback* slot (2 with a UBO, 0 otherwise) — a real sampler
+    // reflected at that binding (e.g. OriginalHistory1 at binding 2 in a
+    // shader with no Source) must win over the phantom Source write, or its
+    // view would be silently replaced by the pass input.
+    const bool sourceReflected = (m_config.sourceBinding >= 0);
+    auto claimsFallbackSlot = [&](uint32_t b) {
+        return !sourceReflected && b == m_sourceBinding;
+    };
+    bool fallbackClaimed = false;
+    for (uint32_t ob : m_config.originalBindings) {
+        if (claimsFallbackSlot(ob)) fallbackClaimed = true;
+    }
+    if (extraViews) {
+        for (const auto& bv : *extraViews) {
+            if (claimsFallbackSlot(bv.first)) fallbackClaimed = true;
+        }
+    }
+
+    if (!fallbackClaimed) addImageWrite(m_sourceBinding, view);
     const VkImageView origView = (originalView != VK_NULL_HANDLE) ? originalView : view;
     for (uint32_t ob : m_config.originalBindings) {
-        if (ob == m_sourceBinding) continue;
+        if (ob == m_sourceBinding && !claimsFallbackSlot(ob)) continue;
         addImageWrite(ob, origView);
     }
     if (extraViews) {
+        // Written last: if an extra and an Original-family binding collide on
+        // the fallback slot, vkUpdateDescriptorSets applies writes in order,
+        // so the semantic texture wins.
         for (const auto& [binding, extraView] : *extraViews) {
-            if (binding == m_sourceBinding || extraView == VK_NULL_HANDLE) continue;
+            if (extraView == VK_NULL_HANDLE) continue;
+            if (binding == m_sourceBinding && !claimsFallbackSlot(binding)) continue;
             addImageWrite(binding, extraView);
         }
     }

@@ -4,6 +4,7 @@
 #include "ShaderGC.h"
 #include "ShaderCache.h"
 #include "PresetDef.h"
+#include "Texture.h"
 #include "builtin_shaders.h"
 #include "util/Logging.h"
 #include <algorithm>
@@ -102,13 +103,6 @@ constexpr float kIdentityMat4[16] = {
 constexpr uint32_t kMaxHistoryFrames = 16;
 
 } // namespace
-
-bool Preset::isSemanticName(const std::string& name) {
-    return name == "MVP" || name == "SourceSize" || name == "OriginalSize"
-        || name == "OutputSize" || name == "FinalViewportSize"
-        || name == "FrameCount" || name == "FrameDirection"
-        || isIndexedSizeSemanticName(name);
-}
 
 Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
                VkFormat swapchainFormat)
@@ -330,11 +324,16 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
                     break;
                 case SemanticTexKind::PassFeedback:
                     if (st.index + 1 >= N) {
+                        // Feedback of the final (swapchain) pass has no
+                        // retained target — bind black ("no previous frame",
+                        // matching RetroArch) via an out-of-range index that
+                        // resolveSemanticView() routes to m_blackFallback.
                         LOG_WARN("Preset: '%s' pass %zu samples '%s' — feedback "
                                  "of the final (swapchain) pass is not supported, "
-                                 "binding the original input instead",
+                                 "binding black instead",
                                  m_path.string().c_str(), i, smp.name.c_str());
-                        degraded = true;
+                        m_passSemanticTextures[i].push_back({binding, st.kind, st.index});
+                        cfg.extraBindings.push_back(binding);
                         break;
                     }
                     m_passHasFeedback[st.index] = true;
@@ -367,6 +366,18 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
             ctx, g_passthrough_vert_spv, g_passthrough_vert_spv_len,
                  g_passthrough_frag_spv, g_passthrough_frag_spv_len,
             m_intermediateFormat);
+    }
+
+    for (const auto& sts : m_passSemanticTextures) {
+        if (!sts.empty()) m_hasSemanticTextures = true;
+    }
+    // Degraded feedback slots (final-pass feedback) sample this instead of
+    // a retained target.
+    if (m_hasSemanticTextures && !m_blackFallback) {
+        const uint8_t blackPixel[4] = {0, 0, 0, 255};
+        m_blackFallback = std::make_unique<Texture>(ctx, 1, 1,
+                                                    VK_FORMAT_R8G8B8A8_UNORM);
+        m_blackFallback->uploadFromCpu(blackPixel, sizeof(blackPixel), 4);
     }
 }
 
@@ -598,7 +609,10 @@ VkImageView Preset::resolveSemanticView(const PassSemanticTexture& st) const {
         }
         case SemanticTexKind::PassFeedback: {
             const OffscreenTarget* t = previousTarget(st.index);
-            return t ? t->view() : m_originalView;
+            if (t) return t->view();
+            // Final-pass feedback (no retained target): black, not the
+            // original input — "there is no previous frame", every frame.
+            return m_blackFallback ? m_blackFallback->view() : m_originalView;
         }
         default:
             return m_originalView;

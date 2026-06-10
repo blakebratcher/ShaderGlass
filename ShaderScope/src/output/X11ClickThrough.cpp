@@ -47,13 +47,17 @@ bool X11ClickThrough::setEnabled(bool on) {
     return true;
 }
 
+bool X11ClickThrough::pressEdge(const char keys[32], int keycode, bool& wasDown) {
+    if (keycode <= 0 || keycode >= 256) return false;
+    const bool down = (keys[keycode / 8] >> (keycode % 8)) & 1;
+    const bool edge = down && !wasDown;
+    wasDown = down;
+    return edge;
+}
+
 bool X11ClickThrough::pollDisableKey() {
     if (!supported() || !m_enabled || m_disableKeycode <= 0) return false;
     char keys[32] = {};
     XQueryKeymap(m_dpy, keys);
-    const bool down =
-        (keys[m_disableKeycode / 8] >> (m_disableKeycode % 8)) & 1;
-    const bool edge = down && !m_keyWasDown;
-    m_keyWasDown = down;
-    return edge;
+    return pressEdge(keys, m_disableKeycode, m_keyWasDown);
 }

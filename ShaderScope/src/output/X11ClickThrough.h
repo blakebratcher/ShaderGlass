@@ -34,6 +34,10 @@ public:
     // True exactly once per physical F5 press while click-through is on.
     bool pollDisableKey();
 
+    // Press-edge detection on a raw XQueryKeymap bitfield (one bit per
+    // keycode). Pure; public so the logic is testable without an X server.
+    static bool pressEdge(const char keys[32], int keycode, bool& wasDown);
+
 private:
     Display*      m_dpy            = nullptr;
     unsigned long m_win            = 0;

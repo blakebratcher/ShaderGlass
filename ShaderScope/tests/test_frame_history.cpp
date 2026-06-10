@@ -102,3 +102,33 @@ TEST(FrameHistory, AliasResolvesToPassOutput) {
     rig.upload(255, 0, 0);
     expectColor(rig.frame(preset), 0, 255, 0, "alias = pass-0 output");
 }
+
+TEST(FrameHistory, HistorySamplerOnSourceFallbackSlotWins) {
+    // The shader has no Source sampler, so the runtime's phantom Source
+    // write targets fallback binding 2 — where OriginalHistory1 actually
+    // lives. The semantic view must win; if the phantom write did, frame 2
+    // would show the current (green) input instead of the previous (red).
+    Rig rig;
+    Preset preset(rig.ctx, fs::path(TEST_DATA_DIR) / "history1-binding2.slangp",
+                  rig.out.format());
+    preset.ensureSourceSize(4, 4, 4, 4);
+
+    rig.upload(255, 0, 0);
+    expectColor(rig.frame(preset), 0, 0, 0, "frame 1 (no history yet)");
+
+    rig.upload(0, 255, 0);
+    expectColor(rig.frame(preset), 255, 0, 0, "frame 2 (history1 at binding 2)");
+}
+
+TEST(FrameHistory, FinalPassFeedbackBindsBlack) {
+    // Feedback of the final (swapchain) pass is unsupported: the slot must
+    // sample black on EVERY frame — never the live original input.
+    Rig rig;
+    Preset preset(rig.ctx, fs::path(TEST_DATA_DIR) / "feedback-final.slangp",
+                  rig.out.format());
+    preset.ensureSourceSize(4, 4, 4, 4);
+
+    rig.upload(255, 0, 0);
+    expectColor(rig.frame(preset), 0, 0, 0, "frame 1 (final-pass feedback = black)");
+    expectColor(rig.frame(preset), 0, 0, 0, "frame 2 (final-pass feedback = black)");
+}
