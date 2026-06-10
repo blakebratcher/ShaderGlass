@@ -807,7 +807,10 @@ static int runWindowed(Args& a) {
 
             ShaderPipeline& activePipeline =
                 state.preset ? state.preset->finalPipeline() : pipeline;
-            const bool multiPass = state.preset && state.preset->isMultiPass();
+            // Multi-pass chains AND single-pass history presets must go
+            // through recordIntermediatePasses/drawFinalPass (the history
+            // blit records outside the swapchain rendering scope).
+            const bool multiPass = state.preset && state.preset->requiresCustomRenderPath();
 
             // Feed crop UV transform every frame so the pipeline stays in sync.
             // The builtin passthrough consumes it via its fragment push
