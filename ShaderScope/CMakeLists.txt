@@ -57,6 +57,7 @@ add_custom_target(builtin_shaders_gen DEPENDS ${BUILTIN_HEADER})
 
 add_library(shaderscope_core STATIC
     src/output/SdlWindow.cpp
+    src/output/X11ClickThrough.cpp
     src/util/ConfigStore.cpp
     src/util/FourccToVk.cpp
     src/util/Logging.cpp

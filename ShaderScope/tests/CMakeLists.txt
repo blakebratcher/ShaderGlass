@@ -162,6 +162,10 @@ add_executable(slang_semantics_tests test_slang_semantics.cpp)
 target_link_libraries(slang_semantics_tests PRIVATE shaderscope_core gtest_main)
 gtest_discover_tests(slang_semantics_tests)
 
+add_executable(x11_clickthrough_tests test_x11_clickthrough.cpp)
+target_link_libraries(x11_clickthrough_tests PRIVATE shaderscope_core gtest_main)
+gtest_discover_tests(x11_clickthrough_tests)
+
 add_executable(frame_history_tests test_frame_history.cpp)
 target_link_libraries(frame_history_tests PRIVATE shaderscope_core gtest_main)
 target_compile_definitions(frame_history_tests PRIVATE
