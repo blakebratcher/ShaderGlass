@@ -8,6 +8,7 @@
 #include "OffscreenTarget.h"
 #include "ShaderDef.h"
 #include "ShaderPipeline.h"
+#include "SlangSemantics.h"
 
 class VulkanContext;
 class PresetDef;
@@ -41,6 +42,11 @@ public:
 
     size_t          passCount()      const { return m_pipelines.size(); }
     bool            isMultiPass()    const { return m_pipelines.size() > 1; }
+    // True when the windowed renderer must route this preset through
+    // recordIntermediatePasses() + drawFinalPass(): multi-pass chains, and
+    // any preset sampling OriginalHistory# (the history blit must record
+    // outside the swapchain rendering scope).
+    bool requiresCustomRenderPath() const { return isMultiPass() || m_maxHistory > 0; }
     ShaderPipeline& finalPipeline()        { return *m_pipelines.back(); }
     // The pass that samples the captured source (pass 0). Crop UV transforms
     // must target this pass — for multi-pass presets the final pass samples
@@ -102,12 +108,31 @@ public:
     VkExtent2D  finalInputExtent() const { return m_finalInputExtent; }
 
 private:
+    // One reflected semantic-texture slot of a pass: which descriptor
+    // binding, what it samples, and the history depth / pass index.
+    struct PassSemanticTexture {
+        uint32_t        binding = 0;
+        SemanticTexKind kind    = SemanticTexKind::Unknown;
+        uint32_t        index   = 0;
+    };
+
     void buildPipelines(VulkanContext& ctx, VkFormat swapFmt);
     void applyPresetOverrides();
     void writeParamValue(uint8_t* dst, const ShaderParam& p, int passIdx) const;
 
     VkExtent2D passInputExtent(int passIdx) const;
     VkExtent2D passOutputExtent(int passIdx) const;
+
+    // Intermediate-pass render target for this frame / last frame. For
+    // feedback-sampled passes these alternate between the intermediate and
+    // its feedback twin (parity flips in advanceFrame()); for everything
+    // else both name the plain intermediate.
+    OffscreenTarget* currentTarget(size_t passIdx) const;
+    OffscreenTarget* previousTarget(size_t passIdx) const;
+
+    VkImageView resolveSemanticView(const PassSemanticTexture& st) const;
+    std::vector<std::pair<uint32_t, VkImageView>> buildExtraViews(size_t passIdx) const;
+    void recordHistoryBlit(VkCommandBuffer cb, VkImageView sourceView);
 
     std::filesystem::path                          m_path;
     std::unique_ptr<PresetDef>                     m_def;
@@ -123,6 +148,25 @@ private:
     std::vector<int>                               m_paramPass;
     // Per-pass frame_count_mod (0 = no wrap), parsed from the .slangp.
     std::vector<uint32_t>                          m_frameCountMods;
+
+    // ── Frame-history / feedback state ────────────────────────────────────
+    // .slangp aliasN (or `#pragma name`) → pass index, for alias-named
+    // PassOutput/PassFeedback samplers and their *Size semantics.
+    std::map<std::string, uint32_t>                m_aliasToPass;
+    // Per-pass semantic-texture slots (parallel to m_pipelines).
+    std::vector<std::vector<PassSemanticTexture>>  m_passSemanticTextures;
+    // Highest OriginalHistory index sampled by any pass (0 = no history).
+    uint32_t                                       m_maxHistory = 0;
+    // History ring: m_maxHistory + 1 source-sized targets. Frame f writes
+    // slot f % ring; OriginalHistoryK reads slot (f - K) mod ring.
+    std::vector<std::unique_ptr<OffscreenTarget>>  m_history;
+    // Builtin-passthrough pipeline that renders the source into the ring.
+    std::unique_ptr<ShaderPipeline>                m_historyBlit;
+    // Feedback twins, parallel to m_intermediates; null unless some pass
+    // samples PassFeedback for that index.
+    std::vector<std::unique_ptr<OffscreenTarget>>  m_feedback;
+    std::vector<bool>                              m_passHasFeedback;
+    bool                                           m_feedbackParity = false;
 
     VulkanContext*   m_ctx                = nullptr;
     VkFormat         m_intermediateFormat = VK_FORMAT_R8G8B8A8_UNORM;

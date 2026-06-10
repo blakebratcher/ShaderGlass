@@ -4,6 +4,7 @@
 #include "ShaderGC.h"
 #include "ShaderCache.h"
 #include "PresetDef.h"
+#include "builtin_shaders.h"
 #include "util/Logging.h"
 #include <algorithm>
 #include <cstring>
@@ -96,13 +97,17 @@ constexpr float kIdentityMat4[16] = {
     0, 0, 0, 1,
 };
 
+// Deepest OriginalHistory# any sane preset asks for. Beyond this we degrade
+// to the original input rather than allocate an unbounded ring.
+constexpr uint32_t kMaxHistoryFrames = 16;
+
 } // namespace
 
 bool Preset::isSemanticName(const std::string& name) {
     return name == "MVP" || name == "SourceSize" || name == "OriginalSize"
         || name == "OutputSize" || name == "FinalViewportSize"
         || name == "FrameCount" || name == "FrameDirection"
-        || name == "OriginalHistorySize0";
+        || isIndexedSizeSemanticName(name);
 }
 
 Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
@@ -144,6 +149,16 @@ Preset::Preset(VulkanContext& ctx, const std::filesystem::path& path,
         }
         return s;
     };
+    // Pass aliases (`aliasN = "Foo"` in the .slangp or `#pragma name Foo` in
+    // the shader) let later passes sample "Foo" / "FooFeedback" — resolve
+    // them to pass indices before sampler classification.
+    for (size_t i = 0; i < m_def->ShaderDefs.size(); ++i) {
+        auto ait = m_def->ShaderDefs[i].PresetParams.find("alias");
+        if (ait != m_def->ShaderDefs[i].PresetParams.end() && !ait->second.empty()) {
+            m_aliasToPass[ait->second] = static_cast<uint32_t>(i);
+        }
+    }
+
     m_luts.reserve(m_def->TextureDefs.size());
     for (const auto& td : m_def->TextureDefs) {
         try {
@@ -239,6 +254,10 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
             : parsePassFormat(m_def->ShaderDefs[i].PresetParams);
     }
 
+    m_passSemanticTextures.assign(N, {});
+    m_passHasFeedback.assign(N > 0 ? N - 1 : 0, false);
+    m_maxHistory = 0;
+
     for (size_t i = 0; i < N; ++i) {
         auto& sd = m_def->ShaderDefs[i];
         const VkFormat passFmt = m_passOutputFormats[i];
@@ -256,9 +275,10 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
                      m_path.string().c_str(), i, sd.ParamsSize(1));
         }
 
-        // Route every reflected sampler to its role: Source, the
-        // Original family (incl. graceful degradation for history/feedback
-        // samplers we don't keep textures for), or a named LUT.
+        // Route every reflected sampler to its role: Source, a named LUT,
+        // the Original family, or a semantic texture (history / pass
+        // output / feedback) whose view the Preset resolves each draw.
+        // Unknown or unsupported names degrade to the original input.
         for (const auto& smp : sd.Samplers) {
             if (smp.name == "Source") {
                 cfg.sourceBinding = smp.binding;
@@ -273,13 +293,62 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
                 cfg.luts.push_back(lb);
                 continue;
             }
-            if (smp.name != "Original" && smp.name != "OriginalHistory0") {
-                LOG_WARN("Preset: '%s' pass %zu samples '%s' (history/feedback "
-                         "textures are not supported yet) — binding the original "
-                         "input instead",
-                         m_path.string().c_str(), i, smp.name.c_str());
+
+            const uint32_t binding  = static_cast<uint32_t>(smp.binding);
+            const SemanticTexRef st = classifySamplerName(smp.name, m_aliasToPass);
+            bool degraded = false;
+            switch (st.kind) {
+                case SemanticTexKind::Original:
+                    cfg.originalBindings.push_back(binding);
+                    break;
+                case SemanticTexKind::OriginalHistory:
+                    if (st.index > kMaxHistoryFrames) {
+                        LOG_WARN("Preset: '%s' pass %zu samples '%s' — history "
+                                 "depth capped at %u, binding the original input "
+                                 "instead",
+                                 m_path.string().c_str(), i, smp.name.c_str(),
+                                 kMaxHistoryFrames);
+                        degraded = true;
+                        break;
+                    }
+                    m_maxHistory = std::max(m_maxHistory, st.index);
+                    m_passSemanticTextures[i].push_back({binding, st.kind, st.index});
+                    cfg.extraBindings.push_back(binding);
+                    break;
+                case SemanticTexKind::PassOutput:
+                    if (st.index >= i) {
+                        LOG_WARN("Preset: '%s' pass %zu samples '%s' but pass %u "
+                                 "has not rendered yet this frame — binding the "
+                                 "original input instead",
+                                 m_path.string().c_str(), i, smp.name.c_str(),
+                                 st.index);
+                        degraded = true;
+                        break;
+                    }
+                    m_passSemanticTextures[i].push_back({binding, st.kind, st.index});
+                    cfg.extraBindings.push_back(binding);
+                    break;
+                case SemanticTexKind::PassFeedback:
+                    if (st.index + 1 >= N) {
+                        LOG_WARN("Preset: '%s' pass %zu samples '%s' — feedback "
+                                 "of the final (swapchain) pass is not supported, "
+                                 "binding the original input instead",
+                                 m_path.string().c_str(), i, smp.name.c_str());
+                        degraded = true;
+                        break;
+                    }
+                    m_passHasFeedback[st.index] = true;
+                    m_passSemanticTextures[i].push_back({binding, st.kind, st.index});
+                    cfg.extraBindings.push_back(binding);
+                    break;
+                default:
+                    LOG_WARN("Preset: '%s' pass %zu samples unrecognised texture "
+                             "'%s' — binding the original input instead",
+                             m_path.string().c_str(), i, smp.name.c_str());
+                    degraded = true;
+                    break;
             }
-            cfg.originalBindings.push_back(static_cast<uint32_t>(smp.binding));
+            if (degraded) cfg.originalBindings.push_back(binding);
         }
 
         m_pipelines.push_back(std::make_unique<ShaderPipeline>(
@@ -288,6 +357,16 @@ void Preset::buildPipelines(VulkanContext& ctx, VkFormat swapFmt) {
             passFmt, std::move(cfg)));
         m_uboSizes.push_back(static_cast<uint32_t>(sd.ParamsSize(0)));
         m_frameCountMods.push_back(parseFrameCountMod(sd.PresetParams));
+    }
+
+    // History presets need a copy of the source each frame. The embedded
+    // builtin passthrough renders (rather than blits) the source into the
+    // ring, so DMA-BUF imports only need SAMPLED usage.
+    if (m_maxHistory > 0) {
+        m_historyBlit = std::make_unique<ShaderPipeline>(
+            ctx, g_passthrough_vert_spv, g_passthrough_vert_spv_len,
+                 g_passthrough_frag_spv, g_passthrough_frag_spv_len,
+            m_intermediateFormat);
     }
 }
 
@@ -358,8 +437,25 @@ void Preset::writeParamValue(uint8_t* dst, const ShaderParam& p, int passIdx) co
         std::memcpy(dst, &dir, std::min<uint32_t>(size, sizeof(dir)));
     } else if (isUserParam(p)) {
         std::memcpy(dst, &p.currentValue, sizeof(float));
+    } else {
+        // Indexed / alias-named *Size semantics (OriginalHistorySize#,
+        // PassOutputSize#, PassFeedbackSize#, <alias>Size, …). History
+        // frames are source-sized copies; feedback twins share their
+        // pass's output extent. Other unknown members stay zero.
+        const SemanticTexRef st = classifySizeSemanticName(p.name, m_aliasToPass);
+        switch (st.kind) {
+            case SemanticTexKind::Original:
+            case SemanticTexKind::OriginalHistory:
+                writeSizeVec4(dst, size, { m_srcWidth, m_srcHeight });
+                break;
+            case SemanticTexKind::PassOutput:
+            case SemanticTexKind::PassFeedback:
+                writeSizeVec4(dst, size, passOutputExtent(static_cast<int>(st.index)));
+                break;
+            default:
+                break;
+        }
     }
-    // Unknown non-user members (e.g. stock.slang's `_unused`) stay zero.
 }
 
 void Preset::updateUbo() {
@@ -393,12 +489,16 @@ void Preset::updateUbo() {
 
 void Preset::advanceFrame() {
     ++m_frameCount;
+    // Feedback-sampled passes alternate between their intermediate and its
+    // twin; the one not rendered this frame holds last frame's output.
+    m_feedbackParity = !m_feedbackParity;
     updateUbo();
 }
 
 void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
                               uint32_t viewportWidth, uint32_t viewportHeight) {
-    if (!isMultiPass() || srcWidth == 0 || srcHeight == 0) {
+    const bool needsTargets = isMultiPass() || m_maxHistory > 0;
+    if (!needsTargets || srcWidth == 0 || srcHeight == 0) {
         m_srcWidth  = srcWidth;
         m_srcHeight = srcHeight;
         m_vpWidth   = viewportWidth;
@@ -411,29 +511,54 @@ void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
     if (viewportWidth  == 0) viewportWidth  = srcWidth;
     if (viewportHeight == 0) viewportHeight = srcHeight;
 
+    const bool allocated =
+        (!isMultiPass()   || !m_intermediates.empty())
+        && (m_maxHistory == 0 || !m_history.empty());
     if (srcWidth == m_srcWidth && srcHeight == m_srcHeight
         && viewportWidth  == m_vpWidth && viewportHeight == m_vpHeight
-        && !m_intermediates.empty()) return;
+        && allocated) return;
 
     vkDeviceWaitIdle(m_ctx->device());
     m_intermediates.clear();
-    const size_t passCount = m_pipelines.size();
-    m_intermediates.reserve(passCount - 1);
+    m_feedback.clear();
+    m_history.clear();
 
-    VkExtent2D prev{srcWidth, srcHeight};
-    const VkExtent2D viewport{viewportWidth, viewportHeight};
-    for (size_t i = 0; i + 1 < passCount; ++i) {
-        const auto& sd = m_def->ShaderDefs[i];
-        const PassScale sx = parseScale(sd.PresetParams, 'x');
-        const PassScale sy = parseScale(sd.PresetParams, 'y');
-        const VkExtent2D out = applyScale(sx, sy, prev, viewport);
-        const VkFormat   fmt = (i < m_passOutputFormats.size())
-                                   ? m_passOutputFormats[i]
-                                   : m_intermediateFormat;
-        m_intermediates.push_back(std::make_unique<OffscreenTarget>(
-            *m_ctx, out.width, out.height, fmt));
-        prev = out;
+    const size_t passCount = m_pipelines.size();
+    if (isMultiPass()) {
+        m_intermediates.reserve(passCount - 1);
+        m_feedback.resize(passCount - 1);
+
+        VkExtent2D prev{srcWidth, srcHeight};
+        const VkExtent2D viewport{viewportWidth, viewportHeight};
+        for (size_t i = 0; i + 1 < passCount; ++i) {
+            const auto& sd = m_def->ShaderDefs[i];
+            const PassScale sx = parseScale(sd.PresetParams, 'x');
+            const PassScale sy = parseScale(sd.PresetParams, 'y');
+            const VkExtent2D out = applyScale(sx, sy, prev, viewport);
+            const VkFormat   fmt = (i < m_passOutputFormats.size())
+                                       ? m_passOutputFormats[i]
+                                       : m_intermediateFormat;
+            m_intermediates.push_back(std::make_unique<OffscreenTarget>(
+                *m_ctx, out.width, out.height, fmt));
+            if (i < m_passHasFeedback.size() && m_passHasFeedback[i]) {
+                m_feedback[i] = std::make_unique<OffscreenTarget>(
+                    *m_ctx, out.width, out.height, fmt);
+            }
+            prev = out;
+        }
     }
+
+    if (m_maxHistory > 0) {
+        // Ring of maxHistory + 1: one slot being written this frame plus
+        // the previous maxHistory frames being sampled.
+        const size_t ring = static_cast<size_t>(m_maxHistory) + 1;
+        m_history.reserve(ring);
+        for (size_t s = 0; s < ring; ++s) {
+            m_history.push_back(std::make_unique<OffscreenTarget>(
+                *m_ctx, srcWidth, srcHeight, m_intermediateFormat));
+        }
+    }
+
     m_srcWidth  = srcWidth;
     m_srcHeight = srcHeight;
     m_vpWidth   = viewportWidth;
@@ -442,10 +567,148 @@ void Preset::ensureSourceSize(uint32_t srcWidth, uint32_t srcHeight,
     updateUbo();
 }
 
+OffscreenTarget* Preset::currentTarget(size_t passIdx) const {
+    if (passIdx >= m_intermediates.size()) return nullptr;
+    if (passIdx < m_feedback.size() && m_feedback[passIdx] && m_feedbackParity) {
+        return m_feedback[passIdx].get();
+    }
+    return m_intermediates[passIdx].get();
+}
+
+OffscreenTarget* Preset::previousTarget(size_t passIdx) const {
+    if (passIdx >= m_intermediates.size()) return nullptr;
+    if (passIdx < m_feedback.size() && m_feedback[passIdx] && !m_feedbackParity) {
+        return m_feedback[passIdx].get();
+    }
+    return m_intermediates[passIdx].get();
+}
+
+VkImageView Preset::resolveSemanticView(const PassSemanticTexture& st) const {
+    switch (st.kind) {
+        case SemanticTexKind::OriginalHistory: {
+            const size_t ring = m_history.size();
+            if (ring == 0 || st.index >= ring) return m_originalView;
+            // Frame f wrote slot f % ring; K frames ago = (f - K) mod ring.
+            const size_t slot = (m_frameCount + ring - st.index) % ring;
+            return m_history[slot]->view();
+        }
+        case SemanticTexKind::PassOutput: {
+            const OffscreenTarget* t = currentTarget(st.index);
+            return t ? t->view() : m_originalView;
+        }
+        case SemanticTexKind::PassFeedback: {
+            const OffscreenTarget* t = previousTarget(st.index);
+            return t ? t->view() : m_originalView;
+        }
+        default:
+            return m_originalView;
+    }
+}
+
+std::vector<std::pair<uint32_t, VkImageView>> Preset::buildExtraViews(size_t passIdx) const {
+    std::vector<std::pair<uint32_t, VkImageView>> extras;
+    if (passIdx >= m_passSemanticTextures.size()) return extras;
+    const auto& sts = m_passSemanticTextures[passIdx];
+    extras.reserve(sts.size());
+    for (const auto& st : sts) {
+        extras.emplace_back(st.binding, resolveSemanticView(st));
+    }
+    return extras;
+}
+
+namespace {
+
+// Brings a never-rendered offscreen target into SHADER_READ_ONLY with
+// defined (black) contents via an empty LOAD_OP_CLEAR rendering scope, so
+// early frames sample black instead of garbage. No-op once defined.
+void clearTargetIfFresh(VkCommandBuffer cb, OffscreenTarget& tgt) {
+    if (tgt.currentLayout() != VK_IMAGE_LAYOUT_UNDEFINED) return;
+    transitionImage(cb, tgt.image(),
+                    VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_ACCESS_2_NONE,
+                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    color.imageView   = tgt.view();
+    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+    color.clearValue.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+
+    VkRenderingInfo rinfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
+    rinfo.renderArea           = { {0,0}, tgt.extent() };
+    rinfo.layerCount           = 1;
+    rinfo.colorAttachmentCount = 1;
+    rinfo.pColorAttachments    = &color;
+
+    vkCmdBeginRendering(cb, &rinfo);
+    vkCmdEndRendering(cb);
+
+    transitionImage(cb, tgt.image(),
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+    tgt.setLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+} // namespace
+
+void Preset::recordHistoryBlit(VkCommandBuffer cb, VkImageView sourceView) {
+    if (m_history.empty() || !m_historyBlit) return;
+
+    // Slots that have never been written must hold defined black before
+    // any pass samples them (RetroArch: history starts black).
+    for (auto& slot : m_history) clearTargetIfFresh(cb, *slot);
+
+    OffscreenTarget& slot = *m_history[m_frameCount % m_history.size()];
+
+    transitionImage(cb, slot.image(),
+                    slot.currentLayout(),
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    color.imageView   = slot.view();
+    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+    color.clearValue.color = {{ 0.0f, 0.0f, 0.0f, 1.0f }};
+
+    VkRenderingInfo rinfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
+    rinfo.renderArea           = { {0,0}, slot.extent() };
+    rinfo.layerCount           = 1;
+    rinfo.colorAttachmentCount = 1;
+    rinfo.pColorAttachments    = &color;
+
+    vkCmdBeginRendering(cb, &rinfo);
+    m_historyBlit->bindAndDrawWithImageView(cb, sourceView, slot.extent());
+    vkCmdEndRendering(cb);
+
+    transitionImage(cb, slot.image(),
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+    slot.setLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
 void Preset::recordIntermediatePasses(VkCommandBuffer cb,
                                       VkImageView sourceView,
                                       VkExtent2D  sourceExtent) {
     m_originalView = sourceView;
+
+    recordHistoryBlit(cb, sourceView);
 
     if (!isMultiPass() || m_intermediates.empty()) {
         m_finalInputView   = sourceView;
@@ -453,12 +716,22 @@ void Preset::recordIntermediatePasses(VkCommandBuffer cb,
         return;
     }
 
+    // Feedback twins sampled this frame must hold defined contents
+    // (black on the very first frame).
+    for (size_t i = 0; i + 1 < m_pipelines.size(); ++i) {
+        if (i < m_passHasFeedback.size() && m_passHasFeedback[i]) {
+            if (OffscreenTarget* prev = previousTarget(i)) {
+                clearTargetIfFresh(cb, *prev);
+            }
+        }
+    }
+
     VkImageView readView   = sourceView;
     VkExtent2D  readExtent = sourceExtent;
 
     const size_t passes = m_pipelines.size();
     for (size_t i = 0; i + 1 < passes; ++i) {
-        OffscreenTarget& tgt = *m_intermediates[i];
+        OffscreenTarget& tgt = *currentTarget(i);
 
         transitionImage(cb, tgt.image(),
                         tgt.currentLayout(),
@@ -481,8 +754,10 @@ void Preset::recordIntermediatePasses(VkCommandBuffer cb,
         rinfo.colorAttachmentCount = 1;
         rinfo.pColorAttachments    = &color;
 
+        const auto extras = buildExtraViews(i);
         vkCmdBeginRendering(cb, &rinfo);
-        m_pipelines[i]->bindAndDrawWithImageView(cb, readView, tgt.extent(), m_originalView);
+        m_pipelines[i]->bindAndDrawWithImageView(cb, readView, tgt.extent(), m_originalView,
+                                                 extras.empty() ? nullptr : &extras);
         vkCmdEndRendering(cb);
 
         transitionImage(cb, tgt.image(),
@@ -503,5 +778,7 @@ void Preset::recordIntermediatePasses(VkCommandBuffer cb,
 }
 
 void Preset::drawFinalPass(VkCommandBuffer cb, VkExtent2D viewport) {
-    finalPipeline().bindAndDrawWithImageView(cb, m_finalInputView, viewport, m_originalView);
+    const auto extras = buildExtraViews(m_pipelines.size() - 1);
+    finalPipeline().bindAndDrawWithImageView(cb, m_finalInputView, viewport, m_originalView,
+                                             extras.empty() ? nullptr : &extras);
 }
