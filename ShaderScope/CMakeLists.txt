@@ -77,6 +77,7 @@ add_library(shaderscope_core STATIC
     src/render/LutTexture.cpp
     src/render/OffscreenTarget.cpp
     src/render/Preset.cpp
+    src/render/SlangSemantics.cpp
     src/capture/StaticImageCapture.cpp
     src/capture/BadWindowRegistry.cpp
     src/capture/FakeWaylandCaptureSession.cpp
